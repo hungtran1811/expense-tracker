@@ -1,0 +1,292 @@
+/* --- App CSS (light + mobile rail) --- */
+:root {
+  --sidebar-w: 260px;
+}
+
+body {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: var(--sidebar-w);
+  background: #ffffff;
+  border-right: 1px solid #e2e8f0;
+  padding: 1rem
+}
+
+.sidebar .nav-link {
+  color: #334155;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+}
+
+.sidebar .nav-link.active,
+.sidebar .nav-link:hover {
+  color: #111827;
+  background: #eef2ff;
+}
+
+.brand {
+  color: #111827;
+  font-weight: 700;
+  letter-spacing: .3px
+}
+
+.content {
+  margin-left: var(--sidebar-w);
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px
+}
+
+.card .card-title,
+.card .card-text,
+.table,
+.form-label,
+label,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+.nav-link,
+.navbar,
+.dropdown-item,
+.table thead th {
+  color: #0f172a
+}
+
+.navbar {
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0
+}
+
+.table {
+  color: #334155
+}
+
+.badge-soft {
+  background: #eef2ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe
+}
+
+.muted {
+  color: #64748b
+}
+
+.table> :not(caption)>*>* {
+  background: transparent !important;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.chip {
+  border: 1px dashed #e2e8f0;
+  color: #334155;
+  padding: .3rem .6rem;
+  border-radius: 999px;
+  background: #f8fafc
+}
+
+/* Toast above sticky navbar */
+.toast-container {
+  z-index: 2000;
+  border-radius: 10px;
+  margin-top: 40px;
+}
+
+/* nav stats gọn trên mobile */
+.nav-stat {
+  font-size: .85rem;
+  line-height: 1.1;
+  padding: .4rem .5rem;
+}
+
+@media (max-width: 576px) {
+  #navStats {
+    gap: .35rem;
+  }
+
+  .nav-stat strong {
+    font-weight: 600;
+  }
+}
+
+
+@media (max-width: 575.98px) {
+
+  /* (tuỳ chọn) hạ nhẹ xuống cho thoáng dưới status bar/mobile UI */
+  .toast-container {
+    top: 8px !important;
+  }
+}
+
+
+/* Keep left sidebar; mobile rail + sticky footer */
+@media (max-width: 575.98px) {
+  :root {
+    --sidebar-w: 72px;
+  }
+
+  .sidebar {
+    padding: .5rem
+  }
+
+  .sidebar .brand {
+    display: none
+  }
+
+  .sidebar .nav-link {
+    justify-content: center;
+    padding: .6rem 0;
+  }
+
+  .sidebar .nav-link .label {
+    display: none
+  }
+
+  .content {
+    margin-left: var(--sidebar-w);
+    padding-bottom: 76px;
+  }
+
+  .navbar form {
+    display: none !important;
+  }
+
+  .btn {
+    min-height: 44px;
+  }
+
+  .form-control,
+  .form-select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  /* Responsive table -> stacked cards */
+  .table-responsive table {
+    display: block;
+  }
+
+  .table-responsive thead {
+    display: none;
+  }
+
+  .table-responsive tbody {
+    display: block;
+  }
+
+  .table-responsive tr {
+    display: block;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: .5rem .75rem;
+    margin-bottom: .75rem
+  }
+
+  .table-responsive td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: .35rem 0;
+    border: 0;
+  }
+
+  .table-responsive td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #334155;
+    margin-right: 1rem
+  }
+}
+
+@media (min-width: 576px) and (max-width: 991.98px) {
+  :root {
+    --sidebar-w: 220px;
+  }
+
+  .content {
+    margin-left: var(--sidebar-w);
+    padding-bottom: 72px;
+  }
+}
+
+@media (min-width: 992px) {
+  .mobile-footer {
+    display: none;
+  }
+}
+
+.mobile-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  height: 64px;
+  z-index: 1040;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 .75rem;
+  display: flex
+}
+
+.mobile-footer .left,
+.mobile-footer .right {
+  display: flex;
+  gap: .5rem;
+  align-items: center
+}
+
+.mobile-footer .muted {
+  font-size: .9rem
+}
+
+.fab-add {
+  position: fixed;
+  right: 16px;
+  bottom: 80px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(2, 6, 23, .15);
+}
+
+@media (min-width: 992px) {
+  .fab-add {
+    display: none;
+  }
+}
+
+/* Route visibility */
+.route {
+  display: none
+}
+
+.route.active {
+  display: block
+}
