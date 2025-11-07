@@ -1,0 +1,4 @@
+# netlify.toml (tuỳ chọn)
+[build]
+  command = "npm run build"
+  publish = "dist"
