@@ -1,3 +1,15 @@
+# Node / build
 node_modules
 dist
-.env*
+.vscode
+.DS_Store
+
+# Env / config
+.env
+.env.local
+.env.production
+firebaseConfig.json
+
+# System / temp
+*.log
+npm-debug.log*
