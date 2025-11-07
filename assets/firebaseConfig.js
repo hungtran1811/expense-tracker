@@ -1,11 +1,11 @@
 // Firebase config (public; safe to expose). Fill with your project values.
 export const firebaseConfig = {
-  apiKey: "AIzaSyCAExxeNtJVH-KJjARpmtpEQjUgOJHcGis",
-  authDomain: "quanlychitieu-a3ad2.firebaseapp.com",
-  projectId: "quanlychitieu-a3ad2",
-  storageBucket: "quanlychitieu-a3ad2.firebasestorage.app",
-  messagingSenderId: "100750353991",
-  appId: "1:100750353991:web:e39100b12ad59e99fa7362",
+  apiKey: import.meta.env.VITE_FB_API_KEY,
+  authDomain: import.meta.env.VITE_FB_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FB_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FB_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FB_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FB_APP_ID,
 };
 // **Single-user lock**: set exactly ONE allowed UID (recommended) or email (fallback).
 export const AUTH_LOCK = {

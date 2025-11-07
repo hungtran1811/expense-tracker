@@ -1,0 +1,25 @@
+{
+  "name": "public",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hungtran1811/expense-tracker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hungtran1811/expense-tracker/issues"
+  },
+  "homepage": "https://github.com/hungtran1811/expense-tracker#readme",
+  "description": "",
+  "devDependencies": {
+    "vite": "^7.2.2"
+  }
+}
