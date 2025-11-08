@@ -290,3 +290,141 @@ p,
 .route.active {
   display: block
 }
+
+/* Modal form: khoảng cách & canh thẳng hàng */
+.modal .form-label {
+  font-weight: 600;
+}
+
+.modal .form-control,
+.modal .form-select {
+  min-height: 44px;
+}
+
+.modal .text-end {
+  text-align: right !important;
+}
+
+/* Fix input number trên một số trình duyệt */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Toast màu theo trạng thái (kết hợp JS) */
+.toast-success {
+  background: var(--bs-success);
+  color: #fff;
+}
+
+.toast-error {
+  background: var(--bs-danger);
+  color: #fff;
+}
+
+.toast-info {
+  background: var(--bs-primary);
+  color: #fff;
+}
+
+/* Tránh toast che navbar khi viewport thấp */
+.toast-container {
+  top: 0.75rem !important;
+  right: 0.75rem !important;
+}
+
+/* Nút nhóm trong bảng thao tác luôn thẳng hàng */
+.table .btn-group .btn {
+  min-width: 64px;
+}
+
+/* Ngăn layout “dịch trái” khi mở modal (BS 5.3) */
+body.modal-open {
+  padding-right: 0 !important;
+  --bs-body-padding-right: 0 !important;
+}
+
+/* Giữ ổn định chiều rộng trang (hạn chế nhảy layout do scrollbar) */
+@media (min-width: 992px) {
+  html {
+    overflow-y: scroll;
+  }
+
+  /* luôn có scrollbar dọc ở desktop */
+}
+
+/* Modal form layout đồng bộ */
+.modal .form-label {
+  font-weight: 600;
+}
+
+.modal .form-control,
+.modal .form-select {
+  min-height: 44px;
+}
+
+.modal .text-end {
+  text-align: right !important;
+}
+
+/* Đảm bảo modal nổi trên toast/backdrop */
+.modal {
+  z-index: 1085;
+}
+
+.toast-container {
+  z-index: 1080;
+  top: .75rem !important;
+  right: .75rem !important;
+}
+
+/* ===== Fix modal always center viewport ===== */
+body.modal-open {
+  padding-right: 0 !important;
+  --bs-body-padding-right: 0 !important;
+}
+
+/* Giữ scrollbar luôn hiển thị để không nhảy layout */
+@media (min-width: 992px) {
+  html {
+    overflow-y: scroll;
+  }
+}
+
+/* Căn giữa tuyệt đối mọi modal bất chấp layout cha */
+.modal.show {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  /* để chỉ modal-content bắt sự kiện */
+  padding: 0 !important;
+}
+
+.modal .modal-dialog {
+  pointer-events: auto;
+  margin: 0 !important;
+  max-width: min(720px, 96vw);
+  width: 100%;
+}
+
+.modal .modal-content {
+  max-height: calc(100dvh - 2rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal .modal-body {
+  overflow-y: auto;
+}

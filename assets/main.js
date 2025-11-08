@@ -37,6 +37,7 @@ let _currentUser = null; // firebase user hiện tại
 let _expTotal = 0;
 let _incTotal = 0;
 let _pendingDeleteId = null; // id chi tiêu đang chờ xoá
+let _pendingDeleteIncomeId = null; // id thu nhập đang chờ xoá
 
 /* =========================
  * 3) HELPER DOM & THÁNG
@@ -77,15 +78,31 @@ function initMonthFilter() {
   )}`;
 }
 
-// Toast gọn (dùng bootstrap toast nếu bạn đã có; fallback alert)
-function showToast(msg) {
+// Toast gọn (Bootstrap Toast). Loại: 'success' | 'error' | 'info'
+function showToast(msg, type = "success") {
   const el = document.getElementById("appToast");
   if (!el) {
-    console.log("[Toast]", msg);
+    console.log("[Toast]", type.toUpperCase(), msg);
     return;
   }
+
+  el.classList.remove(
+    "toast-success",
+    "toast-error",
+    "toast-info",
+    "text-bg-success",
+    "text-bg-danger",
+    "text-bg-primary"
+  );
+  const map = {
+    success: "toast-success",
+    error: "toast-error",
+    info: "toast-info",
+  };
+  el.classList.add(map[type] || "toast-info");
+
   el.querySelector(".toast-body").textContent = msg;
-  const t = bootstrap.Toast.getOrCreateInstance(el);
+  const t = bootstrap.Toast.getOrCreateInstance(el, { delay: 2500 });
   t.show();
 }
 
@@ -371,7 +388,8 @@ async function doDeleteExpense() {
   try {
     const { auth } = await import("./auth.js");
     const user = auth.currentUser;
-    if (!user) return alert("Hãy đăng nhập trước.");
+    if (!user)
+      return showToast("Hãy đăng nhập trước: " + (err.message || err), "error");
     if (!_pendingDeleteId) return;
 
     // Gọi API xoá
@@ -387,9 +405,33 @@ async function doDeleteExpense() {
     showToast?.("Đã xoá chi tiêu!");
   } catch (err) {
     console.error("[DeleteExpense] ", err);
-    alert(err?.message || "Không thể xoá");
+    showToast(err?.message || "Không thể xoá");
   } finally {
     _pendingDeleteId = null;
+  }
+}
+
+async function doDeleteIncome() {
+  try {
+    const { auth } = await import("./auth.js");
+    const user = auth.currentUser;
+    if (!user) return showToast("Vui lòng đăng nhập trước", "error");
+    if (!_pendingDeleteIncomeId) return;
+
+    await deleteIncome(user.uid, _pendingDeleteIncomeId);
+
+    // đóng modal nếu đang mở
+    const modalEl = document.getElementById("confirmDeleteModal");
+    if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+
+    await refreshIncomes(user.uid);
+    await refreshBalances(user.uid);
+    showToast("Đã xoá thu nhập!");
+  } catch (err) {
+    console.error("[DeleteIncome] ", err);
+    showToast(err?.message || "Không thể xoá thu nhập", "error");
+  } finally {
+    _pendingDeleteIncomeId = null;
   }
 }
 
@@ -426,7 +468,7 @@ document.getElementById("btnSignIn")?.addEventListener("click", async (e) => {
     await signInWithGoogle();
   } catch (err) {
     console.error(err);
-    alert("Đăng nhập thất bại: " + (err.message || err));
+    showToast("Đăng nhập thất bại: " + (err.message || err), "error");
   }
 });
 
@@ -436,7 +478,7 @@ document.getElementById("btnSignOut")?.addEventListener("click", async (e) => {
     await signOutGoogle();
   } catch (err) {
     console.error(err);
-    alert("Đăng xuất thất bại: " + (err.message || err));
+    showToast("Đăng xuất thất bại: " + (err.message || err), "error");
   }
 });
 
@@ -490,7 +532,7 @@ document
     const errBox = document.getElementById("aeError");
 
     function showErr(msg) {
-      if (!errBox) return alert(msg);
+      if (!errBox) return showToast(msg + (err.message || err), "error");
       errBox.textContent = msg;
       errBox.classList.remove("d-none");
     }
@@ -556,7 +598,11 @@ document
       try {
         const { auth } = await import("./auth.js");
         const user = auth.currentUser;
-        if (!user) return alert("Hãy đăng nhập trước.");
+        if (!user)
+          return showToast(
+            "Hãy đăng nhập trước: " + (err.message || err),
+            "error"
+          );
 
         // 1) Lấy dữ liệu từ Firestore
         let x = null;
@@ -627,7 +673,7 @@ document
         });
       } catch (err) {
         console.error("[EditExpense] error:", err);
-        alert(err.message || "Không thể mở form Sửa. Kiểm tra Console.");
+        showToast("Không thể mở form sửa: " + (err.message || err), "error");
       }
     }
   });
@@ -635,7 +681,11 @@ document
 document
   .getElementById("btnConfirmDelete")
   ?.addEventListener("click", async () => {
-    await doDeleteExpense();
+    if (_pendingDeleteIncomeId) {
+      await doDeleteIncome();
+    } else if (_pendingDeleteId) {
+      await doDeleteExpense();
+    }
   });
 
 document
@@ -663,7 +713,7 @@ document
       if (typeof showToast === "function") showToast("Đã cập nhật chi tiêu!");
     } catch (err) {
       console.error("[updateExpense]", err);
-      alert(err.message || "Không thể cập nhật");
+      showToast("Không thể cập nhật: " + (err.message || err), "error");
     }
   });
 
@@ -683,17 +733,17 @@ document
     // Nhấn "Xoá"
     if (btn.classList.contains("btn-expense-del")) {
       _pendingDeleteId = id;
-      // Nếu dùng confirm() đơn giản:
-      // if (confirm('Xoá khoản chi này?')) { await doDeleteExpense(); }
-      // Còn nếu dùng modal xác nhận thì show modal:
+      _pendingDeleteIncomeId = null; // clear phía thu
+
       const m = document.getElementById("confirmDeleteModal");
       if (m) {
+        const titleEl = m.querySelector(".modal-title");
+        const bodyP = m.querySelector(".modal-body p");
+        if (titleEl) titleEl.textContent = "Xoá khoản chi?";
+        if (bodyP) bodyP.textContent = "Hành động này không thể hoàn tác.";
         new bootstrap.Modal(m).show();
       } else {
-        // fallback nếu không có modal
-        if (confirm("Xoá khoản chi này?")) {
-          await doDeleteExpense();
-        }
+        if (confirm("Xoá khoản chi này?")) await doDeleteExpense();
       }
     }
   });
@@ -707,7 +757,8 @@ document.getElementById("monthFilter")?.addEventListener("change", async () => {
 
 // 6.3. Thêm Thu nhập (modal #addIncomeModal)
 document.getElementById("btnAddIncome")?.addEventListener("click", async () => {
-  if (!_currentUser) return alert("Hãy đăng nhập trước.");
+  if (!_currentUser)
+    return showToast("Hãy đăng nhập trước: " + (err.message || err), "error");
 
   const payload = {
     name: document.getElementById("iName")?.value.trim(),
@@ -736,7 +787,7 @@ document.getElementById("btnAddIncome")?.addEventListener("click", async () => {
     showToast("Đã thêm thu nhập!");
   } catch (err) {
     console.error(err);
-    alert("Thêm thu nhập thất bại: " + (err.message || err));
+    showToast("Thêm thu nhập thất bại: " + (err.message || err), "error");
   }
 });
 
@@ -747,7 +798,8 @@ document.addEventListener("click", async (e) => {
 
   const { auth } = await import("./auth.js");
   const user = auth.currentUser;
-  if (!user) return alert("Hãy đăng nhập trước.");
+  if (!user)
+    return showToast("Hãy đăng nhập trước: " + (err.message || err), "error");
 
   const name = (document.getElementById("aName")?.value || "").trim();
   const type = document.getElementById("aType")?.value || "bank";
@@ -792,7 +844,7 @@ document.addEventListener("click", async (e) => {
     if (typeof showToast === "function") showToast("Đã thêm tài khoản!");
   } catch (err) {
     console.error("[AddAccount]", err);
-    alert(err?.message || "Không thể thêm tài khoản");
+    showToast("Không thể thêm tài khoản: " + (err.message || err), "error");
   }
 });
 
@@ -874,7 +926,10 @@ document
       showToast?.("Đã cập nhật tài khoản!");
     } catch (err) {
       console.error(err);
-      alert(err.message || "Không thể cập nhật tài khoản");
+      showToast(
+        "Không thể cập nhật tài khoản: " + (err.message || err),
+        "error"
+      );
     }
   });
 
@@ -901,19 +956,20 @@ document
       showToast?.("Đã chuyển & xoá tài khoản!");
     } catch (err) {
       console.error(err);
-      alert(err.message || "Không thể xoá tài khoản");
+      showToast("Không thể xóa tài khoản: " + (err.message || err), "error");
     }
   });
 
 document.getElementById("btnExportCsv")?.addEventListener("click", async () => {
   const { auth } = await import("./auth.js");
   const user = auth.currentUser;
-  if (!user) return alert("Hãy đăng nhập trước.");
+  if (!user)
+    return showToast("Hãy đăng nhập trước: " + (err.message || err), "error");
   try {
     await exportCsvCurrentMonth(user.uid);
   } catch (err) {
     console.error(err);
-    alert("Xuất CSV thất bại: " + (err?.message || err));
+    showToast("Xuất CSV thất bại: " + (err.message || err), "error");
   }
 });
 
@@ -931,13 +987,18 @@ document
 
     const { auth } = await import("./auth.js");
     const user = auth.currentUser;
-    if (!user) return alert("Hãy đăng nhập trước.");
+    if (!user)
+      return showToast("Hãy đăng nhập trước: " + (err.message || err), "error");
 
     // Nếu click "Sửa"
     if (btn.classList.contains("btn-income-edit")) {
       // lấy dữ liệu chính xác từ Firestore
       const income = await getIncome(user.uid, id);
-      if (!income) return alert("Không tìm thấy bản ghi.");
+      if (!income)
+        return showToast(
+          "Không tìm thấy bản ghi: " + (err.message || err),
+          "error"
+        );
 
       // đổ option tài khoản trước rồi mới set value
       if (typeof fillAccountSelect === "function") {
@@ -980,11 +1041,22 @@ document
 
     // Nếu click "Xoá"
     if (btn.classList.contains("btn-income-del")) {
-      if (!confirm("Bạn có chắc muốn xoá khoản thu nhập này?")) return;
-      await deleteIncome(user.uid, id);
-      await refreshIncomes(user.uid);
-      await refreshBalances(user.uid);
-      showToast("Đã xoá thu nhập!");
+      _pendingDeleteIncomeId = id;
+      _pendingDeleteId = null; // clear phía chi
+
+      const m = document.getElementById("confirmDeleteModal");
+      if (m) {
+        const titleEl = m.querySelector(".modal-title");
+        const bodyP = m.querySelector(".modal-body p");
+        if (titleEl) titleEl.textContent = "Xoá khoản thu?";
+        if (bodyP) bodyP.textContent = "Hành động này không thể hoàn tác.";
+        new bootstrap.Modal(m).show();
+      } else {
+        // fallback hiếm gặp nếu thiếu modal
+        if (confirm("Bạn có chắc muốn xoá khoản thu nhập này?")) {
+          await doDeleteIncome();
+        }
+      }
     }
   });
 
@@ -993,7 +1065,8 @@ document
   ?.addEventListener("click", async () => {
     const { auth } = await import("./auth.js");
     const user = auth.currentUser;
-    if (!user) return alert("Hãy đăng nhập trước.");
+    if (!user)
+      return showToast("Hãy đăng nhập trước: " + (err.message || err), "error");
 
     const id = document.getElementById("eiId").value;
     const payload = {
@@ -1018,7 +1091,8 @@ document
   ?.addEventListener("click", async () => {
     const { auth } = await import("./auth.js");
     const user = auth.currentUser;
-    if (!user) return alert("Hãy đăng nhập trước.");
+    if (!user)
+      return showToast("Hãy đăng nhập trước: " + (err.message || err), "error");
 
     const from = document.getElementById("tfFrom").value;
     const to = document.getElementById("tfTo").value;
@@ -1047,7 +1121,7 @@ document
       if (typeof showToast === "function") showToast("Chuyển tiền thành công!");
     } catch (err) {
       console.error(err);
-      alert(err.message || "Không thể chuyển tiền");
+      showToast("Không thể chuyển tiền: " + (err.message || err), "error");
     }
   });
 
@@ -1069,3 +1143,16 @@ if (location.hash === "#accounts" && _currentUser) {
     await refreshIncomes(_currentUser.uid);
   })();
 }
+
+// Đảm bảo modal luôn center tuyệt đối kể cả khi có layout flex bên ngoài
+document.addEventListener("show.bs.modal", (e) => {
+  const modal = e.target;
+  modal.style.position = "fixed";
+  modal.style.top = "0";
+  modal.style.left = "0";
+  modal.style.width = "100vw";
+  modal.style.height = "100vh";
+  modal.style.display = "flex";
+  modal.style.alignItems = "center";
+  modal.style.justifyContent = "center";
+});
