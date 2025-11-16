@@ -120,6 +120,7 @@ p,
   padding: .4rem .5rem;
 }
 
+
 @media (max-width: 576px) {
   #navStats {
     gap: .35rem;
@@ -427,4 +428,256 @@ body.modal-open {
 
 .modal .modal-body {
   overflow-y: auto;
+}
+
+/* ========== Mobile Optimization (max-width 768px) ========== */
+@media (max-width: 768px) {
+
+  /* Card spacing */
+  .card,
+  .summary-card {
+    margin: 0 0.5rem 1rem 0.5rem !important;
+    width: calc(100% - 1rem) !important;
+  }
+
+  /* Typography */
+  body {
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* Number & currency spacing */
+  .money,
+  .amount {
+    letter-spacing: 0.3px;
+  }
+
+  .money::after,
+  .amount::after {
+    content: " ₫";
+    font-size: 0.9em;
+    opacity: 0.8;
+  }
+
+  /* Button group stack vertically */
+  .top-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .top-actions button,
+  .top-actions .btn {
+    width: 100%;
+  }
+
+  /* Fix floating action button position */
+  .fab {
+    position: fixed;
+    right: 1.2rem;
+    bottom: 5rem;
+    /* tránh đè thanh điều hướng */
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  }
+
+  /* Sidebar icon spacing */
+  .sidebar .nav-link {
+    padding: 0.75rem 1rem;
+  }
+
+  .sidebar i {
+    font-size: 1.3rem;
+    margin-right: 0.5rem;
+  }
+
+  /* Center text cards on mobile */
+  .summary-card h2,
+  .summary-card p {
+    text-align: center;
+  }
+}
+
+/* Recent list */
+#ov-recent .list-group-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .5rem .75rem;
+}
+
+.ov-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #475569;
+}
+
+.ov-amt {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-badge {
+  font-size: .75rem;
+  opacity: .8;
+}
+
+/* Category bars */
+.cat-row {
+  margin-bottom: .5rem;
+}
+
+.cat-name {
+  color: #475569;
+  font-weight: 600;
+}
+
+.cat-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.cat-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7C3AED, #06B6D4);
+}
+
+/* Sparkline */
+.spark {
+  width: 100%;
+  height: 100%;
+}
+
+path.line-exp {
+  stroke: #ef4444;
+  fill: none;
+  stroke-width: 2;
+}
+
+path.line-inc {
+  stroke: #22c55e;
+  fill: none;
+  stroke-width: 2;
+}
+
+/* ===== Overview lower widgets ===== */
+#ov-recent .list-group-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .5rem .75rem;
+}
+
+.ov-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #475569
+}
+
+.ov-amt {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums
+}
+
+/* Category bars */
+.cat-row {
+  margin-bottom: .5rem
+}
+
+.cat-name {
+  color: #475569;
+  font-weight: 600
+}
+
+.cat-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden
+}
+
+.cat-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7C3AED, #06B6D4)
+}
+
+/* Fixed vs Flexible */
+.fx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: .5rem
+}
+
+.fx-stat {
+  font-weight: 700
+}
+
+.fx-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden
+}
+
+.fx-fill-fixed {
+  height: 100%;
+  background: #6366f1
+}
+
+/* Indigo */
+.fx-fill-flex {
+  height: 100%;
+  background: #06b6d4
+}
+
+/* Cyan */
+
+/* Avg daily widget */
+.avg-box {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .75rem
+}
+
+.avg-item {
+  border: 1px solid #e5e7eb;
+  border-radius: .5rem;
+  padding: .5rem .75rem
+}
+
+.avg-label {
+  color: #64748b
+}
+
+.avg-value {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums
+}
+
+.badge-up {
+  background: #dcfce7;
+  color: #16a34a
+}
+
+.badge-down {
+  background: #fee2e2;
+  color: #ef4444
 }

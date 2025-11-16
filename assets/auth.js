@@ -1,4 +1,4 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -6,7 +6,7 @@ import {
   signInWithRedirect,
   onAuthStateChanged,
   signOut,
-} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+} from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
 import { firebaseConfig, AUTH_LOCK } from "./firebaseConfig.js";
 
 const app = initializeApp(firebaseConfig);

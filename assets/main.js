@@ -1,5 +1,7 @@
 import { setActiveRoute } from "./router.js";
-import { watchAuth } from "./auth.js";
+import { watchAuth, auth } from "./auth.js";
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+
 import {
   addExpense,
   listExpensesByMonth,
@@ -38,6 +40,27 @@ let _expTotal = 0;
 let _incTotal = 0;
 let _pendingDeleteId = null; // id chi tiêu đang chờ xoá
 let _pendingDeleteIncomeId = null; // id thu nhập đang chờ xoá
+const menuLogin = document.getElementById("menu-login");
+const menuLogout = document.getElementById("menu-logout");
+const userNameLabel = document.getElementById("userNameLabel");
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    // Đã đăng nhập
+    userNameLabel.textContent = user.displayName || "Tài khoản";
+    menuLogin?.classList.add("d-none");
+    menuLogout?.classList.remove("d-none");
+
+    refreshAll(user.uid); // nếu bạn đang gọi refreshAll ở đây
+  } else {
+    // Chưa đăng nhập
+    userNameLabel.textContent = "Khách";
+    menuLogin?.classList.remove("d-none");
+    menuLogout?.classList.add("d-none");
+
+    // tuỳ bạn: có thể clear UI, chuyển về trang login, v.v.
+  }
+});
 
 /* =========================
  * 3) HELPER DOM & THÁNG
@@ -376,12 +399,236 @@ async function refreshAll(uid) {
     refreshExpenses(uid),
     refreshIncomes(uid),
     loadAccountsAndFill(uid),
+    renderOverviewLower(uid),
   ]);
   await refreshBalances(uid);
   updateDashboardMonthBadge?.();
 
   // NEW: bổ sung Dashboard & Top categories
-  await Promise.all([refreshDashboardStats(uid), refreshTopCategories(uid)]);
+  await Promise.all([
+    refreshDashboardStats(uid),
+    refreshTopCategories(uid),
+    renderOverviewLower(uid),
+  ]);
+}
+
+// ---- Helpers
+const VND = (n) => new Intl.NumberFormat("vi-VN").format(n) + "đ";
+const YM = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+function lastMonths(n = 6) {
+  const arr = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    arr.push(YM(new Date(now.getFullYear(), now.getMonth() - i, 1)));
+  }
+  return arr; // ['2025-06','2025-07',...,'2025-11']
+}
+
+// ---- 1) Giao dịch gần nhất (tháng hiện tại)
+async function renderOverviewRecent(uid) {
+  const ym = getMonthValue();
+  const [exps, incs] = await Promise.all([
+    listExpensesByMonth(uid, ym),
+    listIncomesByMonth(uid, ym),
+  ]);
+  const merged = [
+    ...exps.map((x) => ({
+      type: "chi",
+      date: x.date,
+      name: x.name || x.note || "Chi",
+      amt: x.amount || x.money || 0,
+      cat: x.category || "Khác",
+    })),
+    ...incs.map((x) => ({
+      type: "thu",
+      date: x.date,
+      name: x.name || x.note || "Thu",
+      amt: x.amount || x.money || 0,
+      cat: x.category || "Khác",
+    })),
+  ]
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 10);
+
+  const ul = document.getElementById("ov-recent");
+  if (!ul) return;
+  ul.innerHTML = merged
+    .map((item) => {
+      const badge =
+        item.type === "chi"
+          ? '<span class="badge bg-danger-subtle text-danger ov-badge">Chi</span>'
+          : '<span class="badge bg-success-subtle text-success ov-badge">Thu</span>';
+      return `<li class="list-group-item">
+      <span class="ov-note">${badge} ${
+        item.name
+      } <span class="text-secondary ms-1">• ${item.cat}</span></span>
+      <span class="ov-amt ${
+        item.type === "chi" ? "text-danger" : "text-success"
+      }">${VND(item.amt)}</span>
+    </li>`;
+    })
+    .join("");
+}
+
+// ---- Top 5 khoản chi lớn nhất (tháng hiện tại)
+async function renderOverviewTopExpenses(uid) {
+  const ym = getMonthValue();
+  const exps = await listExpensesByMonth(uid, ym);
+
+  const top5 = exps
+    .map((x) => ({
+      id: x.id,
+      name: x.name || x.note || "Chi",
+      cat: x.category || "Khác",
+      amt: Number(x.amount || x.money || 0),
+      date: x.date,
+    }))
+    .sort((a, b) => b.amt - a.amt)
+    .slice(0, 5);
+
+  const toDDMM = (d) => {
+    const dt = d?.seconds ? new Date(d.seconds * 1000) : new Date(d);
+    return isNaN(dt)
+      ? ""
+      : dt.toISOString().slice(5, 10).split("-").reverse().join("/");
+  };
+
+  const ul = document.getElementById("ov-top5");
+  if (!ul) return;
+  ul.innerHTML = top5.length
+    ? top5
+        .map(
+          (i) => `
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <div>
+            <div class="fw-semibold">${i.name}</div>
+            <div class="text-secondary small">${i.cat}${
+            i.date ? " • " + toDDMM(i.date) : ""
+          }</div>
+          </div>
+          <div class="text-danger fw-semibold">${VND(i.amt)}</div>
+        </li>
+      `
+        )
+        .join("")
+    : '<li class="list-group-item text-muted">Chưa có dữ liệu</li>';
+}
+
+// ---- 2) Xu hướng 6 tháng (SVG sparkline cho Chi/Thu)
+async function renderOverviewTrend(uid) {
+  const months = lastMonths(6);
+  const sum = async (fn, ym) =>
+    (await fn(uid, ym)).reduce((s, x) => s + (x.amount || x.money || 0), 0);
+
+  const chi = [];
+  const thu = [];
+  for (const m of months) {
+    chi.push(await sum(listExpensesByMonth, m));
+    thu.push(await sum(listIncomesByMonth, m));
+  }
+
+  // vẽ sparkline
+  const el = document.getElementById("ov-trend");
+  if (!el) return;
+  const W = el.clientWidth || 520,
+    H = el.clientHeight || 140,
+    pad = 12;
+  const max = Math.max(...chi, ...thu, 1);
+  const sx = (i) => pad + i * ((W - 2 * pad) / (months.length - 1));
+  const sy = (v) => H - pad - (v / max) * (H - 2 * pad);
+  const path = (arr) =>
+    arr.map((v, i) => (i ? "L" : "M") + sx(i) + "," + sy(v)).join(" ");
+
+  el.innerHTML = `
+    <svg class="spark" viewBox="0 0 ${W} ${H}">
+      <path class="line-exp" d="${path(chi)}"></path>
+      <path class="line-inc" d="${path(thu)}"></path>
+      <g font-size="10" fill="#64748b">
+        ${months
+          .map(
+            (m, i) =>
+              `<text x="${sx(i)}" y="${H - 2}" text-anchor="middle">${m.slice(
+                5
+              )}</text>`
+          )
+          .join("")}
+      </g>
+    </svg>
+  `;
+}
+
+// ---- 3) Chi theo danh mục (tháng hiện tại)
+async function renderOverviewCategory(uid) {
+  const ym = getMonthValue();
+  const exps = await listExpensesByMonth(uid, ym);
+  const byCat = {};
+  exps.forEach((x) => {
+    const k = x.category || "Khác";
+    byCat[k] = (byCat[k] || 0) + (x.amount || x.money || 0);
+  });
+  const total = Object.values(byCat).reduce((s, v) => s + v, 0) || 1;
+  const rows = Object.entries(byCat)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, val]) => {
+      const pct = (val * 100) / total;
+      return `<div class="cat-row">
+        <div class="d-flex justify-content-between">
+          <span class="cat-name">${name}</span>
+          <span class="fw-semibold">${VND(val)}</span>
+        </div>
+        <div class="cat-bar mt-1"><div class="cat-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    })
+    .join("");
+
+  const wrap = document.getElementById("ov-cat");
+  if (wrap)
+    wrap.innerHTML = rows || '<div class="text-muted">Chưa có dữ liệu.</div>';
+
+  // ---- 4) Cảnh báo & ghi chú: liệt kê toàn bộ danh mục + %
+  const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]); // desc
+  const alerts = [];
+
+  // cảnh báo đơn giản nếu 1 danh mục vượt 40%
+  const top = entries[0];
+  if (top && top[1] > total * 0.4) {
+    alerts.push(
+      `Danh mục <b>${top[0]}</b> chiếm ${Math.round(
+        (top[1] * 100) / total
+      )}% tổng chi.`
+    );
+  }
+  if (exps.length === 0) {
+    alerts.push("Tháng này chưa có khoản chi.");
+  }
+
+  // liệt kê TẤT CẢ danh mục và % (dù có cảnh báo hay không)
+  const lines = entries.map(([name, val]) => {
+    const pct = Math.round((val * 100) / total);
+    return `• <b>${name}</b> chiếm ${pct}% (${VND(val)})`;
+  });
+
+  const box = document.getElementById("ov-alerts");
+  if (box) {
+    box.innerHTML =
+      (alerts.length
+        ? alerts.map((a) => `<div class="mb-1">• ${a}</div>`).join("") +
+          "<hr class='my-2'/>"
+        : "") +
+      (lines.length
+        ? `<div class="small">${lines.join("<br/>")}</div>`
+        : '<div class="text-muted">Không có dữ liệu.</div>');
+  }
+}
+
+// ---- Gọi ở nơi bạn đã có refreshAll (sau khi login / đổi tháng)
+async function renderOverviewLower(uid) {
+  await Promise.all([
+    renderOverviewRecent(uid),
+    renderOverviewTopExpenses(uid),
+    renderOverviewCategory(uid),
+  ]);
 }
 
 async function doDeleteExpense() {
