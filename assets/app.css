@@ -681,3 +681,56 @@ path.line-inc {
   background: #fee2e2;
   color: #ef4444
 }
+
+@media (max-width: 575.98px) {
+  :root {
+    --sidebar-w: 72px;
+  }
+
+  .sidebar {
+    padding: .5rem;
+  }
+
+  /* Ẩn chữ brand, chỉ còn logo */
+  .sidebar .brand-label {
+    display: none;
+  }
+
+  /* Ẩn tiêu đề group "Tài chính cá nhân", "Dạy học" */
+  .sidebar .section-label {
+    display: none;
+  }
+
+  /* Nav chỉ còn icon */
+  .sidebar .nav-link {
+    justify-content: center;
+    padding: .6rem 0;
+  }
+
+  .sidebar .nav-link .label {
+    display: none;
+  }
+
+  .sidebar .nav-link i {
+    margin-right: 0;
+    /* icon nằm đúng giữa */
+    font-size: 1.4rem;
+  }
+
+  /* Nút group (Quản lý chi tiêu / Lớp học của tôi): chỉ icon ví / mortarboard */
+  .sidebar button .label {
+    display: none;
+  }
+
+  .sidebar button i.bi {
+    margin-right: 0;
+    font-size: 1.4rem;
+  }
+
+  .content {
+    margin-left: var(--sidebar-w);
+    padding-bottom: 76px;
+  }
+
+  /* ...giữ nguyên các rule mobile khác của bạn phía dưới... */
+}

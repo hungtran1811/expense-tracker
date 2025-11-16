@@ -37,7 +37,9 @@
         <hr class="border-secondary" />
         <nav id="sidebar" class="px-3 pt-3">
           <!-- Group 1: Tài chính cá nhân -->
-          <div class="mb-2 small text-uppercase text-secondary fw-semibold">
+          <div
+            class="mb-2 small text-uppercase text-secondary fw-semibold section-label"
+          >
             Tài chính cá nhân
           </div>
 
@@ -48,7 +50,10 @@
               data-bs-target="#navFinance"
               aria-expanded="true"
             >
-              <span><i class="bi bi-wallet2 me-2"></i>Quản lý chi tiêu</span>
+              <span>
+                <i class="bi bi-wallet2 me-2"></i>
+                <span class="label">Quản lý chi tiêu</span>
+              </span>
               <i class="bi bi-chevron-down small"></i>
             </button>
 
@@ -58,41 +63,47 @@
                 class="nav-link py-1 px-2"
                 data-nav="overview"
               >
-                <i class="bi bi-speedometer2 me-2"></i> Tổng quan
+                <i class="bi bi-speedometer2 me-2"></i>
+                <span class="label">Tổng quan</span>
               </a>
               <a
                 href="#expenses"
                 class="nav-link py-1 px-2"
                 data-nav="expenses"
               >
-                <i class="bi bi-table me-2"></i> Chi tiêu
+                <i class="bi bi-table me-2"></i>
+                <span class="label">Chi tiêu</span>
               </a>
               <a
                 href="#add-expense"
                 class="nav-link py-1 px-2"
                 data-nav="add-expense"
               >
-                <i class="bi bi-plus-circle me-2"></i> Thêm chi
+                <i class="bi bi-plus-circle me-2"></i>
+                <span class="label">Thêm chi</span>
               </a>
               <a
                 href="#accounts"
                 class="nav-link py-1 px-2"
                 data-nav="accounts"
               >
-                <i class="bi bi-bank me-2"></i> Tài khoản
+                <i class="bi bi-bank me-2"></i>
+                <span class="label">Tài khoản</span>
               </a>
               <a href="#reports" class="nav-link py-1 px-2" data-nav="reports">
-                <i class="bi bi-graph-up-arrow me-2"></i> Báo cáo
+                <i class="bi bi-graph-up-arrow me-2"></i>
+                <span class="label">Báo cáo</span>
               </a>
               <a href="#ai" class="nav-link py-1 px-2" data-nav="ai">
-                <i class="bi bi-stars me-2"></i> AI hỗ trợ
+                <i class="bi bi-stars me-2"></i>
+                <span class="label">AI hỗ trợ</span>
               </a>
             </div>
           </div>
 
           <!-- Group 2: Dạy học -->
           <div
-            class="mt-4 mb-2 small text-uppercase text-secondary fw-semibold"
+            class="mt-4 mb-2 small text-uppercase text-secondary fw-semibold section-label"
           >
             Dạy học
           </div>
@@ -104,24 +115,22 @@
               data-bs-target="#navTeaching"
               aria-expanded="false"
             >
-              <span><i class="bi bi-mortarboard me-2"></i>Lớp học của tôi</span>
+              <span>
+                <i class="bi bi-mortarboard me-2"></i>
+                <span class="label">Lớp học của tôi</span>
+              </span>
               <i class="bi bi-chevron-down small"></i>
             </button>
 
             <div class="collapse" id="navTeaching">
-              <!-- Sau này thêm các page dạy học -->
               <a
                 href="#class-progress"
                 class="nav-link py-1 px-2"
                 data-nav="class-progress"
               >
-                <i class="bi bi-bar-chart-steps me-2"></i> Tiến độ lớp học
+                <i class="bi bi-bar-chart-steps me-2"></i>
+                <span class="label">Tiến độ lớp học</span>
               </a>
-              <!-- Ví dụ ý tưởng khác:
-      <a href="#teaching-schedule" class="nav-link py-1 px-2" data-nav="schedule">
-        <i class="bi bi-calendar-event me-2"></i> Lịch dạy
-      </a>
-      -->
             </div>
           </div>
         </nav>
