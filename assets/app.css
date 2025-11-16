@@ -734,3 +734,32 @@ path.line-inc {
 
   /* ...giữ nguyên các rule mobile khác của bạn phía dưới... */
 }
+
+@media (max-width: 768px) {
+  /* ... các rule mobile hiện có ... */
+
+  /* Ẩn mũi tên mở/đóng group ở sidebar */
+  .sidebar button .bi-chevron-down,
+  .sidebar button .bi-chevron-up {
+    display: none !important;
+  }
+
+  .name {
+    display: none !important;
+
+  }
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Nếu bạn có wrapper chính cho toàn app, ví dụ .app-root hoặc .content */
+.app-root,
+.content,
+.app-main {
+  max-width: 100%;
+  overflow-x: hidden;
+}
