@@ -1,6 +1,5 @@
 import { setActiveRoute } from "./router.js";
 import { watchAuth, auth } from "./auth.js";
-import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 
 import {
   addExpense,
@@ -40,27 +39,6 @@ let _expTotal = 0;
 let _incTotal = 0;
 let _pendingDeleteId = null; // id chi tiêu đang chờ xoá
 let _pendingDeleteIncomeId = null; // id thu nhập đang chờ xoá
-const menuLogin = document.getElementById("menu-login");
-const menuLogout = document.getElementById("menu-logout");
-const userNameLabel = document.getElementById("userNameLabel");
-
-onAuthStateChanged(auth, (user) => {
-  if (user) {
-    // Đã đăng nhập
-    userNameLabel.textContent = user.displayName || "Tài khoản";
-    menuLogin?.classList.add("d-none");
-    menuLogout?.classList.remove("d-none");
-
-    refreshAll(user.uid); // nếu bạn đang gọi refreshAll ở đây
-  } else {
-    // Chưa đăng nhập
-    userNameLabel.textContent = "Khách";
-    menuLogin?.classList.remove("d-none");
-    menuLogout?.classList.add("d-none");
-
-    // tuỳ bạn: có thể clear UI, chuyển về trang login, v.v.
-  }
-});
 
 /* =========================
  * 3) HELPER DOM & THÁNG
@@ -131,19 +109,21 @@ function showToast(msg, type = "success") {
 
 // Cập nhật menu user góc phải (ẩn/hiện đăng nhập/đăng xuất + label tên)
 function updateUserMenuUI(user) {
-  const lbl = document.getElementById("userMenuLabel");
-  const mIn = document.getElementById("menuSignIn");
-  const mOut = document.getElementById("menuSignOut");
-  if (!lbl || !mIn || !mOut) return;
+  // Khớp đúng ID với index.html
+  const lbl = document.getElementById("userNameLabel"); // span trong nút dropdown
+  const mLogin = document.getElementById("menu-login"); // <li> Đăng nhập Google
+  const mLogout = document.getElementById("menu-logout"); // <li> Đăng xuất
+
+  if (!lbl || !mLogin || !mLogout) return;
 
   if (user) {
     lbl.textContent = user.displayName || user.email || "Tài khoản";
-    mIn.classList.add("d-none");
-    mOut.classList.remove("d-none");
+    mLogin.classList.add("d-none");
+    mLogout.classList.remove("d-none");
   } else {
-    lbl.textContent = "Đăng nhập";
-    mIn.classList.remove("d-none");
-    mOut.classList.add("d-none");
+    lbl.textContent = "Khách";
+    mLogin.classList.remove("d-none");
+    mLogout.classList.add("d-none");
   }
 }
 
