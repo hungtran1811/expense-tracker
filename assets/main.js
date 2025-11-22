@@ -709,25 +709,25 @@ watchAuth(async (user) => {
  * ========================= */
 
 // 6.1. Đăng nhập / Đăng xuất từ dropdown
-document.getElementById("btnSignIn")?.addEventListener("click", async (e) => {
-  e.preventDefault();
-  try {
-    await signInWithGoogle();
-  } catch (err) {
-    console.error(err);
-    showToast("Đăng nhập thất bại: " + (err.message || err), "error");
-  }
-});
+// document.getElementById("btnSignIn")?.addEventListener("click", async (e) => {
+//   e.preventDefault();
+//   try {
+//     await signInWithGoogle();
+//   } catch (err) {
+//     console.error(err);
+//     showToast("Đăng nhập thất bại: " + (err.message || err), "error");
+//   }
+// });
 
-document.getElementById("btnSignOut")?.addEventListener("click", async (e) => {
-  e.preventDefault();
-  try {
-    await signOutGoogle();
-  } catch (err) {
-    console.error(err);
-    showToast("Đăng xuất thất bại: " + (err.message || err), "error");
-  }
-});
+// document.getElementById("btnSignOut")?.addEventListener("click", async (e) => {
+//   e.preventDefault();
+//   try {
+//     await signOutGoogle();
+//   } catch (err) {
+//     console.error(err);
+//     showToast("Đăng xuất thất bại: " + (err.message || err), "error");
+//   }
+// });
 
 // Mở modal Thêm chi: fill account + ngày
 document

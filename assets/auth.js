@@ -100,7 +100,7 @@ export function watchAuth(onReady) {
 }
 
 // ---- Bind nút menu (nếu có trong DOM)
-$id("btnSignIn")?.addEventListener("click", async (e) => {
+$id("btnLoginGoogle")?.addEventListener("click", async (e) => {
   e.preventDefault();
   try {
     await signIn();
@@ -110,7 +110,7 @@ $id("btnSignIn")?.addEventListener("click", async (e) => {
   }
 });
 
-$id("btnSignOut")?.addEventListener("click", async (e) => {
+$id("btnLogout")?.addEventListener("click", async (e) => {
   e.preventDefault();
   try {
     await signOutNow();
