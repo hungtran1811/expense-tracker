@@ -22,17 +22,29 @@
   </head>
   <body>
     <div class="app-shell d-flex">
-      <!-- Sidebar -->
+      <!-- ================= Sidebar ================= -->
       <aside class="sidebar d-flex flex-column position-fixed h-100">
-        <a class="navbar-brand d-flex align-items-center" href="#dashboard">
-          <img
-            src="./assets/img/favicon_64.png"
-            alt="ht logo"
-            height="28"
-            class="me-2"
-          />
-          <span class="fw-semibold name">ht Studio</span>
-        </a>
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <a class="navbar-brand d-flex align-items-center" href="#dashboard">
+            <img
+              src="./assets/img/favicon_64.png"
+              alt="ht logo"
+              height="28"
+              class="me-2"
+            />
+            <span class="fw-semibold name">ht Studio</span>
+          </a>
+
+          <!-- Nút thu gọn sidebar trên desktop -->
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary d-none d-lg-inline-flex"
+            id="btnSidebarMini"
+            aria-label="Thu gọn sidebar"
+          >
+            <i class="bi bi-layout-sidebar-inset"></i>
+          </button>
+        </div>
 
         <hr class="border-secondary" />
         <nav id="sidebar" class="px-3 pt-3">
@@ -134,39 +146,44 @@
             </div>
           </div>
         </nav>
-
-        <!-- <hr class="border-secondary mt-auto" />
-        <div class="d-flex align-items-center gap-2 p-2" id="userBox">
-          <img
-            class="avatar"
-            src="https://i.pravatar.cc/100?img=68"
-            alt="user"
-          />
-          <div>
-            <div class="text-dark" id="displayName">Bạn H.</div>
-            <div class="muted small" id="planLabel">Single user</div>
-          </div>
-        </div> -->
       </aside>
 
-      <!-- Main -->
+      <div id="sidebarBackdrop" class="sidebar-backdrop d-lg-none"></div>
+
+      <!-- ================= Main content ================= -->
       <main class="content flex-grow-1">
+        <!-- Top navbar -->
         <nav class="navbar navbar-expand-lg sticky-top">
-          <div class="container-fluid">
-            <!-- NAV STATS: Chi / Thu tháng này (đặt ngay trước dropdown Tài khoản) -->
-            <div
-              id="navStats"
-              class="d-flex align-items-center flex-wrap gap-2 me-2"
-            >
-              <span class="badge bg-light text-dark nav-stat">
-                Chi: <strong id="navExpTotal">0đ</strong>
-              </span>
-              <span class="badge bg-light text-dark nav-stat">
-                Thu: <strong id="navIncTotal">0đ</strong>
-              </span>
+          <div
+            class="container-fluid d-flex align-items-center justify-content-between"
+          >
+            <!-- Nút mở sidebar trên mobile -->
+            <div class="d-flex align-items-center">
+              <button
+                type="button"
+                class="btn btn-link d-lg-none me-2 p-0 border-0 text-reset"
+                id="btnSidebarToggle"
+                aria-label="Mở menu"
+              >
+                <i class="bi bi-list fs-3"></i>
+              </button>
+
+              <!-- NAV STATS: Chi / Thu tháng này -->
+              <div
+                id="navStats"
+                class="d-flex align-items-center flex-wrap gap-2"
+              >
+                <span class="badge bg-light text-dark nav-stat">
+                  Chi: <strong id="navExpTotal">0đ</strong>
+                </span>
+                <span class="badge bg-light text-dark nav-stat">
+                  Thu: <strong id="navIncTotal">0đ</strong>
+                </span>
+              </div>
             </div>
 
-            <div class="top-actions d-md-flex justify-content-end mb-2">
+            <!-- Actions + user menu -->
+            <div class="top-actions d-md-flex justify-content-end ms-auto mb-0">
               <button
                 class="btn btn-outline-secondary w-100 w-md-auto mb-2 mb-md-0"
                 id="btnExportCsv"
@@ -174,7 +191,7 @@
                 <i class="bi bi-cloud-arrow-up me-1"></i>Xuất CSV
               </button>
 
-              <div class="btn-group ms-3">
+              <div class="btn-group ms-md-3 ms-0">
                 <button
                   type="button"
                   class="btn btn-secondary dropdown-toggle"
@@ -186,13 +203,11 @@
                   <span id="userNameLabel">Khách</span>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
-                  <!-- item Đăng nhập -->
                   <li id="menu-login">
                     <button class="dropdown-item" id="btnLoginGoogle">
                       Đăng nhập Google
                     </button>
                   </li>
-                  <!-- item Đăng xuất (ẩn mặc định) -->
                   <li id="menu-logout" class="d-none">
                     <button class="dropdown-item" id="btnLogout">
                       Đăng xuất
@@ -205,7 +220,7 @@
         </nav>
 
         <div class="container-fluid p-3 p-md-4">
-          <!-- Dashboard -->
+          <!-- ========== Dashboard ========== -->
           <section id="dashboard" class="route active">
             <div class="row g-3">
               <div class="col-12 col-lg-4">
@@ -236,7 +251,7 @@
                 <div class="card p-3">
                   <h6 class="muted">Top danh mục</h6>
                   <div class="d-grid gap-2" id="topCats">
-                    <!-- injected by reports.js -->
+                    <!-- renderTopCategories() -->
                   </div>
                 </div>
               </div>
@@ -256,7 +271,7 @@
                   </div>
                 </div>
 
-                <!-- NEW: Cấu trúc chi tiêu -->
+                <!-- Top 5 khoản chi -->
                 <div class="col-lg-6">
                   <div class="card h-100">
                     <div class="card-header fw-semibold">
@@ -268,6 +283,7 @@
                   </div>
                 </div>
 
+                <!-- Chi theo danh mục -->
                 <div class="col-lg-6">
                   <div class="card h-100">
                     <div class="card-header fw-semibold">
@@ -277,6 +293,7 @@
                   </div>
                 </div>
 
+                <!-- Cảnh báo & ghi chú -->
                 <div class="col-lg-6">
                   <div class="card h-100">
                     <div class="card-header fw-semibold">
@@ -291,16 +308,56 @@
             </div>
           </section>
 
-          <!-- Expenses -->
+          <!-- ========== Expenses ========== -->
           <section id="expenses" class="route">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h4 class="mb-0">Chi tiêu</h4>
-              <div class="d-flex gap-2">
+            <div
+              class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3"
+            >
+              <div>
+                <h4 class="mb-1">Chi tiêu</h4>
+                <div id="expenseFilterInfo" class="text-muted small">
+                  Đang hiển thị tất cả khoản chi trong tháng.
+                </div>
+              </div>
+
+              <!-- Nhóm filter chi tiết -->
+              <div
+                class="d-flex flex-wrap align-items-center gap-2 filters-group"
+                id="expenseFilters"
+              >
+                <!-- Tháng -->
                 <select
-                  class="form-select"
-                  style="max-width: 160px"
+                  class="form-select form-select-sm"
+                  style="min-width: 140px"
                   id="monthFilter"
                 ></select>
+
+                <!-- Danh mục -->
+                <select
+                  class="form-select form-select-sm"
+                  style="min-width: 150px"
+                  id="filterCategory"
+                >
+                  <option value="all">Tất cả danh mục</option>
+                </select>
+
+                <!-- Tài khoản -->
+                <select
+                  class="form-select form-select-sm"
+                  style="min-width: 150px"
+                  id="filterAccount"
+                >
+                  <option value="all">Tất cả tài khoản</option>
+                </select>
+
+                <!-- Tên / ghi chú -->
+                <input
+                  type="search"
+                  class="form-control form-control-sm"
+                  style="min-width: 180px"
+                  id="filterSearch"
+                  placeholder="Tìm theo tên / ghi chú..."
+                />
               </div>
             </div>
             <div class="card p-3">
@@ -325,7 +382,7 @@
             </div>
           </section>
 
-          <!-- Add Expense -->
+          <!-- ========== Add Expense ========== -->
           <section id="add-expense" class="route">
             <div class="row g-3">
               <div class="col-12 col-xl-12">
@@ -400,28 +457,10 @@
                   </div>
                 </div>
               </div>
-              <!-- <div class="col-12 col-xl-4">
-                <div class="card p-3">
-                  <h5 class="card-title">Mẹo AI (demo)</h5>
-                  <p class="muted small">
-                    Gợi ý phân loại, ghi chú thông minh, nhận diện khoản định
-                    kỳ.
-                  </p>
-                  <div class="d-flex gap-2 flex-wrap">
-                    <button class="btn btn-sm btn-outline-secondary">
-                      Phân loại tự động
-                    </button>
-                    <button class="btn btn-sm btn-outline-secondary">
-                      Đánh dấu định kỳ
-                    </button>
-                    <button class="btn btn-sm btn-outline-secondary">
-                      Gợi ý tài khoản
-                    </button>
-                  </div>
-                </div>
-              </div> -->
             </div>
           </section>
+
+          <!-- ========== Modals: Account & Income (lần khai báo chính) ========== -->
 
           <!-- Add Account Modal -->
           <div class="modal" id="addAccountModal" tabindex="-1">
@@ -563,7 +602,7 @@
                     <div class="col-md-6">
                       <label class="form-label">Tài khoản</label>
                       <select class="form-select" id="iAccount">
-                        <!-- Danh sách tài khoản sẽ tự đổ từ Firestore -->
+                        <!-- danh sách account từ Firestore -->
                       </select>
                     </div>
                     <div class="col-12">
@@ -647,33 +686,35 @@
             </div>
           </div>
 
-          <!-- Accounts -->
+          <!-- ========== Accounts section ========== -->
           <section id="accounts" class="route">
             <div class="row g-3">
               <div class="col-12 col-xl-6">
                 <div class="card p-3">
-                  <!-- Thu nhập trong tháng (đặt NGAY DƯỚI card bảng Tài khoản) -->
+                  <!-- Thu nhập trong tháng -->
                   <div class="card mt-3">
                     <div class="card-body">
                       <div
-                        class="d-flex justify-content-between align-items-center mb-2"
+                        class="d-flex flex-column flex-md-row justify-content-between align-items-start gap-2 mb-2"
                       >
                         <h6 class="mb-0">Thu nhập (tháng này)</h6>
-                        <button
-                          class="btn btn-outline-success btn-sm"
-                          data-bs-toggle="modal"
-                          data-bs-target="#transferModal"
-                        >
-                          ↔️ Chuyển tiền
-                        </button>
+                        <div class="d-flex flex-wrap gap-2 income-actions">
+                          <button
+                            class="btn btn-outline-success btn-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#transferModal"
+                          >
+                            ↔️ Chuyển tiền
+                          </button>
 
-                        <button
-                          class="btn btn-outline-success btn-sm"
-                          data-bs-toggle="modal"
-                          data-bs-target="#addIncomeModal"
-                        >
-                          + Thêm thu nhập
-                        </button>
+                          <button
+                            class="btn btn-outline-success btn-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#addIncomeModal"
+                          >
+                            + Thêm thu nhập
+                          </button>
+                        </div>
                       </div>
                       <div class="table-responsive">
                         <table class="table align-middle" id="incomesTable">
@@ -687,13 +728,13 @@
                             </tr>
                           </thead>
                           <tbody></tbody>
-                          <!-- cần có -->
                         </table>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
+
               <div class="col-12 col-xl-6">
                 <div class="card p-3">
                   <div
@@ -720,7 +761,6 @@
                       </tr>
                     </thead>
                     <tbody></tbody>
-                    <!-- PHẢI có tbody -->
                   </table>
 
                   <ul class="list-group list-group-flush" id="accountList"></ul>
@@ -729,38 +769,38 @@
             </div>
           </section>
 
-          <!-- Reports -->
+          <!-- ========== Reports ========== -->
           <section id="reports" class="route">
             <div class="row g-3">
-              <div class="col-12 col-xl-4">
-                <div class="card p-3">
-                  <h5>Bộ lọc</h5>
-                  <div class="mb-3">
-                    <label class="form-label">Khoảng thời gian</label>
-                    <select class="form-select" id="rangeSelect">
-                      <option>Tháng này</option>
-                      <option>30 ngày gần đây</option>
-                      <option>Tùy chọn</option>
-                    </select>
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Tài khoản</label>
-                    <select class="form-select" id="accountSelect">
-                      <option>Tất cả</option>
-                      <option>MSB</option>
-                      <option>Sacombank</option>
-                      <option>Túi thần tài MoMo</option>
-                      <option>VPBank</option>
-                    </select>
-                  </div>
-                  <button class="btn btn-primary w-100" id="btnApplyReport">
-                    Áp dụng
-                  </button>
-                </div>
-              </div>
               <div class="col-12 col-xl-8">
                 <div class="card p-3">
                   <h5>Tổng quan báo cáo</h5>
+
+                  <!-- Bộ lọc báo cáo -->
+                  <div class="d-flex flex-wrap align-items-center gap-2 my-3">
+                    <!-- Tài khoản -->
+                    <select
+                      id="accountSelect"
+                      class="form-select"
+                      style="max-width: 200px"
+                    >
+                      <option value="all">Tất cả tài khoản</option>
+                    </select>
+
+                    <!-- Nút áp dụng -->
+                    <button class="btn btn-primary" id="btnApplyReport">
+                      <i class="bi bi-funnel me-1"></i> Áp dụng
+                    </button>
+                  </div>
+
+                  <!-- Nhận xét nhanh -->
+                  <div class="card p-3 mb-3" id="reportInsights">
+                    <h5 class="mb-2">Nhận xét nhanh</h5>
+                    <div id="reportInsightsBody" class="text-muted small">
+                      Đang phân tích dữ liệu...
+                    </div>
+                  </div>
+
                   <div class="row g-3">
                     <div class="col-md-6">
                       <div class="p-3 rounded border" id="barChart">
@@ -773,6 +813,7 @@
                       </div>
                     </div>
                   </div>
+
                   <div class="mt-3">
                     <div class="table-responsive">
                       <table class="table" id="reportTable">
@@ -788,11 +829,40 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- Card Dòng tiền theo ngày -->
+                <div class="row g-3 mt-3">
+                  <div class="col-12 col-xl-8">
+                    <div class="card p-3">
+                      <div
+                        class="d-flex justify-content-between align-items-center mb-2"
+                      >
+                        <h5 class="mb-0">Dòng tiền theo ngày</h5>
+                        <small class="text-muted"
+                          >Thu &amp; Chi trong tháng hiện tại</small
+                        >
+                      </div>
+
+                      <div id="cashflowChart" class="cashflow-chart">
+                        <div class="text-muted small">Đang tải dữ liệu...</div>
+                      </div>
+
+                      <div class="mt-2 small text-secondary">
+                        <span class="me-3">
+                          <span class="legend-dot legend-dot-exp"></span> Chi
+                        </span>
+                        <span>
+                          <span class="legend-dot legend-dot-inc"></span> Thu
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
 
-          <!-- AI -->
+          <!-- ========== AI demo ========== -->
           <section id="ai" class="route">
             <div class="card p-3">
               <div class="d-flex align-items-center justify-content-between">
@@ -843,52 +913,12 @@
             </div>
           </section>
 
-          <!-- Settings -->
-          <!-- <section id="settings" class="route">
-            <div class="row g-3">
-              <div class="col-12 col-xl-6">
-                <div class="card p-3">
-                  <h5>Tài khoản</h5>
-                  <div class="mb-3">
-                    <label class="form-label">Tên hiển thị</label>
-                    <input
-                      class="form-control"
-                      id="inDisplayName"
-                      placeholder="Bạn H."
-                    />
-                  </div>
-                  <div class="mb-3">
-                    <label class="form-label">Email</label>
-                    <input
-                      class="form-control"
-                      id="inEmail"
-                      placeholder="you@example.com"
-                      disabled
-                    />
-                  </div>
-                  <button class="btn btn-primary" id="btnSaveProfile">
-                    Lưu
-                  </button>
-                </div>
-              </div>
-              <div class="col-12 col-xl-6">
-                <div class="card p-3">
-                  <h5>Tùy chọn</h5>
-                  <div class="form-check form-switch">
-                    <input
-                      class="form-check-input"
-                      type="checkbox"
-                      id="notif"
-                      checked
-                    />
-                    <label class="form-check-label" for="notif"
-                      >Nhận thông báo vượt ngân sách</label
-                    >
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section> -->
+          <!-- Settings (demo – đang tắt) -->
+          <!--
+          <section id="settings" class="route">
+            ...
+          </section>
+          -->
         </div>
 
         <!-- Mobile Footer -->
@@ -910,428 +940,247 @@
       </main>
     </div>
 
+    <!-- Floating Add button -->
     <a href="#add-expense" class="btn btn-primary fab-add" title="Thêm nhanh"
       ><i class="bi bi-plus-lg"></i
     ></a>
 
+    <!-- ================= Toast & Loading ================= -->
+    <div
+      class="toast-container position-fixed top-0 end-0 p-3"
+      style="z-index: 1080"
+    >
+      <div
+        id="appToast"
+        class="toast align-items-center border-0"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        <div class="d-flex">
+          <div class="toast-body">Đã thực hiện xong</div>
+          <button
+            type="button"
+            class="btn-close me-2 m-auto"
+            data-bs-dismiss="toast"
+            aria-label="Close"
+          ></button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="appLoading"
+      class="app-loading d-flex align-items-center justify-content-center"
+    >
+      <div class="spinner-border" role="status" aria-hidden="true"></div>
+    </div>
+
+    <!-- ================= Các modal còn lại (Transfer / Delete / Edit Expense) ================= -->
+
+    <!-- Transfer Modal -->
+    <div class="modal fade" id="transferModal" tabindex="-1">
+      <div class="modal-dialog modal-md modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Chuyển tiền giữa tài khoản</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-2">
+              <label class="form-label">Từ tài khoản</label>
+              <select class="form-select" id="tfFrom"></select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Đến tài khoản</label>
+              <select class="form-select" id="tfTo"></select>
+            </div>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label">Số tiền</label>
+                <input
+                  type="number"
+                  class="form-control"
+                  id="tfAmount"
+                  min="0"
+                  step="1000"
+                />
+              </div>
+              <div class="col-6">
+                <label class="form-label">Ngày</label>
+                <input type="date" class="form-control" id="tfDate" />
+              </div>
+            </div>
+            <div class="mt-2">
+              <label class="form-label">Ghi chú</label>
+              <input
+                class="form-control"
+                id="tfNote"
+                placeholder="Ví dụ: rút tiết kiệm sang MSB"
+              />
+            </div>
+            <div class="form-text mt-2">
+              * Chuyển tiền không làm thay đổi tổng Chi/Thu; chỉ ảnh hưởng Số dư
+              theo tài khoản.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
+              Huỷ
+            </button>
+            <button class="btn btn-primary" id="btnDoTransfer">Chuyển</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete Account Modal -->
+    <div class="modal fade" id="deleteAccountModal" tabindex="-1">
+      <div class="modal-dialog modal-md modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Xoá tài khoản</h5>
+            <button class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="daId" />
+            <div class="alert alert-warning small">
+              Tất cả <b>Chi tiêu</b>, <b>Thu nhập</b> và <b>Chuyển tiền</b> dùng
+              tài khoản này sẽ được <b>chuyển sang</b> tài khoản khác trước khi
+              xoá.
+            </div>
+            <label class="form-label">Chuyển sang tài khoản</label>
+            <select id="daTarget" class="form-select"></select>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
+              Huỷ
+            </button>
+            <button class="btn btn-danger" id="btnConfirmDeleteAccount">
+              Chuyển & xoá
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Expense Modal -->
+    <div class="modal fade" id="editExpenseModal" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Sửa chi tiêu</h5>
+            <button class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="edId" />
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Tên</label>
+                <input id="edName" class="form-control" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Số tiền</label>
+                <input id="edAmount" type="number" class="form-control" />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Ngày</label>
+                <input id="edDate" type="date" class="form-control" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Danh mục</label>
+                <select id="edCategory" class="form-select">
+                  <option>Ăn uống</option>
+                  <option>Coffee</option>
+                  <option>
+                    Cá nhân (Đồ điện tử, quần áo, giày dép, cắt tóc, ...)
+                  </option>
+                  <option>Tiền nhà</option>
+                  <option>Thể thao</option>
+                  <option>Siêu thị</option>
+                  <option>Xe cộ</option>
+                  <option>Y tế</option>
+                  <option>Cho mượn</option>
+                  <option>Khác</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Tài khoản</label>
+                <select id="edAccount" class="form-select"></select>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Ghi chú</label>
+                <textarea id="edNote" rows="2" class="form-control"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
+              Huỷ
+            </button>
+            <button class="btn btn-primary" id="btnSaveExpense">
+              Lưu thay đổi
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm Delete Expense -->
+    <div class="modal fade" id="confirmDeleteModal" tabindex="-1">
+      <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h6 class="modal-title">Xoá khoản chi?</h6>
+            <button class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">Hành động này không thể hoàn tác.</p>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
+              Huỷ
+            </button>
+            <button class="btn btn-danger" id="btnConfirmDelete">Xoá</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= Scripts ================= -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module" src="./assets/main.js"></script>
+    <script type="module">
+      // Sidebar toggle (mobile)
+      const sidebar = document.querySelector(".sidebar");
+      const backdrop = document.getElementById("sidebarBackdrop");
+      const toggleBtn = document.getElementById("btnSidebarToggle");
+
+      const closeSidebar = () => {
+        sidebar?.classList.remove("show");
+        backdrop?.classList.remove("show");
+      };
+
+      const openSidebar = () => {
+        sidebar?.classList.add("show");
+        backdrop?.classList.add("show");
+      };
+
+      toggleBtn?.addEventListener("click", () => {
+        const isOpen = sidebar?.classList.contains("show");
+        if (isOpen) {
+          closeSidebar();
+        } else {
+          openSidebar();
+        }
+      });
+
+      backdrop?.addEventListener("click", closeSidebar);
+      window.addEventListener("hashchange", closeSidebar);
+    </script>
   </body>
 </html>
-
-<!-- Toast container (top-right) -->
-<div
-  class="toast-container position-fixed top-0 end-0 p-3"
-  style="z-index: 1080"
->
-  <div
-    id="appToast"
-    class="toast align-items-center border-0"
-    role="alert"
-    aria-live="assertive"
-    aria-atomic="true"
-  >
-    <div class="d-flex">
-      <div class="toast-body">Đã thực hiện xong</div>
-      <button
-        type="button"
-        class="btn-close me-2 m-auto"
-        data-bs-dismiss="toast"
-        aria-label="Close"
-      ></button>
-    </div>
-  </div>
-</div>
-
-<!-- Add Account Modal -->
-<div class="modal" id="addAccountModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Thêm tài khoản</h5>
-        <button
-          type="button"
-          class="btn-close"
-          data-bs-dismiss="modal"
-        ></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-2">
-          <label class="form-label">Tên tài khoản</label>
-          <input class="form-control" id="aName" />
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Loại</label>
-          <select class="form-select" id="aType">
-            <option value="bank">Ngân hàng</option>
-            <option value="ewallet">Ví điện tử</option>
-            <option value="other">Khác</option>
-          </select>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="aDefault" />
-          <label class="form-check-label" for="aDefault"
-            >Đặt làm mặc định</label
-          >
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Huỷ
-        </button>
-        <button class="btn btn-primary" id="btnAddAccount">Thêm</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Edit Account Modal -->
-<div class="modal" id="editAccountModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Sửa tài khoản</h5>
-        <button
-          type="button"
-          class="btn-close"
-          data-bs-dismiss="modal"
-        ></button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="eaId" />
-        <div class="mb-2">
-          <label class="form-label">Tên tài khoản</label>
-          <input class="form-control" id="eaName" />
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Loại</label>
-          <select class="form-select" id="eaType">
-            <option value="bank">Ngân hàng</option>
-            <option value="ewallet">Ví điện tử</option>
-            <option value="other">Khác</option>
-          </select>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="eaDefault" />
-          <label class="form-check-label" for="eaDefault"
-            >Đặt làm mặc định</label
-          >
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Huỷ
-        </button>
-        <button class="btn btn-primary" id="btnSaveAccount">Lưu</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Add Income Modal -->
-<div class="modal" id="addIncomeModal" tabindex="-1">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Thêm thu nhập</h5>
-        <button
-          type="button"
-          class="btn-close"
-          data-bs-dismiss="modal"
-        ></button>
-      </div>
-      <div class="modal-body">
-        <div class="row g-3">
-          <div class="col-md-6">
-            <label class="form-label">Tên thu nhập</label>
-            <input
-              class="form-control"
-              id="iName"
-              placeholder="Lương, dạy thêm, refund..."
-            />
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Số tiền</label>
-            <input class="form-control" id="iAmount" type="number" />
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Ngày</label>
-            <input class="form-control" id="iDate" type="date" />
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Tài khoản</label>
-            <select class="form-select" id="iAccount"></select>
-          </div>
-          <div class="col-12">
-            <label class="form-label">Ghi chú</label>
-            <textarea class="form-control" id="iNote" rows="2"></textarea>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Huỷ
-        </button>
-        <button class="btn btn-primary" id="btnAddIncome">Thêm</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Edit Income Modal -->
-<div class="modal" id="editIncomeModal" tabindex="-1">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Sửa thu nhập</h5>
-        <button
-          type="button"
-          class="btn-close"
-          data-bs-dismiss="modal"
-        ></button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="eiId" />
-        <div class="row g-3">
-          <div class="col-md-6">
-            <label class="form-label">Tên thu nhập</label>
-            <input class="form-control" id="eiName" />
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Số tiền</label>
-            <input class="form-control" id="eiAmount" type="number" />
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Ngày</label>
-            <input class="form-control" id="eiDate" type="date" />
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Tài khoản</label>
-            <select class="form-select" id="eiAccount"></select>
-          </div>
-          <div class="col-12">
-            <label class="form-label">Ghi chú</label>
-            <textarea class="form-control" id="eiNote" rows="2"></textarea>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Huỷ
-        </button>
-        <button class="btn btn-primary" id="eiSave">Lưu thay đổi</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Transfer Modal -->
-<div class="modal fade" id="transferModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Chuyển tiền giữa tài khoản</h5>
-        <button
-          type="button"
-          class="btn-close"
-          data-bs-dismiss="modal"
-        ></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-2">
-          <label class="form-label">Từ tài khoản</label>
-          <select class="form-select" id="tfFrom"></select>
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Đến tài khoản</label>
-          <select class="form-select" id="tfTo"></select>
-        </div>
-        <div class="row g-2">
-          <div class="col-6">
-            <label class="form-label">Số tiền</label>
-            <input
-              type="number"
-              class="form-control"
-              id="tfAmount"
-              min="0"
-              step="1000"
-            />
-          </div>
-          <div class="col-6">
-            <label class="form-label">Ngày</label>
-            <input type="date" class="form-control" id="tfDate" />
-          </div>
-        </div>
-        <div class="mt-2">
-          <label class="form-label">Ghi chú</label>
-          <input
-            class="form-control"
-            id="tfNote"
-            placeholder="Ví dụ: rút tiết kiệm sang MSB"
-          />
-        </div>
-        <div class="form-text mt-2">
-          * Chuyển tiền không làm thay đổi tổng Chi/Thu; chỉ ảnh hưởng Số dư
-          theo tài khoản.
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Huỷ
-        </button>
-        <button class="btn btn-primary" id="btnDoTransfer">Chuyển</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal SỬA TÀI KHOẢN -->
-<div class="modal fade" id="editAccountModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Sửa tài khoản</h5>
-        <button class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="eaId" />
-        <div class="mb-2">
-          <label class="form-label">Tên</label>
-          <input id="eaName" class="form-control" />
-        </div>
-        <div class="mb-2">
-          <label class="form-label">Loại</label>
-          <select id="eaType" class="form-select">
-            <option value="bank">Ngân hàng</option>
-            <option value="ewallet">Ví điện tử</option>
-            <option value="other">Khác</option>
-          </select>
-        </div>
-        <div class="form-check">
-          <input id="eaDefault" class="form-check-input" type="checkbox" />
-          <label class="form-check-label" for="eaDefault"
-            >Đặt làm mặc định</label
-          >
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Huỷ
-        </button>
-        <button class="btn btn-primary" id="btnSaveAccount">Lưu</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal XOÁ TÀI KHOẢN (chuyển giao giao dịch) -->
-<div class="modal fade" id="deleteAccountModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Xoá tài khoản</h5>
-        <button class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="daId" />
-        <div class="alert alert-warning small">
-          Tất cả <b>Chi tiêu</b>, <b>Thu nhập</b> và <b>Chuyển tiền</b> dùng tài
-          khoản này sẽ được <b>chuyển sang</b> tài khoản khác trước khi xoá.
-        </div>
-        <label class="form-label">Chuyển sang tài khoản</label>
-        <select id="daTarget" class="form-select"></select>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Huỷ
-        </button>
-        <button class="btn btn-danger" id="btnConfirmDeleteAccount">
-          Chuyển & xoá
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Edit Expense Modal -->
-<div class="modal fade" id="editExpenseModal" tabindex="-1">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Sửa chi tiêu</h5>
-        <button class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="edId" />
-        <div class="row g-3">
-          <div class="col-md-6">
-            <label class="form-label">Tên</label>
-            <input id="edName" class="form-control" />
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Số tiền</label>
-            <input id="edAmount" type="number" class="form-control" />
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Ngày</label>
-            <input id="edDate" type="date" class="form-control" />
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Danh mục</label>
-            <select id="edCategory" class="form-select">
-              <option>Ăn uống</option>
-              <option>Coffee</option>
-              <option>
-                Cá nhân (Đồ điện tử, quần áo, giày dép, cắt tóc, ...)
-              </option>
-              <option>Tiền nhà</option>
-              <option>Thể thao</option>
-              <option>Siêu thị</option>
-              <option>Xe cộ</option>
-              <option>Y tế</option>
-              <option>Cho mượn</option>
-              <option>Khác</option>
-            </select>
-          </div>
-          <div class="col-md-6">
-            <label class="form-label">Tài khoản</label>
-            <select id="edAccount" class="form-select"></select>
-          </div>
-          <div class="col-12">
-            <label class="form-label">Ghi chú</label>
-            <textarea id="edNote" rows="2" class="form-control"></textarea>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Huỷ
-        </button>
-        <button class="btn btn-primary" id="btnSaveExpense">
-          Lưu thay đổi
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Confirm Delete Expense -->
-<div class="modal fade" id="confirmDeleteModal" tabindex="-1">
-  <div class="modal-dialog modal-sm modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h6 class="modal-title">Xoá khoản chi?</h6>
-        <button class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <p class="mb-0">Hành động này không thể hoàn tác.</p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">
-          Huỷ
-        </button>
-        <button class="btn btn-danger" id="btnConfirmDelete">Xoá</button>
-      </div>
-    </div>
-  </div>
-</div>

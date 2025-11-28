@@ -1,4 +1,13 @@
-# netlify.toml (tuỳ chọn)
 [build]
   command = "npm run build"
   publish = "dist"
+
+[dev]
+  command = "npm run dev"
+  port = 8888
+  targetPort = 5173
+  framework = "vite"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

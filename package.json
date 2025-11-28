@@ -21,5 +21,10 @@
   "description": "",
   "devDependencies": {
     "vite": "^7.2.2"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0"
   }
 }

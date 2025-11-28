@@ -13,3 +13,8 @@ firebaseConfig.json
 # System / temp
 *.log
 npm-debug.log*
+
+# Local Netlify folder
+.netlify
+
+deno.lock
