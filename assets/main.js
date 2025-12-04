@@ -20,6 +20,7 @@ import {
   addTransfer,
   updateAccount,
   deleteAccountWithReassign,
+  balancesByAccountTotal,
 } from "./db.js";
 import {
   fillSelectMonths,
@@ -39,6 +40,17 @@ let _expTotal = 0;
 let _incTotal = 0;
 let _pendingDeleteId = null; // id chi tiêu đang chờ xoá
 let _pendingDeleteIncomeId = null; // id thu nhập đang chờ xoá
+let _allExpenses = []; // toàn bộ chi tiêu của tháng đang chọn
+let _expenseFilters = {
+  category: "all",
+  account: "all",
+  search: "",
+};
+
+// Filter cho trang Báo cáo (phân tích)
+let _reportFilters = {
+  account: "all", // 'all' = tất cả tài khoản
+};
 
 /* =========================
  * 3) HELPER DOM & THÁNG
@@ -107,6 +119,12 @@ function showToast(msg, type = "success") {
   t.show();
 }
 
+function setGlobalLoading(on) {
+  const el = document.getElementById("appLoading");
+  if (!el) return;
+  el.classList.toggle("show", !!on);
+}
+
 // Cập nhật menu user góc phải (ẩn/hiện đăng nhập/đăng xuất + label tên)
 function updateUserMenuUI(user) {
   // Khớp đúng ID với index.html
@@ -136,6 +154,112 @@ function updateNavbarStats() {
 
 function formatVND(n) {
   return `${Number(n || 0).toLocaleString("vi-VN")}đ`;
+}
+
+function getReportAccountFilter() {
+  const sel = document.getElementById("accountSelect");
+  if (!sel) return "all";
+  const v = sel.value || "all";
+  if (v === "Tất cả") return "all"; // phòng trường hợp option cũ
+  return v;
+}
+
+function populateExpenseFiltersOptions(list) {
+  const catSel = document.getElementById("filterCategory");
+  const accSel = document.getElementById("filterAccount");
+  if (!catSel && !accSel) return;
+
+  const categories = [
+    ...new Set(list.map((e) => (e.category || "").trim()).filter(Boolean)),
+  ].sort((a, b) => a.localeCompare(b, "vi"));
+
+  const accounts = [
+    ...new Set(list.map((e) => (e.account || "").trim()).filter(Boolean)),
+  ].sort((a, b) => a.localeCompare(b, "vi"));
+
+  const prevCat = catSel?.value || "all";
+  const prevAcc = accSel?.value || "all";
+
+  if (catSel) {
+    catSel.innerHTML =
+      '<option value="all">Tất cả danh mục</option>' +
+      categories.map((c) => `<option value="${c}">${c}</option>`).join("");
+    if ([...catSel.options].some((o) => o.value === prevCat)) {
+      catSel.value = prevCat;
+    }
+  }
+
+  if (accSel) {
+    accSel.innerHTML =
+      '<option value="all">Tất cả tài khoản</option>' +
+      accounts.map((a) => `<option value="${a}">${a}</option>`).join("");
+    if ([...accSel.options].some((o) => o.value === prevAcc)) {
+      accSel.value = prevAcc;
+    }
+  }
+}
+
+function applyExpenseFiltersAndRender() {
+  const tbody = document.querySelector("#expensesTable tbody");
+  if (!tbody) return;
+
+  const catSel = document.getElementById("filterCategory");
+  const accSel = document.getElementById("filterAccount");
+  const searchEl = document.getElementById("filterSearch");
+
+  const category = catSel?.value || "all";
+  const account = accSel?.value || "all";
+  const keyword = (searchEl?.value || "").trim().toLowerCase();
+
+  _expenseFilters = { category, account, search: keyword };
+
+  let list = Array.isArray(_allExpenses) ? [..._allExpenses] : [];
+
+  if (category !== "all") {
+    const c = category.toLowerCase();
+    list = list.filter((e) => (e.category || "").toLowerCase() === c);
+  }
+
+  if (account !== "all") {
+    const a = account.toLowerCase();
+    list = list.filter((e) => (e.account || "").toLowerCase() === a);
+  }
+
+  if (keyword) {
+    list = list.filter((e) => {
+      const name = (e.name || "").toLowerCase();
+      const note = (e.note || "").toLowerCase();
+      return name.includes(keyword) || note.includes(keyword);
+    });
+  }
+
+  renderExpensesTable(tbody, list);
+
+  const infoEl = document.getElementById("expenseFilterInfo");
+  if (infoEl) {
+    const totalFiltered = list.reduce((s, x) => s + Number(x.amount || 0), 0);
+    if (
+      !_allExpenses.length ||
+      (list.length === _allExpenses.length &&
+        category === "all" &&
+        account === "all" &&
+        !keyword)
+    ) {
+      infoEl.textContent = `${list.length} khoản chi • ${formatVND(
+        totalFiltered
+      )} trong tháng này`;
+    } else {
+      const totalAll = _allExpenses.reduce(
+        (s, x) => s + Number(x.amount || 0),
+        0
+      );
+      infoEl.textContent = `${list.length}/${
+        _allExpenses.length
+      } khoản chi • ${formatVND(totalFiltered)} (từ tổng ${formatVND(
+        totalAll
+      )})`;
+    }
+  }
 }
 
 // ==== Helpers cho Dashboard/Export ====
@@ -226,7 +350,7 @@ async function exportCsvCurrentMonth(uid) {
     "Account",
     "Note",
   ];
-  const csv = [
+  const csvBody = [
     header.join(","),
     ...rows.map((r) =>
       [
@@ -241,7 +365,12 @@ async function exportCsvCurrentMonth(uid) {
     ),
   ].join("\n");
 
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  // 🔹 THÊM BOM UTF-8 để Excel hiểu đúng tiếng Việt
+  const bom = "\uFEFF"; // UTF-8 BOM
+  const blob = new Blob([bom + csvBody], {
+    type: "text/csv;charset=utf-8;",
+  });
+
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `transactions_${ym}.csv`;
@@ -332,6 +461,29 @@ async function loadAccountsAndFill(uid) {
     .filter(Boolean);
 
   targets.forEach((sel) => fillAccountSelect?.(sel, _accounts));
+
+  // ... sau khi _accounts đã được gán và các select khác đã được fill
+
+  // Đổ tài khoản vào filter Báo cáo (accountSelect)
+  const reportAccSelect = document.getElementById("accountSelect");
+  if (reportAccSelect) {
+    const current = _reportFilters.account || "all";
+    reportAccSelect.innerHTML =
+      '<option value="all">Tất cả tài khoản</option>' +
+      _accounts
+        .map((acc) => `<option value="${acc.name}">${acc.name}</option>`)
+        .join("");
+
+    if (
+      current !== "all" &&
+      [...reportAccSelect.options].some((o) => o.value === current)
+    ) {
+      reportAccSelect.value = current;
+    } else {
+      reportAccSelect.value = "all";
+      _reportFilters.account = "all";
+    }
+  }
 }
 
 // 4.2. Tải & render CHI TIÊU theo tháng (nếu bảng tồn tại) + cập nhật tổng tháng
@@ -339,13 +491,17 @@ async function refreshExpenses(uid) {
   const ym = getMonthValue(); // YYYY-MM
   const list = await listExpensesByMonth(uid, ym);
 
-  const tbody = document.querySelector("#expensesTable tbody");
-  if (tbody && typeof renderExpensesTable === "function")
-    renderExpensesTable(tbody, list);
+  // Lưu lại list thô của tháng để dùng cho filter
+  _allExpenses = Array.isArray(list) ? list : [];
 
-  _expTotal = list.reduce((s, x) => s + Number(x.amount || 0), 0);
+  // Đổ option cho bộ lọc + render bảng theo filter hiện tại
+  populateExpenseFiltersOptions(_allExpenses);
+  applyExpenseFiltersAndRender();
+
+  // Tổng chi tháng này (dùng cho navbar & dashboard)
+  _expTotal = _allExpenses.reduce((s, x) => s + Number(x.amount || 0), 0);
   if (typeof updateNavbarStats === "function") updateNavbarStats();
-  updateDashboardTotals?.(); // <— thêm dòng này
+  updateDashboardTotals?.();
 }
 
 // 4.3. Tải & render THU NHẬP theo tháng (chỉ khi có bảng thu nhập)
@@ -365,7 +521,7 @@ async function refreshIncomes(uid) {
 // 4.4. Tính & render SỐ DƯ theo tài khoản (Dashboard card #balanceList)
 async function refreshBalances(uid) {
   const ym = getMonthValue();
-  const items = await balancesByAccount(uid, ym);
+  const items = await balancesByAccountTotal(uid);
 
   const wrap = document.getElementById("balanceList");
   if (wrap && typeof renderBalancesList === "function") {
@@ -375,21 +531,29 @@ async function refreshBalances(uid) {
 
 // 4.5. Refresh tất cả phần phụ thuộc tháng (gọi khi login/đổi tháng/CRUD)
 async function refreshAll(uid) {
-  await Promise.all([
-    refreshExpenses(uid),
-    refreshIncomes(uid),
-    loadAccountsAndFill(uid),
-    renderOverviewLower(uid),
-  ]);
-  await refreshBalances(uid);
-  updateDashboardMonthBadge?.();
+  if (!uid) return;
+  setGlobalLoading(true);
+  try {
+    await Promise.all([
+      refreshExpenses(uid),
+      refreshIncomes(uid),
+      loadAccountsAndFill(uid),
+      renderOverviewLower(uid),
+    ]);
 
-  // NEW: bổ sung Dashboard & Top categories
-  await Promise.all([
-    refreshDashboardStats(uid),
-    refreshTopCategories(uid),
-    renderOverviewLower(uid),
-  ]);
+    await refreshBalances(uid);
+    updateDashboardMonthBadge?.();
+
+    await Promise.all([
+      refreshDashboardStats(uid),
+      refreshTopCategories(uid),
+      renderReportsCharts(uid), // ⬅ sẽ thêm ở bước 3
+      renderReportInsights(uid),
+      renderReportCashflow(uid),
+    ]);
+  } finally {
+    setGlobalLoading(false);
+  }
 }
 
 // ---- Helpers
@@ -403,6 +567,37 @@ function lastMonths(n = 6) {
     arr.push(YM(new Date(now.getFullYear(), now.getMonth() - i, 1)));
   }
   return arr; // ['2025-06','2025-07',...,'2025-11']
+}
+
+async function suggestCategoryByAI(name, note) {
+  try {
+    const catSelect = document.getElementById("eCategory");
+    if (!catSelect) return;
+
+    const categories = Array.from(catSelect.options).map((o) => o.value);
+
+    const res = await fetch("/.netlify/functions/ai-categorize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, note, categories }),
+    });
+
+    if (!res.ok) {
+      console.warn("AI categorize request failed");
+      return;
+    }
+
+    const data = await res.json();
+
+    if (data.category && categories.includes(data.category)) {
+      catSelect.value = data.category;
+      // Nếu muốn: highlight nhẹ để biết là AI chọn giúp
+      // catSelect.classList.add("ai-suggested");
+      // setTimeout(() => catSelect.classList.remove("ai-suggested"), 800);
+    }
+  } catch (err) {
+    console.error("suggestCategoryByAI error:", err);
+  }
 }
 
 // ---- 1) Giao dịch gần nhất (tháng hiện tại)
@@ -538,6 +733,99 @@ async function renderOverviewTrend(uid) {
   `;
 }
 
+async function renderReportCashflow(uid) {
+  const el = document.getElementById("cashflowChart");
+  if (!el || !uid) return;
+
+  const ym = getMonthValue(); // "YYYY-MM"
+  const [year, month] = ym.split("-").map(Number);
+  if (!year || !month) return;
+
+  el.textContent = "Đang tải biểu đồ dòng tiền...";
+
+  try {
+    const [exps, incs] = await Promise.all([
+      listExpensesByMonth(uid, ym),
+      listIncomesByMonth(uid, ym),
+    ]);
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const chi = Array(daysInMonth).fill(0);
+    const thu = Array(daysInMonth).fill(0);
+
+    const getDayIndex = (doc) => {
+      const d = doc?.date?.seconds
+        ? new Date(doc.date.seconds * 1000)
+        : new Date(doc.date);
+      if (isNaN(d)) return null;
+      return d.getDate() - 1; // index 0-based
+    };
+
+    exps.forEach((e) => {
+      const idx = getDayIndex(e);
+      if (idx == null || idx < 0 || idx >= daysInMonth) return;
+      chi[idx] += Number(e.amount || e.money || 0);
+    });
+
+    incs.forEach((i) => {
+      const idx = getDayIndex(i);
+      if (idx == null || idx < 0 || idx >= daysInMonth) return;
+      thu[idx] += Number(i.amount || i.money || 0);
+    });
+
+    const hasData = chi.some((v) => v > 0) || thu.some((v) => v > 0);
+    if (!hasData) {
+      el.innerHTML =
+        '<div class="text-muted small">Chưa có dữ liệu thu / chi trong tháng này.</div>';
+      return;
+    }
+
+    // --- Vẽ line chart đơn giản ---
+    const W = el.clientWidth || 520;
+    const H = 160;
+    const pad = 16;
+
+    const max = Math.max(...chi, ...thu, 1);
+    const sx = (i) =>
+      daysInMonth === 1 ? W / 2 : pad + (i * (W - 2 * pad)) / (daysInMonth - 1);
+    const sy = (v) => H - pad - (v / max) * (H - 2 * pad);
+    const path = (arr) =>
+      arr.map((v, i) => (i ? "L" : "M") + sx(i) + "," + sy(v)).join(" ");
+
+    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+    el.innerHTML = `
+      <svg class="spark" viewBox="0 0 ${W} ${H}">
+        <path class="line-exp" d="${path(chi)}"></path>
+        <path class="line-inc" d="${path(thu)}"></path>
+        <g font-size="9" fill="#64748b">
+          ${days
+            .filter((d) => d === 1 || d === daysInMonth || d % 5 === 0)
+            .map((d) => {
+              const idx = d - 1;
+              return `<text x="${sx(idx)}" y="${
+                H - 2
+              }" text-anchor="middle">${d}</text>`;
+            })
+            .join("")}
+        </g>
+      </svg>
+      <div class="cashflow-legend">
+        <span class="legend-item">
+          <span class="dot dot-exp"></span> Chi
+        </span>
+        <span class="legend-item">
+          <span class="dot dot-inc"></span> Thu
+        </span>
+      </div>
+    `;
+  } catch (err) {
+    console.error("renderReportCashflow error:", err);
+    el.innerHTML =
+      '<div class="text-danger small">Lỗi tải dữ liệu dòng tiền.</div>';
+  }
+}
+
 // ---- 3) Chi theo danh mục (tháng hiện tại)
 async function renderOverviewCategory(uid) {
   const ym = getMonthValue();
@@ -609,6 +897,305 @@ async function renderOverviewLower(uid) {
     renderOverviewTopExpenses(uid),
     renderOverviewCategory(uid),
   ]);
+}
+
+async function renderReportsCharts(uid) {
+  const barWrap = document.getElementById("barChart");
+  const pieWrap = document.getElementById("pieChart");
+  if (!barWrap || !pieWrap || !uid) return;
+
+  const ym = getMonthValue(); // YYYY-MM
+  const account = _reportFilters.account || getReportAccountFilter();
+
+  try {
+    // Lấy chi + thu tháng này
+    const [expenses, incomes] = await Promise.all([
+      listExpensesByMonth(uid, ym),
+      listIncomesByMonth(uid, ym),
+    ]);
+
+    // Lọc theo tài khoản (cả chi + thu, để insight còn dùng được)
+    const expFiltered =
+      account === "all"
+        ? expenses
+        : expenses.filter(
+            (e) => (e.account || "").toLowerCase() === account.toLowerCase()
+          );
+
+    const incFiltered =
+      account === "all"
+        ? incomes
+        : incomes.filter(
+            (i) => (i.account || "").toLowerCase() === account.toLowerCase()
+          );
+
+    if (!expFiltered.length && !incFiltered.length) {
+      const msg =
+        '<div class="text-muted small">Chưa có dữ liệu trong tháng này cho tài khoản đã chọn.</div>';
+      barWrap.innerHTML = msg;
+      pieWrap.innerHTML = msg;
+      return;
+    }
+
+    // === BAR CHART: Top 5 danh mục chi tiêu (từ expFiltered) ===
+    const catMap = new Map();
+    expFiltered.forEach((e) => {
+      const cat = e.category || "Khác";
+      catMap.set(cat, (catMap.get(cat) || 0) + Number(e.amount || 0));
+    });
+
+    const catEntries = [...catMap.entries()].sort((a, b) => b[1] - a[1]);
+    const topCats = catEntries.slice(0, 5);
+    const maxVal =
+      topCats.length > 0 ? Math.max(...topCats.map(([, v]) => v)) : 0;
+
+    if (!topCats.length || maxVal <= 0) {
+      barWrap.innerHTML =
+        '<div class="text-muted small">Chưa có dữ liệu chi tiêu trong tháng này.</div>';
+    } else {
+      barWrap.innerHTML = `
+        <div class="ht-bar-chart">
+          ${topCats
+            .map(([name, val]) => {
+              const h = (val / maxVal) * 100 || 1;
+              return `
+              <div class="bar-col">
+                <div class="bar" style="height:${h}%">
+                  <span class="bar-value">${Number(val).toLocaleString(
+                    "vi-VN"
+                  )}đ</span>
+                </div>
+                <div class="bar-label" title="${name}">${name}</div>
+              </div>`;
+            })
+            .join("")}
+        </div>`;
+    }
+
+    // === PIE CHART: Tỷ trọng chi tiêu theo danh mục (cũng từ expFiltered) ===
+    const totalChi = catEntries.reduce((s, [, v]) => s + v, 0);
+    if (!totalChi) {
+      pieWrap.innerHTML =
+        '<div class="text-muted small">Chưa có dữ liệu chi tiêu trong tháng này.</div>';
+      return;
+    }
+
+    const colors = [
+      "#4E79A7",
+      "#F28E2B",
+      "#E15759",
+      "#76B7B2",
+      "#59A14F",
+      "#EDC948",
+      "#B07AA1",
+      "#9C755F",
+      "#BAB0AC",
+    ];
+
+    let currentDeg = 0;
+    const segments = [];
+    const legends = [];
+    const usedCats = topCats.length ? topCats : catEntries;
+
+    usedCats.forEach(([name, val], idx) => {
+      const start = currentDeg;
+      const angle = (val / totalChi) * 360;
+      const end = start + angle;
+      const color = colors[idx % colors.length];
+      currentDeg = end;
+
+      segments.push(`${color} ${start}deg ${end}deg`);
+
+      const percent = ((val / totalChi) * 100).toFixed(1);
+      legends.push(`
+        <div class="ht-pie-legend-row">
+          <div class="d-flex align-items-center">
+            <span class="ht-pie-dot" style="background:${color}"></span>
+            <span class="text-truncate">${name}</span>
+          </div>
+          <div class="text-end">
+            <strong>${percent}%</strong>
+            <span class="text-muted ms-1 small">${Number(val).toLocaleString(
+              "vi-VN"
+            )}đ</span>
+          </div>
+        </div>`);
+    });
+
+    pieWrap.innerHTML = `
+      <div class="d-flex align-items-center gap-3 flex-wrap">
+        <div class="ht-pie" style="background-image: conic-gradient(${segments.join(
+          ","
+        )});"></div>
+        <div class="flex-grow-1">
+          ${legends.join("")}
+        </div>
+      </div>`;
+  } catch (err) {
+    console.error("[renderReportsCharts]", err);
+    barWrap.innerHTML =
+      '<div class="text-danger small">Lỗi tải dữ liệu báo cáo.</div>';
+    pieWrap.innerHTML =
+      '<div class="text-danger small">Lỗi tải dữ liệu báo cáo.</div>';
+  }
+}
+
+async function renderReportInsights(uid) {
+  const wrap = document.getElementById("reportInsightsBody");
+  if (!wrap || !uid) return;
+
+  const ym = getMonthValue(); // tháng hiện tại
+  const account = _reportFilters.account || getReportAccountFilter();
+
+  const [y, m] = ym.split("-").map(Number);
+  let prevY = y;
+  let prevM = m - 1;
+  if (prevM === 0) {
+    prevM = 12;
+    prevY = y - 1;
+  }
+  const prevYm = `${prevY}-${String(prevM).padStart(2, "0")}`;
+
+  try {
+    // Chi + Thu tháng này & tháng trước
+    const [curExp, curInc, prevExp, prevInc] = await Promise.all([
+      listExpensesByMonth(uid, ym),
+      listIncomesByMonth(uid, ym),
+      listExpensesByMonth(uid, prevYm),
+      listIncomesByMonth(uid, prevYm),
+    ]);
+
+    const filterByAcc = (list) =>
+      account === "all"
+        ? list
+        : list.filter(
+            (x) => (x.account || "").toLowerCase() === account.toLowerCase()
+          );
+
+    const curE = filterByAcc(curExp);
+    const curI = filterByAcc(curInc);
+    const prevE = filterByAcc(prevExp);
+    const prevI = filterByAcc(prevInc);
+
+    if (!curE.length && !curI.length) {
+      wrap.innerHTML =
+        '<span class="text-muted">Chưa có dữ liệu để phân tích cho tài khoản đã chọn.</span>';
+      return;
+    }
+
+    const totalChi = curE.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const totalThu = curI.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const net = totalThu - totalChi;
+
+    const prevChi = prevE.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const prevThu = prevI.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const prevNet = prevThu - prevChi;
+
+    let chiCompareHtml = "";
+    if (prevChi > 0) {
+      const diff = totalChi - prevChi;
+      const perc = Math.abs((diff / prevChi) * 100).toFixed(1);
+      if (diff > 0) {
+        chiCompareHtml = `<span class="insight-up">+${perc}%</span> so với chi tháng trước`;
+      } else if (diff < 0) {
+        chiCompareHtml = `<span class="insight-down">-${perc}%</span> so với chi tháng trước`;
+      } else {
+        chiCompareHtml = `Chi không đổi so với tháng trước`;
+      }
+    } else {
+      chiCompareHtml = `Không có dữ liệu chi tháng trước để so sánh`;
+    }
+
+    let netCompareHtml = "";
+    if (prevE.length || prevI.length) {
+      const diffNet = net - prevNet;
+      const percNet =
+        prevNet === 0 ? null : Math.abs((diffNet / prevNet) * 100).toFixed(1);
+      if (prevNet === 0 || percNet === null) {
+        netCompareHtml = `Không có đủ dữ liệu để so sánh số dư với tháng trước`;
+      } else if (diffNet > 0) {
+        netCompareHtml = `<span class="insight-down">Tốt hơn ${percNet}%</span> so với số dư tháng trước`;
+      } else if (diffNet < 0) {
+        netCompareHtml = `<span class="insight-up">Xấu hơn ${percNet}%</span> so với số dư tháng trước`;
+      } else {
+        netCompareHtml = `Số dư không đổi so với tháng trước`;
+      }
+    }
+
+    // Top category (chi) & ngày chi nhiều nhất vẫn dựa trên curE
+    const catMap = new Map();
+    curE.forEach((e) => {
+      const cat = e.category || "Khác";
+      catMap.set(cat, (catMap.get(cat) || 0) + Number(e.amount || 0));
+    });
+    const topCat = [...catMap.entries()].sort((a, b) => b[1] - a[1])[0];
+
+    const dayMap = new Map();
+    curE.forEach((e) => {
+      const d = e?.date?.seconds
+        ? new Date(e.date.seconds * 1000)
+        : new Date(e.date);
+      if (isNaN(d)) return;
+      const key = d.toISOString().slice(0, 10);
+      dayMap.set(key, (dayMap.get(key) || 0) + Number(e.amount || 0));
+    });
+    const topDay = [...dayMap.entries()].sort((a, b) => b[1] - a[1])[0];
+
+    const accLabel =
+      account === "all" ? "tất cả tài khoản" : `tài khoản ${account}`;
+
+    wrap.innerHTML = `
+      <div class="insight-item">
+        • Tổng chi tháng này (${accLabel}): <strong>${formatVND(
+      totalChi
+    )}</strong>
+      </div>
+
+      <div class="insight-item">
+        • Tổng thu tháng này (${accLabel}): <strong>${formatVND(
+      totalThu
+    )}</strong>
+      </div>
+
+      <div class="insight-item">
+        • Số dư (Thu - Chi): <strong>${formatVND(net)}</strong>
+      </div>
+
+      <div class="insight-item">
+        • So sánh chi tiêu: ${chiCompareHtml}
+      </div>
+
+      ${
+        netCompareHtml
+          ? `<div class="insight-item">• So sánh số dư: ${netCompareHtml}</div>`
+          : ""
+      }
+
+      ${
+        topCat
+          ? `
+      <div class="insight-item">
+        • Danh mục chi cao nhất: <strong>${topCat[0]}</strong>
+        (${formatVND(topCat[1])})
+      </div>`
+          : ""
+      }
+
+      ${
+        topDay
+          ? `
+      <div class="insight-item">
+        • Ngày chi nhiều nhất: <strong>${topDay[0]}</strong>
+        (${formatVND(topDay[1])})
+      </div>`
+          : ""
+      }
+    `;
+  } catch (err) {
+    wrap.innerHTML =
+      '<span class="text-danger small">Lỗi phân tích dữ liệu.</span>';
+    console.error("renderReportInsights error:", err);
+  }
 }
 
 async function doDeleteExpense() {
@@ -978,9 +1565,21 @@ document
 // 6.2. Đổi tháng -> reload tất cả khối phụ thuộc tháng
 document.getElementById("monthFilter")?.addEventListener("change", async () => {
   if (_currentUser) await refreshAll(_currentUser.uid);
-  await refreshExpenses(_currentUser.uid);
   updateDashboardMonthBadge?.();
 });
+
+// Thay đổi bộ lọc chi tiêu (danh mục / tài khoản / search)
+document
+  .getElementById("filterCategory")
+  ?.addEventListener("change", () => applyExpenseFiltersAndRender());
+
+document
+  .getElementById("filterAccount")
+  ?.addEventListener("change", () => applyExpenseFiltersAndRender());
+
+document
+  .getElementById("filterSearch")
+  ?.addEventListener("input", () => applyExpenseFiltersAndRender());
 
 // 6.3. Thêm Thu nhập (modal #addIncomeModal)
 document.getElementById("btnAddIncome")?.addEventListener("click", async () => {
@@ -1351,6 +1950,34 @@ document
       showToast("Không thể chuyển tiền: " + (err.message || err), "error");
     }
   });
+
+document.getElementById("btnApplyReport")?.addEventListener("click", () => {
+  const acc = getReportAccountFilter();
+  _reportFilters.account = acc;
+
+  if (_currentUser) {
+    renderReportsCharts(_currentUser.uid);
+    renderReportInsights(_currentUser.uid);
+  }
+});
+
+const eNameInput = document.getElementById("eName");
+if (eNameInput) {
+  let aiTimer = null;
+
+  eNameInput.addEventListener("input", () => {
+    clearTimeout(aiTimer);
+    const name = eNameInput.value.trim();
+    const note = document.getElementById("eNote")?.value.trim() || "";
+
+    if (!name) return;
+
+    // Đợi user dừng gõ 0.7s rồi mới gọi AI để tránh spam
+    aiTimer = setTimeout(() => {
+      suggestCategoryByAI(name, note);
+    }, 500);
+  });
+}
 
 /* =========================
  * 7) HOOKS PHỤ (nếu trang mở thẳng tab #accounts thì vẫn render)

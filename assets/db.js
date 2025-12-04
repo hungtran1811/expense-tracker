@@ -172,6 +172,49 @@ export async function balancesByAccount(uid, ym) {
   }));
 }
 
+// ===============================
+//   SỐ DƯ THỰC TẾ (lũy kế toàn thời gian)
+// ===============================
+export async function balancesByAccountTotal(uid) {
+  const [incomesSnap, expensesSnap, transfersSnap] = await Promise.all([
+    getDocs(colIncomes(uid)),
+    getDocs(colExpenses(uid)),
+    getDocs(colTransfers(uid)),
+  ]);
+
+  const map = new Map();
+
+  // + Thu nhập
+  incomesSnap.forEach((d) => {
+    const data = d.data();
+    const acc = data.account || "Khác";
+    map.set(acc, (map.get(acc) || 0) + Number(data.amount || 0));
+  });
+
+  // - Chi tiêu
+  expensesSnap.forEach((d) => {
+    const data = d.data();
+    const acc = data.account || "Khác";
+    map.set(acc, (map.get(acc) || 0) - Number(data.amount || 0));
+  });
+
+  // Transfer (from - ; to +)
+  transfersSnap.forEach((d) => {
+    const t = d.data();
+    const from = t.from || "Khác";
+    const to = t.to || "Khác";
+    const amt = Number(t.amount || 0);
+    map.set(from, (map.get(from) || 0) - amt);
+    map.set(to, (map.get(to) || 0) + amt);
+  });
+
+  // Trả về dạng mảng
+  return Array.from(map.entries()).map(([account, balance]) => ({
+    account,
+    balance,
+  }));
+}
+
 // Profile
 export async function saveProfile(uid, data) {
   await setDoc(

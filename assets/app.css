@@ -1,129 +1,172 @@
-/* --- App CSS (light + mobile rail) --- */
+/* =========================
+   BIẾN & THEME CHUNG
+========================= */
 :root {
   --sidebar-w: 260px;
+
+  --ht-bg: #eef1ff;
+  --ht-surface: #ffffff;
+  --ht-primary: #b1b2ff;
+  --ht-primary-soft: #d2daff;
+  --ht-primary-alt: #aac4ff;
+
+  --ht-text-main: #111827;
+  --ht-text-muted: #64748b;
+}
+
+/* Nền, giới hạn chiều ngang */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
-  background: #f8fafc;
-  color: #0f172a;
+  background: radial-gradient(
+    circle at top left,
+    #eef1ff 0,
+    #d2daff 45%,
+    #eef1ff 100%
+  );
+  color: var(--ht-text-main);
 }
 
+/* Khung app */
 .app-shell {
   min-height: 100vh;
+  background: transparent;
 }
 
+/* =========================
+   SIDEBAR & BACKDROP
+========================= */
 .sidebar {
   width: var(--sidebar-w);
-  background: #ffffff;
-  border-right: 1px solid #e2e8f0;
-  padding: 1rem
+  background: linear-gradient(180deg, #b1b2ff 0%, #aac4ff 40%, #d2daff 100%);
+  color: #111827;
+  border-right: none;
+  padding: 1rem 1.25rem 1.5rem;
+  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.22);
+  transition: transform 0.24s ease, box-shadow 0.24s ease;
 }
 
+/* Brand trong sidebar */
+.sidebar .navbar-brand {
+  padding: 0.3rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.sidebar .navbar-brand img {
+  filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.25));
+}
+
+.sidebar .navbar-brand .name {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* Label group "Tài chính cá nhân", "Dạy học" */
+.sidebar .section-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  color: rgba(15, 23, 42, 0.65);
+}
+
+/* Group button (Quản lý chi tiêu / Lớp học…) */
+.sidebar button.btn {
+  border-radius: 999px;
+  border: none;
+  background: rgba(255, 255, 255, 0.32);
+  color: #111827;
+}
+
+.sidebar button.btn:hover {
+  background: rgba(255, 255, 255, 0.52);
+}
+
+/* Link trong sidebar */
 .sidebar .nav-link {
-  color: #334155;
-  border-radius: 10px;
+  border-radius: 999px;
   display: flex;
   align-items: center;
-  gap: .6rem;
+  gap: 0.6rem;
+  color: rgba(15, 23, 42, 0.86);
+  padding: 0.45rem 0.75rem;
+  font-size: 0.9rem;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.12s ease;
+}
+
+.sidebar .nav-link i {
+  font-size: 1.1rem;
 }
 
 .sidebar .nav-link.active,
 .sidebar .nav-link:hover {
-  color: #111827;
-  background: #eef2ff;
+  background: linear-gradient(90deg, #eef1ff, #d2daff);
+  color: #3730a3;
+  transform: translateX(2px);
+  box-shadow: 0 10px 30px rgba(79, 70, 229, 0.25);
 }
 
-.brand {
-  color: #111827;
-  font-weight: 700;
-  letter-spacing: .3px
+/* Backdrop khi mở sidebar trên mobile */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 1030;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.22s ease, visibility 0.22s ease;
 }
 
+.sidebar-backdrop.show {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* =========================
+   CONTENT & NAVBAR
+========================= */
 .content {
   margin-left: var(--sidebar-w);
-}
-
-.card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px
-}
-
-.card .card-title,
-.card .card-text,
-.table,
-.form-label,
-label,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-p,
-.nav-link,
-.navbar,
-.dropdown-item,
-.table thead th {
-  color: #0f172a
+  padding-bottom: 76px;
+  transition: margin-left 0.24s ease;
 }
 
 .navbar {
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid #d2daff;
+  backdrop-filter: blur(12px);
 }
 
-.table {
-  color: #334155
+.card {
+  background: var(--ht-surface);
+  border-radius: 20px;
+  border: 1px solid #d2daff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
 .badge-soft {
-  background: #eef2ff;
-  color: #3730a3;
-  border: 1px solid #c7d2fe
+  background: #eef1ff;
+  color: #4338ca;
+  border-color: #d2daff;
 }
 
 .muted {
-  color: #64748b
+  color: var(--ht-text-muted);
 }
 
-.table> :not(caption)>*>* {
-  background: transparent !important;
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.chip {
-  border: 1px dashed #e2e8f0;
-  color: #334155;
-  padding: .3rem .6rem;
-  border-radius: 999px;
-  background: #f8fafc
-}
-
-/* Toast above sticky navbar */
-.toast-container {
-  z-index: 2000;
-  border-radius: 10px;
-  margin-top: 40px;
-}
-
-/* nav stats gọn trên mobile */
+/* Nav stats Chi / Thu */
 .nav-stat {
-  font-size: .85rem;
+  font-size: 0.85rem;
   line-height: 1.1;
-  padding: .4rem .5rem;
+  padding: 0.4rem 0.5rem;
 }
-
 
 @media (max-width: 576px) {
   #navStats {
-    gap: .35rem;
+    gap: 0.35rem;
   }
 
   .nav-stat strong {
@@ -131,59 +174,93 @@ p,
   }
 }
 
+/* =========================
+   FOOTER & FAB
+========================= */
+.mobile-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1px solid #d2daff;
+  height: 64px;
+  z-index: 1040;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.75rem;
+  display: flex;
+}
 
-@media (max-width: 575.98px) {
+.mobile-footer .left,
+.mobile-footer .right {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
 
-  /* (tuỳ chọn) hạ nhẹ xuống cho thoáng dưới status bar/mobile UI */
-  .toast-container {
-    top: 8px !important;
+.mobile-footer .muted {
+  font-size: 0.9rem;
+}
+
+@media (min-width: 992px) {
+  .mobile-footer {
+    display: none;
   }
 }
 
+.fab-add {
+  position: fixed;
+  right: 16px;
+  bottom: 80px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.15);
+}
 
-/* Keep left sidebar; mobile rail + sticky footer */
+@media (min-width: 992px) {
+  .fab-add {
+    display: none;
+  }
+}
+
+/* =========================
+   ROUTE VISIBILITY
+========================= */
+.route {
+  display: none;
+}
+.route.active {
+  display: block;
+}
+
+/* =========================
+   TABLE & FORM
+========================= */
+.table {
+  color: #334155;
+}
+
+.table > :not(caption) > * > * {
+  background: transparent !important;
+}
+
+/* Input number không có spin */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Bảng dạng card trên mobile */
 @media (max-width: 575.98px) {
-  :root {
-    --sidebar-w: 72px;
-  }
-
-  .sidebar {
-    padding: .5rem
-  }
-
-  .sidebar .brand {
-    display: none
-  }
-
-  .sidebar .nav-link {
-    justify-content: center;
-    padding: .6rem 0;
-  }
-
-  .sidebar .nav-link .label {
-    display: none
-  }
-
-  .content {
-    margin-left: var(--sidebar-w);
-    padding-bottom: 76px;
-  }
-
-  .navbar form {
-    display: none !important;
-  }
-
-  .btn {
-    min-height: 44px;
-  }
-
-  .form-control,
-  .form-select {
-    min-height: 44px;
-    font-size: 16px;
-  }
-
-  /* Responsive table -> stacked cards */
   .table-responsive table {
     display: block;
   }
@@ -201,15 +278,15 @@ p,
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
-    padding: .5rem .75rem;
-    margin-bottom: .75rem
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
   }
 
   .table-responsive td {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: .35rem 0;
+    padding: 0.35rem 0;
     border: 0;
   }
 
@@ -217,158 +294,42 @@ p,
     content: attr(data-label);
     font-weight: 600;
     color: #334155;
-    margin-right: 1rem
+    margin-right: 1rem;
   }
 }
 
-@media (min-width: 576px) and (max-width: 991.98px) {
-  :root {
-    --sidebar-w: 220px;
+/* Nhóm filter đầu trang Chi tiêu */
+#expenses #expenseFilters {
+  gap: 0.5rem;
+}
+#expenses #expenseFilters .form-select,
+#expenses #expenseFilters .form-control {
+  font-size: 0.85rem;
+}
+
+@media (max-width: 575.98px) {
+  #expenses #expenseFilters {
+    width: 100%;
   }
-
-  .content {
-    margin-left: var(--sidebar-w);
-    padding-bottom: 72px;
+  #expenses #expenseFilters .form-select,
+  #expenses #expenseFilters .form-control {
+    flex: 1 1 100%;
   }
-}
-
-@media (min-width: 992px) {
-  .mobile-footer {
-    display: none;
-  }
-}
-
-.mobile-footer {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: #ffffff;
-  border-top: 1px solid #e2e8f0;
-  height: 64px;
-  z-index: 1040;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 .75rem;
-  display: flex
-}
-
-.mobile-footer .left,
-.mobile-footer .right {
-  display: flex;
-  gap: .5rem;
-  align-items: center
-}
-
-.mobile-footer .muted {
-  font-size: .9rem
-}
-
-.fab-add {
-  position: fixed;
-  right: 16px;
-  bottom: 80px;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8px 24px rgba(2, 6, 23, .15);
-}
-
-@media (min-width: 992px) {
-  .fab-add {
-    display: none;
+  #expenseFilterInfo {
+    margin-bottom: 0.25rem;
   }
 }
 
-/* Route visibility */
-.route {
-  display: none
-}
-
-.route.active {
-  display: block
-}
-
-/* Modal form: khoảng cách & canh thẳng hàng */
+/* =========================
+   MODAL
+========================= */
 .modal .form-label {
   font-weight: 600;
 }
-
 .modal .form-control,
 .modal .form-select {
   min-height: 44px;
 }
-
-.modal .text-end {
-  text-align: right !important;
-}
-
-/* Fix input number trên một số trình duyệt */
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-input[type="number"] {
-  -moz-appearance: textfield;
-}
-
-/* Toast màu theo trạng thái (kết hợp JS) */
-.toast-success {
-  background: var(--bs-success);
-  color: #fff;
-}
-
-.toast-error {
-  background: var(--bs-danger);
-  color: #fff;
-}
-
-.toast-info {
-  background: var(--bs-primary);
-  color: #fff;
-}
-
-/* Tránh toast che navbar khi viewport thấp */
-.toast-container {
-  top: 0.75rem !important;
-  right: 0.75rem !important;
-}
-
-/* Nút nhóm trong bảng thao tác luôn thẳng hàng */
-.table .btn-group .btn {
-  min-width: 64px;
-}
-
-/* Ngăn layout “dịch trái” khi mở modal (BS 5.3) */
-body.modal-open {
-  padding-right: 0 !important;
-  --bs-body-padding-right: 0 !important;
-}
-
-/* Giữ ổn định chiều rộng trang (hạn chế nhảy layout do scrollbar) */
-@media (min-width: 992px) {
-  html {
-    overflow-y: scroll;
-  }
-
-  /* luôn có scrollbar dọc ở desktop */
-}
-
-/* Modal form layout đồng bộ */
-.modal .form-label {
-  font-weight: 600;
-}
-
-.modal .form-control,
-.modal .form-select {
-  min-height: 44px;
-}
-
 .modal .text-end {
   text-align: right !important;
 }
@@ -378,26 +339,7 @@ body.modal-open {
   z-index: 1085;
 }
 
-.toast-container {
-  z-index: 1080;
-  top: .75rem !important;
-  right: .75rem !important;
-}
-
-/* ===== Fix modal always center viewport ===== */
-body.modal-open {
-  padding-right: 0 !important;
-  --bs-body-padding-right: 0 !important;
-}
-
-/* Giữ scrollbar luôn hiển thị để không nhảy layout */
-@media (min-width: 992px) {
-  html {
-    overflow-y: scroll;
-  }
-}
-
-/* Căn giữa tuyệt đối mọi modal bất chấp layout cha */
+/* Modal luôn center view, tránh lệch scrollbar */
 .modal.show {
   position: fixed !important;
   top: 0;
@@ -408,30 +350,212 @@ body.modal-open {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  /* để chỉ modal-content bắt sự kiện */
   padding: 0 !important;
 }
-
 .modal .modal-dialog {
   pointer-events: auto;
   margin: 0 !important;
   max-width: min(720px, 96vw);
   width: 100%;
 }
-
 .modal .modal-content {
   max-height: calc(100dvh - 2rem);
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-
 .modal .modal-body {
   overflow-y: auto;
 }
 
-/* ========== Mobile Optimization (max-width 768px) ========== */
+/* Ngăn layout nhảy khi mở modal */
+body.modal-open {
+  padding-right: 0 !important;
+  --bs-body-padding-right: 0 !important;
+}
+
+/* Scrollbar luôn xuất hiện trên desktop để không nhảy layout */
+@media (min-width: 992px) {
+  html {
+    overflow-y: scroll;
+  }
+}
+
+/* =========================
+   TOAST & LOADING
+========================= */
+.toast-container {
+  z-index: 1080;
+  top: 0.75rem !important;
+  right: 0.75rem !important;
+}
+
+.toast-success {
+  background: var(--bs-success);
+  color: #fff;
+}
+.toast-error {
+  background: var(--bs-danger);
+  color: #fff;
+}
+.toast-info {
+  background: var(--bs-primary);
+  color: #fff;
+}
+
+/* Style riêng cho #appToast */
+#appToast {
+  min-width: 260px;
+  border-radius: 999px;
+  border: 1px solid #d2daff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+}
+#appToast.toast-success {
+  border-color: #22c55e;
+}
+#appToast.toast-error {
+  border-color: #ef4444;
+}
+#appToast.toast-info {
+  border-color: #3b82f6;
+}
+
+/* Overlay loading chung */
+.app-loading {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(
+    circle at top,
+    rgba(177, 178, 255, 0.15),
+    rgba(15, 23, 42, 0.4)
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1070;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.18s ease, visibility 0.18s ease;
+}
+.app-loading.show {
+  opacity: 1;
+  visibility: visible;
+}
+.app-loading .spinner-border {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-width: 0.25rem;
+  color: #b1b2ff;
+}
+
+/* =========================
+   RESPONSIVE SIDEBAR
+========================= */
+
+/* Desktop: sidebar cố định, content đẩy sang phải */
+@media (min-width: 992px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    transform: none !important;
+  }
+  .content {
+    margin-left: var(--sidebar-w);
+  }
+  .sidebar-backdrop {
+    display: none !important;
+  }
+}
+
+/* Tablet + mobile: sidebar trượt, content full width */
+@media (max-width: 991.98px) {
+  .sidebar {
+    transform: translateX(-100%);
+    z-index: 1045;
+    height: 100vh;
+  }
+  .sidebar.show {
+    transform: translateX(0);
+  }
+  .content {
+    margin-left: 0;
+  }
+
+  #btnSidebarToggle {
+    padding: 0.25rem 0.5rem;
+  }
+}
+
+/* Mobile: vẫn dùng sidebar rộng 260px, có chữ đầy đủ */
+@media (max-width: 575.98px) {
+  :root {
+    --sidebar-w: 260px;
+  }
+
+  .sidebar {
+    padding: 1rem 1.25rem 1.5rem;
+  }
+
+  .sidebar .navbar-brand .name,
+  .sidebar .section-label,
+  .sidebar .nav-link .label,
+  .sidebar button .label {
+    display: inline-block;
+  }
+
+  .sidebar .nav-link {
+    justify-content: flex-start;
+  }
+
+  .sidebar button.btn {
+    justify-content: space-between;
+  }
+
+  html,
+  body,
+  .app-shell,
+  .content {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+}
+
+/* Sidebar mini trên desktop hẹp */
+@media (min-width: 992px) and (max-width: 1199.98px) {
+  :root {
+    --sidebar-w: 80px;
+  }
+
+  .sidebar .navbar-brand .name,
+  .sidebar .section-label,
+  .sidebar .nav-link .label,
+  .sidebar button .label {
+    display: none;
+  }
+
+  .sidebar .nav-link {
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .sidebar .nav-link i {
+    margin-right: 0;
+    font-size: 1.25rem;
+  }
+}
+
+/* =========================
+   MOBILE OPTIMIZATION
+========================= */
 @media (max-width: 768px) {
+  body {
+    font-size: 15px;
+    line-height: 1.5;
+  }
 
   /* Card spacing */
   .card,
@@ -440,76 +564,37 @@ body.modal-open {
     width: calc(100% - 1rem) !important;
   }
 
-  /* Typography */
-  body {
-    font-size: 15px;
-    line-height: 1.5;
-  }
-
-  /* Number & currency spacing */
-  .money,
-  .amount {
-    letter-spacing: 0.3px;
-  }
-
-  .money::after,
-  .amount::after {
-    content: " ₫";
-    font-size: 0.9em;
-    opacity: 0.8;
-  }
-
-  /* Button group stack vertically */
+  /* Nhóm nút trên navbar */
   .top-actions {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
     width: 100%;
   }
-
-  .top-actions button,
   .top-actions .btn {
     width: 100%;
   }
 
-  /* Fix floating action button position */
-  .fab {
-    position: fixed;
-    right: 1.2rem;
-    bottom: 5rem;
-    /* tránh đè thanh điều hướng */
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  .btn {
+    min-height: 44px;
   }
-
-  /* Sidebar icon spacing */
-  .sidebar .nav-link {
-    padding: 0.75rem 1rem;
-  }
-
-  .sidebar i {
-    font-size: 1.3rem;
-    margin-right: 0.5rem;
-  }
-
-  /* Center text cards on mobile */
-  .summary-card h2,
-  .summary-card p {
-    text-align: center;
+  .form-control,
+  .form-select {
+    min-height: 44px;
+    font-size: 16px;
   }
 }
 
-/* Recent list */
+/* =========================
+   OVERVIEW WIDGETS
+========================= */
 #ov-recent .list-group-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: .75rem;
-  padding: .5rem .75rem;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
 }
-
 .ov-note {
   flex: 1 1 auto;
   min-width: 0;
@@ -518,7 +603,6 @@ body.modal-open {
   white-space: nowrap;
   color: #475569;
 }
-
 .ov-amt {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -526,96 +610,23 @@ body.modal-open {
   font-variant-numeric: tabular-nums;
 }
 
-.ov-badge {
-  font-size: .75rem;
-  opacity: .8;
-}
-
-/* Category bars */
+/* Thanh phần trăm danh mục */
 .cat-row {
-  margin-bottom: .5rem;
+  margin-bottom: 0.5rem;
 }
-
 .cat-name {
   color: #475569;
   font-weight: 600;
 }
-
 .cat-bar {
   height: 8px;
   border-radius: 999px;
   background: #e5e7eb;
   overflow: hidden;
 }
-
 .cat-fill {
   height: 100%;
-  background: linear-gradient(90deg, #7C3AED, #06B6D4);
-}
-
-/* Sparkline */
-.spark {
-  width: 100%;
-  height: 100%;
-}
-
-path.line-exp {
-  stroke: #ef4444;
-  fill: none;
-  stroke-width: 2;
-}
-
-path.line-inc {
-  stroke: #22c55e;
-  fill: none;
-  stroke-width: 2;
-}
-
-/* ===== Overview lower widgets ===== */
-#ov-recent .list-group-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .75rem;
-  padding: .5rem .75rem;
-}
-
-.ov-note {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #475569
-}
-
-.ov-amt {
-  flex: 0 0 auto;
-  white-space: nowrap;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums
-}
-
-/* Category bars */
-.cat-row {
-  margin-bottom: .5rem
-}
-
-.cat-name {
-  color: #475569;
-  font-weight: 600
-}
-
-.cat-bar {
-  height: 8px;
-  border-radius: 999px;
-  background: #e5e7eb;
-  overflow: hidden
-}
-
-.cat-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #7C3AED, #06B6D4)
+  background: linear-gradient(90deg, #7c3aed, #06b6d4);
 }
 
 /* Fixed vs Flexible */
@@ -623,143 +634,466 @@ path.line-inc {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: .5rem
+  margin-bottom: 0.5rem;
 }
-
 .fx-stat {
-  font-weight: 700
+  font-weight: 700;
 }
-
 .fx-bar {
   height: 10px;
   border-radius: 999px;
   background: #e5e7eb;
-  overflow: hidden
+  overflow: hidden;
 }
-
 .fx-fill-fixed {
   height: 100%;
-  background: #6366f1
+  background: #6366f1;
 }
-
-/* Indigo */
 .fx-fill-flex {
   height: 100%;
-  background: #06b6d4
+  background: #06b6d4;
 }
-
-/* Cyan */
 
 /* Avg daily widget */
 .avg-box {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: .75rem
+  gap: 0.75rem;
 }
-
 .avg-item {
   border: 1px solid #e5e7eb;
-  border-radius: .5rem;
-  padding: .5rem .75rem
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
 }
-
 .avg-label {
-  color: #64748b
+  color: #64748b;
 }
-
 .avg-value {
   font-weight: 800;
-  font-variant-numeric: tabular-nums
+  font-variant-numeric: tabular-nums;
 }
-
 .badge-up {
   background: #dcfce7;
-  color: #16a34a
+  color: #16a34a;
 }
-
 .badge-down {
   background: #fee2e2;
-  color: #ef4444
+  color: #ef4444;
+}
+
+/* =========================
+   SPARKLINE & CASHFLOW
+========================= */
+/* Sparkline dùng chung (Dashboard & Báo cáo) */
+.spark {
+  width: 100%;
+  height: 100%;
+}
+
+/* Đường Chi */
+path.line-exp {
+  stroke: #ef4444;
+  fill: none;
+  stroke-width: 2;
+}
+
+/* Đường Thu */
+path.line-inc {
+  stroke: #3b82f6;
+  fill: none;
+  stroke-width: 2;
+}
+
+/* Legend dưới biểu đồ dòng tiền (nếu dùng kiểu cũ) */
+.cashflow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+.cashflow-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cashflow-legend .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.cashflow-legend .dot-exp {
+  background: #ef4444;
+}
+.cashflow-legend .dot-inc {
+  background: #3b82f6;
+}
+@media (max-width: 575.98px) {
+  .cashflow-legend {
+    font-size: 0.75rem;
+  }
+}
+
+/* Cashflow chart (version đang dùng ở Reports) */
+.cashflow-chart {
+  min-height: 180px;
+}
+.cashflow-svg {
+  width: 100%;
+  height: 160px;
+  overflow: visible;
+}
+
+/* Dot legend cho bản hiện tại */
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-right: 4px;
+}
+.legend-dot-exp {
+  background: #e15759;
+}
+.legend-dot-inc {
+  background: #4e79a7;
 }
 
 @media (max-width: 575.98px) {
-  :root {
-    --sidebar-w: 72px;
+  .cashflow-chart {
+    min-height: 150px;
+  }
+  .cashflow-svg {
+    height: 140px;
+  }
+}
+
+/* =========================
+   BAR & PIE CHART (REPORTS)
+========================= */
+.ht-bar-chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.75rem;
+  height: 190px;
+}
+.ht-bar-chart .bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* Cột chi */
+.ht-bar-chart .bar {
+  width: 100%;
+  max-width: 40px;
+  border-radius: 999px;
+  background: linear-gradient(to top, #fecaca, #e15759);
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 4px;
+}
+.ht-bar-chart .bar-value {
+  font-size: 0.7rem;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+.ht-bar-chart .bar-label {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  text-align: center;
+  max-width: 72px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+/* Donut pie */
+.ht-pie {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+  position: relative;
+}
+.ht-pie::after {
+  content: "";
+  position: absolute;
+  inset: 18px;
+  border-radius: inherit;
+  background: #ffffff;
+}
+.ht-pie-legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  padding: 2px 0;
+}
+.ht-pie-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+
+/* Không cho bar/pie tràn khỏi card */
+#reports #barChart,
+#reports #pieChart {
+  min-height: 200px;
+}
+
+@media (max-width: 991.98px) {
+  #reports .card .row.g-3 > .col-md-6 {
+    flex: 0 0 100%;
+    max-width: 100%;
   }
 
-  .sidebar {
-    padding: .5rem;
+  .ht-bar-chart {
+    height: 160px;
+    gap: 0.5rem;
   }
 
-  /* Ẩn chữ brand, chỉ còn logo */
-  .sidebar .brand-label {
-    display: none;
+  .ht-bar-chart .bar-label {
+    font-size: 0.7rem;
+    max-width: 64px;
   }
 
-  /* Ẩn tiêu đề group "Tài chính cá nhân", "Dạy học" */
-  .sidebar .section-label {
-    display: none;
+  .ht-bar-chart .bar-value {
+    font-size: 0.65rem;
   }
 
-  /* Nav chỉ còn icon */
-  .sidebar .nav-link {
+  #pieChart > .d-flex {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .ht-pie {
+    margin-bottom: 0.5rem;
+  }
+
+  .ht-pie-legend-row {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .ht-pie-legend-row > .text-end {
+    width: 100%;
+    text-align: left;
+    font-size: 0.8rem;
+    margin-top: 2px;
+  }
+}
+
+/* Pie chart không tràn trên mobile rất nhỏ */
+#pieChart {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+@media (max-width: 575.98px) {
+  #pieChart > .d-flex {
+    display: block !important;
+    width: 100%;
+  }
+  #pieChart .ht-pie {
+    display: block;
+    width: 70px;
+    height: 70px;
+    margin: 0 auto 0.5rem auto;
+  }
+  #pieChart .flex-grow-1 {
+    width: 100%;
+  }
+  #pieChart .ht-pie-legend-row {
+    width: 100%;
+    max-width: 100%;
+    font-size: 0.8rem;
+  }
+  #pieChart .ht-pie-legend-row > .text-end {
+    width: 100%;
+    text-align: left;
+    white-space: normal;
+    word-break: break-word;
+  }
+}
+
+/* Bar chart không tràn trên mobile */
+@media (max-width: 575.98px) {
+  #barChart {
+    overflow-x: hidden;
+  }
+
+  .ht-bar-chart {
+    height: 150px;
+    flex-wrap: wrap;
+    justify-content: space-around;
+    gap: 0.5rem;
+  }
+
+  .ht-bar-chart .bar-col {
+    flex: 0 0 30%;
+    max-width: 30%;
+  }
+
+  .ht-bar-chart .bar-value {
+    font-size: 0.6rem;
+  }
+
+  .ht-bar-chart .bar-label {
+    font-size: 0.65rem;
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+/* =========================
+   QUICK INSIGHTS (Reports)
+========================= */
+#reportInsights {
+  border-radius: 16px;
+  border: 1px solid #d2daff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+#reportInsightsBody .insight-item {
+  margin-bottom: 6px;
+  padding-left: 4px;
+}
+#reportInsightsBody .insight-item strong {
+  color: #111827;
+}
+#reportInsightsBody .insight-up {
+  color: #dc2626;
+  font-weight: 600;
+}
+#reportInsightsBody .insight-down {
+  color: #16a34a;
+  font-weight: 600;
+}
+
+/* ===== Nút Chuyển tiền + Thêm thu nhập trong Accounts ===== */
+.income-actions .btn {
+  white-space: nowrap;
+}
+
+/* Mobile: 2 nút full width, xếp dọc cho dễ bấm */
+@media (max-width: 575.98px) {
+  #accounts .income-actions {
+    width: 100%;
+  }
+
+  #accounts .income-actions .btn {
+    flex: 1 1 100%;
     justify-content: center;
-    padding: .6rem 0;
   }
 
-  .sidebar .nav-link .label {
-    display: none;
-  }
-
-  .sidebar .nav-link i {
-    margin-right: 0;
-    /* icon nằm đúng giữa */
-    font-size: 1.4rem;
-  }
-
-  /* Nút group (Quản lý chi tiêu / Lớp học của tôi): chỉ icon ví / mortarboard */
-  .sidebar button .label {
-    display: none;
-  }
-
-  .sidebar button i.bi {
-    margin-right: 0;
-    font-size: 1.4rem;
-  }
-
-  .content {
-    margin-left: var(--sidebar-w);
-    padding-bottom: 76px;
-  }
-
-  /* ...giữ nguyên các rule mobile khác của bạn phía dưới... */
-}
-
-@media (max-width: 768px) {
-  /* ... các rule mobile hiện có ... */
-
-  /* Ẩn mũi tên mở/đóng group ở sidebar */
-  .sidebar button .bi-chevron-down,
-  .sidebar button .bi-chevron-up {
-    display: none !important;
-  }
-
-  .name {
-    display: none !important;
-
+  /* Tiêu đề nằm trên, nút nằm dưới */
+  #accounts .card .card-body > .d-flex {
+    align-items: stretch;
   }
 }
 
-html,
-body {
-  max-width: 100%;
-  overflow-x: hidden;
+/* ===== Nút Chuyển tiền + Thêm thu nhập trong Accounts ===== */
+.income-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-/* Nếu bạn có wrapper chính cho toàn app, ví dụ .app-root hoặc .content */
-.app-root,
-.content,
-.app-main {
-  max-width: 100%;
-  overflow-x: hidden;
+.income-actions .btn {
+  white-space: nowrap;
+}
+
+/* Màn hình >= 576px: 2 nút nằm cùng hàng, có khoảng cách, không bị dí sát */
+@media (min-width: 576px) {
+  #accounts .income-actions {
+    justify-content: flex-end;
+  }
+
+  #accounts .income-actions .btn {
+    min-width: 150px;
+  }
+}
+
+/* ===== Responsive riêng cho trang Tài khoản (Mobile) ===== */
+@media (max-width: 575.98px) {
+  /* Không cho section Tài khoản tràn ngang */
+  #accounts {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Card ngoài giống trang Chi tiêu */
+  #accounts > .row > .col-12 > .card,
+  #accounts > .row > .col-12.col-xl-6 > .card {
+    margin: 0 0.5rem 1rem 0.5rem;
+    width: calc(100% - 1rem);
+  }
+
+  /* Card con bên trong (ví dụ: Thu nhập tháng này) không tạo khung mới */
+  #accounts .card .card {
+    margin: 0;
+    width: 100%;
+    box-shadow: none;
+    border-radius: 16px;
+  }
+
+  #accounts .card .card-body {
+    padding: 0.75rem 0.9rem 1rem;
+  }
+
+  /* Tiêu đề nằm trên, 2 nút nằm dưới, xếp dọc full width */
+  #accounts .card .card-body > .d-flex {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  #accounts .income-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #accounts .income-actions .btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px; /* dễ bấm hơn */
+  }
+
+  /* Bảng Thu nhập & Tài khoản: hiển thị kiểu thẻ giống Chi tiêu */
+  #accounts .table-responsive {
+    margin-top: 0.5rem;
+  }
+
+  #accounts table {
+    font-size: 0.85rem;
+  }
+
+  #accounts td,
+  #accounts th {
+    word-break: break-word;
+  }
+
+  #accounts .table-responsive tr {
+    margin-bottom: 0.5rem;
+  }
+
+  #accounts .table-responsive td::before {
+    color: #475569;
+    font-weight: 600;
+  }
 }
