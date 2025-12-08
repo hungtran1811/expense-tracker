@@ -699,6 +699,32 @@
                       >
                         <h6 class="mb-0">Thu nhập (tháng này)</h6>
                         <div class="d-flex flex-wrap gap-2 income-actions">
+                          <!-- 🔹 MỚI: chọn tháng cho thu nhập -->
+                          <select
+                            id="incomeMonthFilter"
+                            class="form-select form-select-sm"
+                            style="min-width: 140px"
+                          >
+                            <!-- Sẽ được đồng bộ options với #monthFilter bằng JS -->
+                          </select>
+
+                          <!-- Filter tài khoản thu nhập -->
+                          <select
+                            id="incomeAccountFilter"
+                            class="form-select form-select-sm"
+                            style="min-width: 140px"
+                          >
+                            <option value="all">Tất cả tài khoản</option>
+                          </select>
+
+                          <!-- Tìm theo tên / ghi chú -->
+                          <input
+                            id="incomeSearch"
+                            type="search"
+                            class="form-control form-control-sm"
+                            placeholder="Tìm theo tên / ghi chú"
+                            style="min-width: 180px"
+                          />
                           <button
                             class="btn btn-outline-success btn-sm"
                             data-bs-toggle="modal"
@@ -716,6 +742,11 @@
                           </button>
                         </div>
                       </div>
+                      <div
+                        id="incomeFilterInfo"
+                        class="text-muted small mt-1"
+                      ></div>
+
                       <div class="table-responsive">
                         <table class="table align-middle" id="incomesTable">
                           <thead>

@@ -404,22 +404,42 @@ body.modal-open {
 }
 
 /* Style riêng cho #appToast */
+/* Nền mặc định khi chưa có type */
 #appToast {
   min-width: 260px;
   border-radius: 999px;
   border: 1px solid #d2daff;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
-  background: rgba(255, 255, 255, 0.96);
+  /* KHÔNG set background ở đây để nhường cho .toast-success / .toast-error */
   backdrop-filter: blur(10px);
 }
+
+#appToast .toast-body {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Thành công */
 #appToast.toast-success {
-  border-color: #22c55e;
+  background: #22c55e !important;
+  border-color: #16a34a;
 }
+
+/* Lỗi */
 #appToast.toast-error {
-  border-color: #ef4444;
+  background: #ef4444 !important;
+  border-color: #dc2626;
 }
+
+/* Info */
 #appToast.toast-info {
-  border-color: #3b82f6;
+  background: #3b82f6 !important;
+  border-color: #2563eb;
+}
+
+#appToast .toast-body {
+  opacity: 1 !important;
+  color: #fff !important;
 }
 
 /* Overlay loading chung */
@@ -1095,5 +1115,21 @@ path.line-inc {
   #accounts .table-responsive td::before {
     color: #475569;
     font-weight: 600;
+  }
+}
+
+/* ===== Layout lại trang Báo cáo trên màn hình lớn ===== */
+@media (min-width: 1200px) {
+  /* Hai cột chính trong #reports dùng full chiều ngang, xếp dọc */
+  #reports > .row > .col-xl-8,
+  #reports > .row > .col-xl-4 {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  /* Card bên trong kéo full ngang để không bị thụt vào */
+  #reports > .row > .col-xl-8 > .card,
+  #reports > .row > .col-xl-4 > .card {
+    width: 100%;
   }
 }
