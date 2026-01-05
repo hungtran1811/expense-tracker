@@ -2,8 +2,12 @@ import {
   populateExpenseFiltersOptions,
   applyExpenseFiltersAndRender,
 } from "./expenses.js";
-import { refreshBalances } from "./accounts.js";
-import { setActiveRoute } from "./router.js";
+import {
+  refreshBalances,
+  loadAccountsAndFill,
+  initAccountEvents,
+} from "./accounts.js";
+import { setActiveRoute, restoreLastRoute } from "./router.js";
 import { watchAuth, auth } from "./auth.js";
 import {
   mustGet,
@@ -49,15 +53,16 @@ import {
   renderAccountsTable,
   fillAccountSelect,
   renderBalancesList,
-  renderIncomesTable,
 } from "./ui.js";
-import { renderIncomesSection } from "./incomes.js";
+import {
+  populateIncomeFilterOptions,
+  applyIncomeFiltersAndRender,
+} from "./incomes.js";
 import {
   refreshTopCategories,
   renderOverviewLower,
   renderReportsCharts,
   renderReportInsights,
-  renderReportCashflow,
 } from "./reports.js";
 
 /* =========================
@@ -225,57 +230,6 @@ function updateDashboardTotals() {
  * 4) LOADERS & REFRESHERS
  * ========================= */
 
-// 4.1. Tải tài khoản & fill dropdown (Thêm chi / Sửa chi / Modal / Thêm thu nhập)
-async function loadAccountsAndFill(uid) {
-  _accounts = await listAccounts(uid);
-  // Transfer modal selects
-  fillAccountSelect?.(document.getElementById("tfFrom"), _accounts);
-  fillAccountSelect?.(document.getElementById("tfTo"), _accounts);
-
-  const tfFrom = document.getElementById("tfFrom");
-  const tfTo = document.getElementById("tfTo");
-  if (tfFrom && tfTo && tfFrom.value === tfTo.value) {
-    const second = tfTo.options.length > 1 ? tfTo.options[1].value : tfTo.value;
-    tfTo.value = second;
-  }
-
-  // Bảng tài khoản (nếu trang có)
-  const tbodyAcc = document.querySelector("#accountsTable tbody");
-  if (tbodyAcc && typeof renderAccountsTable === "function") {
-    renderAccountsTable(tbodyAcc, _accounts);
-  }
-
-  // Đổ vào các select tài khoản (nếu phần tử tồn tại)
-  const targets = ["inAccount", "mAccount", "eAccount", "iAccount"]
-    .map((id) => document.getElementById(id))
-    .filter(Boolean);
-
-  targets.forEach((sel) => fillAccountSelect?.(sel, _accounts));
-
-  // ... sau khi _accounts đã được gán và các select khác đã được fill
-
-  // Đổ tài khoản vào filter Báo cáo (accountSelect)
-  const reportAccSelect = document.getElementById("accountSelect");
-  if (reportAccSelect) {
-    const current = _reportFilters.account || "all";
-    reportAccSelect.innerHTML =
-      '<option value="all">Tất cả tài khoản</option>' +
-      _accounts
-        .map((acc) => `<option value="${acc.name}">${acc.name}</option>`)
-        .join("");
-
-    if (
-      current !== "all" &&
-      [...reportAccSelect.options].some((o) => o.value === current)
-    ) {
-      reportAccSelect.value = current;
-    } else {
-      reportAccSelect.value = "all";
-      _reportFilters.account = "all";
-    }
-  }
-}
-
 // 4.2. Tải & render CHI TIÊU theo tháng (nếu bảng tồn tại) + cập nhật tổng tháng
 async function refreshExpenses(uid) {
   const ym = getMonthValue(); // YYYY-MM
@@ -303,84 +257,14 @@ async function refreshIncomes(uid) {
 
   // Đổ options filter tài khoản thu nhập + render theo filter hiện tại
   populateIncomeFilterOptions(_allIncomes);
-  applyIncomeFiltersAndRender();
+  _incomeFilters = applyIncomeFiltersAndRender(_allIncomes, _incomeFilters);
 
   // Tổng thu tháng này (cho navbar + dashboard): tính theo TẤT CẢ khoản thu trong tháng
   _incTotal = _allIncomes.reduce((s, i) => s + Number(i.amount || 0), 0);
-  updateNavbarStats();
+  updateNavbarStats?.(_expTotal, _incTotal);
   updateDashboardTotals?.();
 }
 
-function populateIncomeFilterOptions(list) {
-  const accSel = document.getElementById("incomeAccountFilter");
-  if (!accSel) return;
-
-  const accounts = [
-    ...new Set(list.map((i) => (i.account || "").trim()).filter(Boolean)),
-  ].sort((a, b) => a.localeCompare(b, "vi"));
-
-  const prevAcc = accSel.value || "all";
-
-  accSel.innerHTML =
-    '<option value="all">Tất cả tài khoản</option>' +
-    accounts.map((a) => `<option value="${a}">${a}</option>`).join("");
-
-  if ([...accSel.options].some((o) => o.value === prevAcc)) {
-    accSel.value = prevAcc;
-  }
-}
-
-function applyIncomeFiltersAndRender() {
-  const accSel = document.getElementById("incomeAccountFilter");
-  const searchEl = document.getElementById("incomeSearch");
-
-  const account = accSel?.value || "all";
-  const keyword = (searchEl?.value || "").trim().toLowerCase();
-
-  _incomeFilters = { account, search: keyword };
-
-  let list = Array.isArray(_allIncomes) ? [..._allIncomes] : [];
-
-  if (account !== "all") {
-    const a = account.toLowerCase();
-    list = list.filter((i) => (i.account || "").toLowerCase() === a);
-  }
-
-  if (keyword) {
-    list = list.filter((i) => {
-      const name = (i.name || "").toLowerCase();
-      const note = (i.note || "").toLowerCase();
-      return name.includes(keyword) || note.includes(keyword);
-    });
-  }
-
-  // Dùng incomes.js để render lại bảng
-  renderIncomesSection(list);
-
-  // Cập nhật info nhỏ dưới bảng (nếu có)
-  const infoEl = document.getElementById("incomeFilterInfo");
-  if (infoEl) {
-    const totalFiltered = list.reduce((s, i) => s + Number(i.amount || 0), 0);
-    const totalAll = _allIncomes.reduce((s, i) => s + Number(i.amount || 0), 0);
-
-    if (
-      !_allIncomes.length ||
-      (list.length === _allIncomes.length && account === "all" && !keyword)
-    ) {
-      infoEl.textContent = `${list.length} khoản thu • ${formatVND(
-        totalFiltered
-      )} trong tháng này`;
-    } else {
-      infoEl.textContent = `${list.length}/${
-        _allIncomes.length
-      } khoản thu • ${formatVND(totalFiltered)} (từ tổng ${formatVND(
-        totalAll
-      )})`;
-    }
-  }
-}
-
-// 4.5. Refresh tất cả phần phụ thuộc tháng (gọi khi login/đổi tháng/CRUD)
 async function refreshAll(uid) {
   if (!uid) return;
   setGlobalLoading(true);
@@ -388,20 +272,31 @@ async function refreshAll(uid) {
     await Promise.all([
       refreshExpenses(uid),
       refreshIncomes(uid),
-      loadAccountsAndFill(uid),
       renderOverviewLower(uid),
+      (async () => {
+        // Gọi module accounts để load + fill UI
+        const { accounts, accountFilter } = await loadAccountsAndFill(
+          uid,
+          _reportFilters.account || "all"
+        );
+        // Cập nhật lại state toàn cục để các chỗ khác dùng
+        _accounts = accounts;
+        _reportFilters.account = accountFilter;
+      })(),
     ]);
 
+    // Sau khi chi, thu, tài khoản đã load xong -> cập nhật số dư
     await refreshBalances(uid);
     updateDashboardMonthBadge?.();
 
     await Promise.all([
       refreshDashboardStats(uid),
-      refreshTopCategories(uid),
       renderReportsCharts(uid, _reportFilters.account),
       renderReportInsights(uid, _reportFilters.account),
-      renderReportCashflow(uid),
     ]);
+  } catch (err) {
+    console.error("refreshAll error:", err);
+    showToast("Lỗi khi tải dữ liệu. Vui lòng thử lại.", "danger");
   } finally {
     setGlobalLoading(false);
   }
@@ -489,15 +384,23 @@ async function doDeleteIncome() {
   }
 }
 
-// Đồng bộ danh sách & giá trị tháng từ #monthFilter sang #incomeMonthFilter
 function syncIncomeMonthFilterFromGlobal() {
-  const globalSel = document.getElementById("monthFilter"); // ở trang Chi tiêu
-  const incomeSel = document.getElementById("incomeMonthFilter"); // ở tab Tài khoản
-  if (!globalSel || !incomeSel) return;
+  const globalSel = document.getElementById("monthFilter"); // filter chính
+  const incomeSel = document.getElementById("incomeMonthFilter"); // tab Thu nhập
+  const reportSel = document.getElementById("reportMonthFilter"); // tab Báo cáo (nếu có)
+  if (!globalSel) return;
 
-  // copy nguyên options & value
-  incomeSel.innerHTML = globalSel.innerHTML;
-  incomeSel.value = globalSel.value;
+  // copy options + value cho Thu nhập
+  if (incomeSel) {
+    incomeSel.innerHTML = globalSel.innerHTML;
+    incomeSel.value = globalSel.value;
+  }
+
+  // copy options + value cho Báo cáo
+  if (reportSel) {
+    reportSel.innerHTML = globalSel.innerHTML;
+    reportSel.value = globalSel.value;
+  }
 }
 
 /* =========================
@@ -507,6 +410,7 @@ function syncIncomeMonthFilterFromGlobal() {
 // Khởi tạo month filter ngay khi load
 initMonthFilter();
 syncIncomeMonthFilterFromGlobal();
+initAccountEvents();
 
 // Theo dõi đăng nhập
 watchAuth(async (user) => {
@@ -514,10 +418,12 @@ watchAuth(async (user) => {
   updateUserMenuUI(user);
 
   if (user) {
+    restoreLastRoute("dashboard");
     await refreshAll(user.uid);
     updateDashboardMonthBadge?.();
   } else {
     // clear UI tối thiểu nếu cần
+    setActiveRoute("auth");
     const wrap = document.getElementById("balanceList");
     if (wrap) wrap.innerHTML = '<div class="text-muted">Chưa có dữ liệu</div>';
   }
@@ -826,10 +732,36 @@ document
   ?.addEventListener("change", async () => {
     const incomeSel = document.getElementById("incomeMonthFilter");
     const globalSel = document.getElementById("monthFilter");
+    const reportSel = document.getElementById("reportMonthFilter");
 
-    // Đồng bộ ngược lại: chọn tháng ở Tài khoản thì Chi tiêu cũng đổi theo
+    // Đồng bộ ngược lại: chọn tháng ở Thu nhập thì Chi tiêu cũng đổi theo
     if (incomeSel && globalSel && globalSel.value !== incomeSel.value) {
       globalSel.value = incomeSel.value;
+    }
+    // Và đồng bộ qua Báo cáo
+    if (incomeSel && reportSel && reportSel.value !== incomeSel.value) {
+      reportSel.value = incomeSel.value;
+    }
+
+    if (_currentUser) await refreshAll(_currentUser.uid);
+    updateDashboardMonthBadge?.();
+  });
+
+document
+  .getElementById("reportMonthFilter")
+  ?.addEventListener("change", async () => {
+    const reportSel = document.getElementById("reportMonthFilter");
+    const globalSel = document.getElementById("monthFilter");
+    const incomeSel = document.getElementById("incomeMonthFilter");
+    if (!reportSel) return;
+
+    // Đồng bộ về filter chính
+    if (globalSel && globalSel.value !== reportSel.value) {
+      globalSel.value = reportSel.value;
+    }
+    // Và đồng bộ qua tab Thu nhập
+    if (incomeSel && incomeSel.value !== reportSel.value) {
+      incomeSel.value = reportSel.value;
     }
 
     if (_currentUser) await refreshAll(_currentUser.uid);
@@ -885,174 +817,6 @@ document.getElementById("btnAddIncome")?.addEventListener("click", async () => {
     showToast("Thêm thu nhập thất bại: " + (err.message || err), "error");
   }
 });
-
-// Thêm tài khoản (delegation để luôn hoạt động dù modal render sau)
-document.addEventListener("click", async (e) => {
-  const btn = e.target.closest("#btnAddAccount");
-  if (!btn) return;
-
-  const { auth } = await import("./auth.js");
-  const user = auth.currentUser;
-  if (!user) return showToast("Vui lòng đăng nhập trước", "error");
-
-  const name = (document.getElementById("aName")?.value || "").trim();
-  const type = document.getElementById("aType")?.value || "bank";
-  const isDefault = !!document.getElementById("aDefault")?.checked;
-
-  try {
-    if (!name) throw new Error("Vui lòng nhập tên tài khoản");
-
-    // OPTIONAL: chặn trùng tên ngay trên client
-    if (
-      Array.isArray(_accounts) &&
-      _accounts.some((a) => (a.name || "").toLowerCase() === name.toLowerCase())
-    ) {
-      throw new Error("Tên tài khoản đã tồn tại");
-    }
-
-    const { addAccount } = await import("./db.js");
-    await addAccount(user.uid, { name, type, isDefault });
-
-    // reset + đóng modal
-    document.getElementById("aName").value = "";
-    document.getElementById("aType").value = "bank";
-    document.getElementById("aDefault").checked = false;
-    bootstrap.Modal.getInstance(
-      document.getElementById("addAccountModal")
-    )?.hide();
-
-    // load lại danh sách + fill vào các select (bao gồm chuyển tiền)
-    await loadAccountsAndFill(user.uid);
-    // nếu có modal chuyển tiền thì đảm bảo from/to khác nhau
-    const tfFrom = document.getElementById("tfFrom");
-    const tfTo = document.getElementById("tfTo");
-    if (
-      tfFrom &&
-      tfTo &&
-      tfFrom.value === tfTo.value &&
-      tfTo.options.length > 1
-    ) {
-      tfTo.value = tfTo.options[1].value;
-    }
-
-    if (typeof showToast === "function") showToast("Đã thêm tài khoản!");
-  } catch (err) {
-    console.error("[AddAccount]", err);
-    showToast("Không thể thêm tài khoản: " + (err.message || err), "error");
-  }
-});
-
-// Delegation cho bảng tài khoản
-document
-  .querySelector("#accountsTable tbody")
-  ?.addEventListener("click", async (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    const tr = e.target.closest("tr");
-    const id = tr?.dataset?.id;
-
-    const { auth } = await import("./auth.js");
-    const user = auth.currentUser;
-    if (!user || !id) return;
-
-    // mở modal Sửa
-    if (
-      btn.textContent?.trim() === "Sửa" ||
-      btn.classList.contains("btn-account-edit")
-    ) {
-      const tds = tr.querySelectorAll("td");
-      const name = tds[0]?.textContent?.trim() || "";
-      const type = (tds[1]?.textContent?.trim() || "bank").toLowerCase();
-
-      document.getElementById("eaId").value = id;
-      document.getElementById("eaName").value = name;
-      document.getElementById("eaType").value = [
-        "bank",
-        "ewallet",
-        "other",
-      ].includes(type)
-        ? type
-        : "bank";
-      document.getElementById("eaDefault").checked =
-        tr.querySelector(".badge.text-bg-primary") !== null;
-
-      new bootstrap.Modal(document.getElementById("editAccountModal")).show();
-    }
-
-    // mở modal Xoá (chuyển giao)
-    if (
-      btn.textContent?.trim() === "Xoá" ||
-      btn.classList.contains("btn-account-del")
-    ) {
-      document.getElementById("daId").value = id;
-
-      // fill danh sách tài khoản khác vào #daTarget
-      const sel = document.getElementById("daTarget");
-      sel.innerHTML = _accounts
-        .filter((a) => a.id !== id)
-        .map((a) => `<option value="${a.name}">${a.name}</option>`)
-        .join("");
-      new bootstrap.Modal(document.getElementById("deleteAccountModal")).show();
-    }
-  });
-
-document
-  .getElementById("btnSaveAccount")
-  ?.addEventListener("click", async () => {
-    const { auth } = await import("./auth.js");
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const id = document.getElementById("eaId").value;
-    const name = document.getElementById("eaName").value.trim();
-    const type = document.getElementById("eaType").value;
-    const isDefault = document.getElementById("eaDefault").checked;
-
-    try {
-      if (!name) throw new Error("Vui lòng nhập tên tài khoản");
-      await updateAccount(user.uid, id, { name, type, isDefault });
-      bootstrap.Modal.getInstance(
-        document.getElementById("editAccountModal")
-      )?.hide();
-
-      await loadAccountsAndFill(user.uid);
-      await refreshBalances(user.uid); // số dư theo tên mới
-      showToast?.("Đã cập nhật tài khoản!");
-    } catch (err) {
-      console.error(err);
-      showToast(
-        "Không thể cập nhật tài khoản: " + (err.message || err),
-        "error"
-      );
-    }
-  });
-
-document
-  .getElementById("btnConfirmDeleteAccount")
-  ?.addEventListener("click", async () => {
-    const { auth } = await import("./auth.js");
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const id = document.getElementById("daId").value;
-    const targetName = document.getElementById("daTarget").value;
-
-    try {
-      await deleteAccountWithReassign(user.uid, id, targetName);
-      bootstrap.Modal.getInstance(
-        document.getElementById("deleteAccountModal")
-      )?.hide();
-
-      await loadAccountsAndFill(user.uid); // refresh bảng + mọi dropdown
-      await refreshIncomes(user.uid);
-      await refreshExpenses(user.uid);
-      await refreshBalances(user.uid);
-      showToast?.("Đã chuyển & xoá tài khoản!");
-    } catch (err) {
-      console.error(err);
-      showToast("Không thể xóa tài khoản: " + (err.message || err), "error");
-    }
-  });
 
 document.getElementById("btnExportCsv")?.addEventListener("click", async () => {
   const { auth } = await import("./auth.js");
@@ -1176,44 +940,6 @@ document
     showToast("Đã cập nhật thu nhập!");
   });
 
-document
-  .getElementById("btnDoTransfer")
-  ?.addEventListener("click", async () => {
-    const { auth } = await import("./auth.js");
-    const user = auth.currentUser;
-    if (!user) return showToast("Vui lòng đăng nhập trước", "error");
-
-    const from = document.getElementById("tfFrom").value;
-    const to = document.getElementById("tfTo").value;
-    const amount = Number(document.getElementById("tfAmount").value || 0);
-    const date = document.getElementById("tfDate").value;
-    const note = document.getElementById("tfNote").value.trim();
-
-    try {
-      if (from === to)
-        throw new Error("Tài khoản nguồn và đích phải khác nhau");
-      if (amount <= 0) throw new Error("Số tiền phải > 0");
-
-      await addTransfer(user.uid, { from, to, amount, date, note });
-
-      // reset + đóng modal
-      document.getElementById("tfAmount").value = "";
-      document.getElementById("tfNote").value = "";
-      bootstrap.Modal.getInstance(
-        document.getElementById("transferModal")
-      )?.hide();
-
-      // cập nhật số dư trên Dashboard + nav
-      await refreshBalances(user.uid);
-      // (Không cần refreshExpenses/refreshIncomes vì transfer không ảnh hưởng hai bảng này)
-
-      if (typeof showToast === "function") showToast("Chuyển tiền thành công!");
-    } catch (err) {
-      console.error(err);
-      showToast("Không thể chuyển tiền: " + (err.message || err), "error");
-    }
-  });
-
 document.getElementById("btnApplyReport")?.addEventListener("click", () => {
   const acc = getReportAccountFilter();
   _reportFilters.account = acc;
@@ -1244,11 +970,13 @@ if (eNameInput) {
 
 document
   .getElementById("incomeAccountFilter")
-  ?.addEventListener("change", () => applyIncomeFiltersAndRender());
+  ?.addEventListener("change", () => {
+    _incomeFilters = applyIncomeFiltersAndRender(_allIncomes, _incomeFilters);
+  });
 
-document
-  .getElementById("incomeSearch")
-  ?.addEventListener("input", () => applyIncomeFiltersAndRender());
+document.getElementById("incomeSearch")?.addEventListener("input", () => {
+  _incomeFilters = applyIncomeFiltersAndRender(_allIncomes, _incomeFilters);
+});
 
 /* =========================
  * 7) HOOKS PHỤ (nếu trang mở thẳng tab #accounts thì vẫn render)

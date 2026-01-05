@@ -470,7 +470,14 @@ export async function renderReportsCharts(uid, accountFilter = "all") {
 
 export async function renderReportInsights(uid, accountFilter = "all") {
   const wrap = document.getElementById("reportInsightsBody");
+  const aiBox = document.getElementById("reportInsightsAi");
   if (!wrap || !uid) return;
+
+  // set trạng thái loading cho AI (nếu có box)
+  if (aiBox) {
+    // aiBox.textContent = "AI đang phân tích dữ liệu tháng này...";
+    renderAiSummaryBox(aiBox, "", "loading");
+  }
 
   const ym = getMonthValue();
   const account = accountFilter || getReportAccountFilter();
@@ -504,9 +511,14 @@ export async function renderReportInsights(uid, accountFilter = "all") {
     const prevE = filterByAcc(prevExp);
     const prevI = filterByAcc(prevInc);
 
+    // Không có dữ liệu tháng này -> dừng luôn, AI cũng khỏi gọi
     if (!curE.length && !curI.length) {
       wrap.innerHTML =
         '<span class="text-muted">Chưa có dữ liệu để phân tích cho tài khoản đã chọn.</span>';
+      if (aiBox) {
+        aiBox.textContent =
+          "Không có dữ liệu tháng này để AI phân tích. Hãy thêm vài khoản chi / thu nhé.";
+      }
       return;
     }
 
@@ -518,6 +530,7 @@ export async function renderReportInsights(uid, accountFilter = "all") {
     const prevThu = prevI.reduce((s, x) => s + Number(x.amount || 0), 0);
     const prevNet = prevThu - prevChi;
 
+    // So sánh chi tiêu với tháng trước
     let chiCompareHtml = "";
     if (prevChi > 0) {
       const diff = totalChi - prevChi;
@@ -533,6 +546,7 @@ export async function renderReportInsights(uid, accountFilter = "all") {
       chiCompareHtml = `Không có dữ liệu chi tháng trước để so sánh`;
     }
 
+    // So sánh số dư với tháng trước
     let netCompareHtml = "";
     if (prevE.length || prevI.length) {
       const diffNet = net - prevNet;
@@ -549,6 +563,7 @@ export async function renderReportInsights(uid, accountFilter = "all") {
       }
     }
 
+    // Tổng hợp theo danh mục để tìm danh mục chi cao nhất
     const catMap = new Map();
     curE.forEach((e) => {
       const cat = e.category || "Khác";
@@ -556,20 +571,56 @@ export async function renderReportInsights(uid, accountFilter = "all") {
     });
     const topCat = [...catMap.entries()].sort((a, b) => b[1] - a[1])[0];
 
+    // Tổng hợp theo ngày: dùng để tìm ngày chi nhiều nhất / ít nhất
     const dayMap = new Map();
     curE.forEach((e) => {
       const d = e?.date?.seconds
         ? new Date(e.date.seconds * 1000)
         : new Date(e.date);
       if (isNaN(d)) return;
-      const key = d.toISOString().slice(0, 10);
+      const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
       dayMap.set(key, (dayMap.get(key) || 0) + Number(e.amount || 0));
     });
-    const topDay = [...dayMap.entries()].sort((a, b) => b[1] - a[1])[0];
+
+    const dayEntries = [...dayMap.entries()].filter(([, total]) => total > 0);
+
+    // Ngày chi nhiều nhất
+    const topDay =
+      dayEntries.length > 0
+        ? [...dayEntries].sort((a, b) => b[1] - a[1])[0]
+        : null;
+
+    // Ngày chi ít nhất (nhưng phải có chi, > 0)
+    const minDay =
+      dayEntries.length > 0
+        ? [...dayEntries].sort((a, b) => a[1] - b[1])[0]
+        : null;
+
+    const formatDayLabel = (key) => {
+      // "2025-12-03" -> "03/12"
+      const [yy, mm, dd] = key.split("-");
+      return `${dd}/${mm}`;
+    };
 
     const accLabel =
       account === "all" ? "tất cả tài khoản" : `tài khoản ${account}`;
 
+    const fallback = (() => {
+      const netTxt =
+        net >= 0
+          ? "Bạn đang thặng dư trong tháng này."
+          : "Bạn đang âm trong tháng này.";
+      const topTxt = topCat
+        ? `Khoản chi lớn nhất nằm ở danh mục ${topCat[0]}.`
+        : "Hãy theo dõi danh mục chi lớn nhất để dễ tối ưu.";
+      const actTxt =
+        net < 0
+          ? "Thử cắt bớt 1–2 khoản chi lớn hoặc đặt giới hạn theo danh mục cho tháng sau."
+          : "Bạn có thể giữ thói quen này và đặt giới hạn nhẹ cho các danh mục hay tăng.";
+      return `${netTxt} ${topTxt} ${actTxt}`;
+    })();
+
+    // ====== PHẦN TEXT NHẬN XÉT NGẮN (LOCAL) ======
     wrap.innerHTML = `
       <div class="insight-item">
         • Tổng chi tháng này (${accLabel}): <strong>${formatVND(
@@ -603,15 +654,173 @@ export async function renderReportInsights(uid, accountFilter = "all") {
       ${
         topDay
           ? `<div class="insight-item">
-              • Ngày chi nhiều nhất: <strong>${topDay[0]}</strong>
+              • Ngày chi nhiều nhất: <strong>${formatDayLabel(
+                topDay[0]
+              )}</strong>
               (${formatVND(topDay[1])})
             </div>`
           : ""
       }
+      ${
+        minDay
+          ? `<div class="insight-item">
+              • Ngày chi ít nhất (có chi): <strong>${formatDayLabel(
+                minDay[0]
+              )}</strong>
+              (${formatVND(minDay[1])})
+            </div>`
+          : ""
+      }
+      ${
+        topDay && minDay
+          ? `<div class="insight-item mt-1 text-secondary">
+              <em>Trong tháng này, bạn chi nhiều nhất vào ngày ${formatDayLabel(
+                topDay[0]
+              )} (${formatVND(
+              topDay[1]
+            )}) và chi ít nhất vào ngày ${formatDayLabel(
+              minDay[0]
+            )} (${formatVND(minDay[1])}).</em>
+            </div>`
+          : ""
+      }
     `;
+
+    // ====== PHẦN GỌI AI (AI REPORT INSIGHTS) ======
+    if (aiBox) {
+      const monthLabel = `${String(m).padStart(2, "0")}/${y}`;
+      const payload = {
+        monthLabel,
+        accountLabel: accLabel,
+        totalChi,
+        totalThu,
+        net,
+        chiCompareText: stripHtmlTags(chiCompareHtml),
+        netCompareText: stripHtmlTags(netCompareHtml),
+        topCategory: topCat ? { name: topCat[0], amount: topCat[1] } : null,
+        topDay: topDay
+          ? {
+              date: formatDayLabel(topDay[0]),
+              amount: topDay[1],
+            }
+          : null,
+      };
+
+      try {
+        const rawSummary = await fetchAiReportInsights(payload);
+
+        const raw = (rawSummary || "").trim();
+        const summary = normalizeAiSummary(raw, fallback);
+        renderAiSummaryBox(aiBox, summary, "done");
+      } catch (err) {
+        console.error("AI report summary failed:", err);
+        renderAiSummaryBox(
+          aiBox,
+          "Không thể sử dụng AI vào lúc này. Bạn vẫn có thể xem phần nhận xét nhanh phía trên.",
+          "error"
+        );
+      }
+    }
   } catch (err) {
     wrap.innerHTML =
       '<span class="text-danger small">Lỗi phân tích dữ liệu.</span>';
+    if (aiBox) {
+      aiBox.textContent =
+        "Không thể sử dụng AI vào lúc này do lỗi phân tích dữ liệu.";
+    }
     console.error("renderReportInsights error:", err);
+  }
+}
+
+// ========== AI REPORT INSIGHTS ==========
+
+// Bỏ các thẻ HTML đơn giản ra khỏi chuỗi (để gửi text gọn cho AI)
+function stripHtmlTags(str = "") {
+  if (!str) return "";
+  return str
+    .replace(/<[^>]+>/g, "") // bỏ mọi thẻ <...>
+    .replace(/\s+/g, " ") // gom khoảng trắng
+    .trim();
+}
+
+// ========== UI helpers (safe render) ==========
+function escapeHtml(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderAiSummaryBox(aiBox, summaryText, state = "done") {
+  if (!aiBox) return;
+
+  if (state === "loading") {
+    aiBox.innerHTML = `
+      <div class="d-flex align-items-center gap-2">
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        <span class="text-secondary small">AI đang phân tích…</span>
+      </div>
+    `;
+    return;
+  }
+
+  if (state === "error") {
+    aiBox.innerHTML = `<div class="text-danger small">${escapeHtml(
+      summaryText
+    )}</div>`;
+    return;
+  }
+
+  // done
+  const safe = escapeHtml(summaryText)
+    .replace(/\n{2,}/g, "\n")
+    .replace(/\n/g, "<br/>");
+
+  aiBox.innerHTML = `
+    <div class="small text-secondary mb-1">AI gợi ý</div>
+    <div class="ai-summary">${safe}</div>
+  `;
+}
+
+function normalizeAiSummary(summary, fallback) {
+  let s = (summary || "").replace(/\s+/g, " ").trim();
+
+  // quá ngắn / không có dấu câu -> coi như không đạt
+  const hasSentenceEnd = /[.!?]$/.test(s);
+  const hasAnyPunc = /[.!?]/.test(s);
+
+  if (!s || s.length < 45 || !hasAnyPunc) return fallback;
+
+  // Nếu không kết thúc bằng dấu câu -> thêm "."
+  if (!hasSentenceEnd) s += ".";
+
+  // Tránh trường hợp kết thúc bằng từ cụt kiểu "bạn chi"
+  if (/\b(bạn chi|bạn thu|bạn tiêu)\.$/i.test(s)) return fallback;
+
+  return s;
+}
+
+async function fetchAiReportInsights(payload) {
+  try {
+    const res = await fetch("/.netlify/functions/ai-report-insights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      console.error("AI report insights HTTP error:", res.status);
+      throw new Error("HTTP error");
+    }
+
+    const data = await res.json();
+    if (data?.summary) return data.summary.trim();
+
+    throw new Error("No summary in response");
+  } catch (err) {
+    console.error("fetchAiReportInsights error:", err);
+    throw err;
   }
 }

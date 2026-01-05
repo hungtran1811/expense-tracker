@@ -809,6 +809,13 @@
 
                   <!-- Bộ lọc báo cáo -->
                   <div class="d-flex flex-wrap align-items-center gap-2 my-3">
+                    <select
+                      id="reportMonthFilter"
+                      class="form-select form-select-sm"
+                      style="max-width: 160px"
+                    >
+                      <!-- JS sẽ tự đồng bộ options giống #monthFilter -->
+                    </select>
                     <!-- Tài khoản -->
                     <select
                       id="accountSelect"
@@ -830,6 +837,12 @@
                     <div id="reportInsightsBody" class="text-muted small">
                       Đang phân tích dữ liệu...
                     </div>
+                    <div
+                      id="reportInsightsAi"
+                      class="text-secondary small mt-2 border-top pt-2"
+                    >
+                      <!-- AI summary sẽ được fill ở đây -->
+                    </div>
                   </div>
 
                   <div class="row g-3">
@@ -841,50 +854,6 @@
                     <div class="col-md-6">
                       <div class="p-3 rounded border" id="pieChart">
                         Biểu đồ tròn (demo)
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="mt-3">
-                    <div class="table-responsive">
-                      <table class="table" id="reportTable">
-                        <thead>
-                          <tr>
-                            <th>Danh mục</th>
-                            <th>Tổng</th>
-                            <th>Tỉ lệ</th>
-                          </tr>
-                        </thead>
-                        <tbody></tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Card Dòng tiền theo ngày -->
-                <div class="row g-3 mt-3">
-                  <div class="col-12 col-xl-8">
-                    <div class="card p-3">
-                      <div
-                        class="d-flex justify-content-between align-items-center mb-2"
-                      >
-                        <h5 class="mb-0">Dòng tiền theo ngày</h5>
-                        <small class="text-muted"
-                          >Thu &amp; Chi trong tháng hiện tại</small
-                        >
-                      </div>
-
-                      <div id="cashflowChart" class="cashflow-chart">
-                        <div class="text-muted small">Đang tải dữ liệu...</div>
-                      </div>
-
-                      <div class="mt-2 small text-secondary">
-                        <span class="me-3">
-                          <span class="legend-dot legend-dot-exp"></span> Chi
-                        </span>
-                        <span>
-                          <span class="legend-dot legend-dot-inc"></span> Thu
-                        </span>
                       </div>
                     </div>
                   </div>

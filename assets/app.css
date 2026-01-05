@@ -1133,3 +1133,9 @@ path.line-inc {
     width: 100%;
   }
 }
+
+.ai-summary {
+  line-height: 1.55;
+  white-space: normal;
+  word-break: break-word;
+}
