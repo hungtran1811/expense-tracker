@@ -811,8 +811,9 @@ async function fetchAiReportInsights(payload) {
     });
 
     if (!res.ok) {
-      console.error("AI report insights HTTP error:", res.status);
-      throw new Error("HTTP error");
+      const errText = await res.text().catch(() => "");
+      console.error("AI report insights HTTP error:", res.status, errText);
+      throw new Error(`HTTP ${res.status}: ${errText || "Server error"}`);
     }
 
     const data = await res.json();

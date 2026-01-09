@@ -1,34 +1,30 @@
 // netlify/functions/ai-report-insights.js
-// Phân tích dữ liệu chi tiêu 1 tháng và trả về 1 đoạn nhận xét ngắn bằng tiếng Việt.
+// Phân tích dữ liệu chi tiêu 1 tháng và trả về 2 câu nhận xét ngắn (VN).
 
-const GEMINI_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
-
-// ⚠️ Đảm bảo tên biến môi trường dưới đây GIỐNG với file ai-categorize.js bạn đang dùng
-const API_KEY =
-  (typeof Deno !== "undefined" ? Deno.env.get("GEMINI_API_KEY") : null) ||
-  (typeof process !== "undefined" ? process.env.GEMINI_API_KEY : null);
-
-export default async (request, context) => {
-  if (request.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405 });
+exports.handler = async function (event, context) {
+  // Only POST
+  if (event.httpMethod !== "POST") {
+    return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  if (!API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "Missing GEMINI_API_KEY env" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+  // Env
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Missing GEMINI_API_KEY" }),
+    };
   }
 
-  let payload;
+  // Parse JSON body
+  let payload = {};
   try {
-    payload = await request.json();
-  } catch (err) {
-    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    payload = JSON.parse(event.body || "{}");
+  } catch (e) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: "Invalid JSON body" }),
+    };
   }
 
   const {
@@ -46,36 +42,32 @@ export default async (request, context) => {
   const prompt = `
 Bạn là một trợ lý tài chính cá nhân, nói chuyện ngắn gọn, thân thiện, bằng tiếng Việt.
 
-Dựa trên dữ liệu chi tiêu trong tháng, hãy viết 2–3 câu nhận xét ngắn, dễ hiểu, KHÔNG dùng bullet point, không nhắc tới "dữ liệu" hay "báo cáo".
+Dựa trên thông tin dưới đây, hãy viết ĐÚNG 2 câu nhận xét, mỗi câu kết thúc bằng dấu chấm.
+Không dùng bullet point, không dùng tiêu đề, không bắt đầu bằng "Chào bạn".
+Hạn chế số, chỉ nhấn mạnh điểm nổi bật và có 1 gợi ý hành động đơn giản.
 
-Thông tin đầu vào:
+Thông tin:
 - Tháng: ${monthLabel || "không rõ"}
-- Phạm vi tài khoản: ${accountLabel || "tất cả tài khoản"}
-- Tổng chi: ${totalChi} VND
-- Tổng thu: ${totalThu} VND
-- Số dư (thu - chi): ${net} VND
-- So sánh chi tiêu với tháng trước: ${chiCompareText || "không có dữ liệu"}
-- So sánh số dư với tháng trước: ${netCompareText || "không có dữ liệu"}
+- Phạm vi: ${accountLabel || "tất cả tài khoản"}
+- Tổng chi: ${totalChi ?? 0} VND
+- Tổng thu: ${totalThu ?? 0} VND
+- Số dư (thu - chi): ${net ?? 0} VND
+- So sánh chi với tháng trước: ${chiCompareText || "không có"}
+- So sánh số dư với tháng trước: ${netCompareText || "không có"}
 - Danh mục chi cao nhất: ${
     topCategory ? `${topCategory.name} (${topCategory.amount} VND)` : "không có"
   }
-- Ngày chi nhiều nhất trong tháng: ${
+- Ngày chi nhiều nhất: ${
     topDay ? `${topDay.date} (${topDay.amount} VND)` : "không có"
   }
+`.trim();
 
-Yêu cầu:
-- BẮT BUỘC viết ít nhất 2 câu hoàn chỉnh, tối đa 3 câu.
-- Không bắt đầu bằng lời chào như "Chào bạn".
-- Không dùng bullet point, không dùng tiêu đề, không mở đầu câu bằng dấu ":".
-- Hạn chế số, không lặp lại toàn bộ số liệu, chỉ nhấn mạnh những điểm nổi bật (tiêu, thu, ngày chi nhiều, danh mục lớn).
-- Luôn thêm ít nhất 1 câu gợi ý hành động đơn giản (ví dụ: "cần kiểm soát ăn uống", "cần giữ thói quen tiết kiệm"...).
-- Không dùng bullet point, không dùng tiêu đề, không lạm dụng emoji (tối đa 1 emoji nếu cần).
-- Trả lời ĐÚNG 2 câu.
-- Mỗi câu phải kết thúc bằng dấu chấm.
-`;
+  const url =
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
+    apiKey;
 
   try {
-    const res = await fetch(`${GEMINI_ENDPOINT}?key=${API_KEY}`, {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -88,12 +80,17 @@ Yêu cầu:
     });
 
     if (!res.ok) {
-      const errText = await res.text();
+      // ✅ trả lỗi thật về FE để debug (401/403/429/…)
+      const errText = await res.text().catch(() => "");
       console.error("Gemini error:", res.status, errText);
-      return new Response(JSON.stringify({ error: "Gemini API error" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          error: "Gemini API error",
+          status: res.status,
+          details: errText,
+        }),
+      };
     }
 
     const data = await res.json();
@@ -103,15 +100,16 @@ Yêu cầu:
         .join(" ")
         .trim() || "";
 
-    return new Response(JSON.stringify({ summary: text }), {
-      status: 200,
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ summary: text }),
       headers: { "Content-Type": "application/json" },
-    });
+    };
   } catch (err) {
     console.error("ai-report-insights error:", err);
-    return new Response(JSON.stringify({ error: "Internal error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Internal error", details: String(err) }),
+    };
   }
 };

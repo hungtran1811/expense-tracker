@@ -37,8 +37,23 @@ export async function loadAccountsAndFill(uid, currentFilterAccount = "all") {
   _accountsCache = Array.isArray(accounts) ? accounts : [];
 
   // ===== Modal chuyển tiền (tfFrom, tfTo) =====
-  fillAccountSelect?.(document.getElementById("tfFrom"), accounts);
-  fillAccountSelect?.(document.getElementById("tfTo"), accounts);
+  // ===== Modal chuyển tiền (tfFrom, tfTo) =====
+  // IMPORTANT: transfer nên dùng accountId (không dùng name) để db.js xử lý chuẩn
+  const fillTransferSelect = (sel, list) => {
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- Chọn tài khoản --</option>';
+
+    (list || []).forEach((acc) => {
+      const opt = document.createElement("option");
+      opt.value = acc.id || acc.name; // ưu tiên id
+      opt.textContent = acc.name || "(No name)";
+      opt.dataset.name = acc.name || "";
+      sel.appendChild(opt);
+    });
+  };
+
+  fillTransferSelect(document.getElementById("tfFrom"), accounts);
+  fillTransferSelect(document.getElementById("tfTo"), accounts);
 
   const tfFrom = document.getElementById("tfFrom");
   const tfTo = document.getElementById("tfTo");
@@ -283,35 +298,69 @@ export function initAccountEvents() {
         return;
       }
 
-      const from = document.getElementById("tfFrom")?.value;
-      const to = document.getElementById("tfTo")?.value;
-      const amountRaw = document.getElementById("tfAmount")?.value;
-      const dateRaw = document.getElementById("tfDate")?.value;
-      const note = document.getElementById("tfNote")?.value?.trim() || "";
-
-      const amount = Number(amountRaw || 0);
+      // Lấy element
+      const fromSel = document.getElementById("tfFrom");
+      const toSel = document.getElementById("tfTo");
+      const amountInput = document.getElementById("tfAmount");
+      const dateInput = document.getElementById("tfDate");
+      const noteInput = document.getElementById("tfNote");
 
       try {
-        if (!from || !to) throw new Error("Vui lòng chọn đủ 2 tài khoản");
-        if (from === to)
-          throw new Error("Tài khoản chuyển đi và nhận không được trùng nhau");
-        if (!amount || amount <= 0) throw new Error("Số tiền phải lớn hơn 0");
+        // Lấy value
+        const fromId = (fromSel?.value || "").trim();
+        const toId = (toSel?.value || "").trim();
 
-        // Nếu không chọn ngày thì dùng ngày hôm nay
-        const date = dateRaw ? new Date(dateRaw + "T00:00:00") : new Date();
+        const amountRaw = (amountInput?.value || "").toString().trim();
+        const amount = Number(amountRaw.replaceAll(",", "")); // phòng trường hợp bạn nhập 1,000,000
+
+        const date = (dateInput?.value || "").trim();
+        const note = (noteInput?.value || "").trim();
+
+        // Lấy name từ option dataset (đã được set khi fillTransferSelect)
+        const fromName =
+          fromSel?.selectedOptions?.[0]?.dataset?.name ||
+          _accountsCache.find((a) => a.id === fromId)?.name ||
+          "";
+
+        const toName =
+          toSel?.selectedOptions?.[0]?.dataset?.name ||
+          _accountsCache.find((a) => a.id === toId)?.name ||
+          "";
+
+        // ===== VALIDATE (cực rõ ràng) =====
+        if (!fromId || !toId) throw new Error("Vui lòng chọn đầy đủ tài khoản");
+        if (fromId === toId)
+          throw new Error("Tài khoản chuyển đi và nhận không được trùng nhau");
+        if (!amountRaw) throw new Error("Vui lòng nhập số tiền");
+        if (!Number.isFinite(amount) || amount <= 0)
+          throw new Error("Số tiền không hợp lệ");
+        if (!date) throw new Error("Vui lòng chọn ngày");
 
         await addTransfer(user.uid, {
-          fromAccount: from,
-          toAccount: to,
+          // ✅ ID để DB update đúng account doc
+          fromAccountId: fromId,
+          toAccountId: toId,
+
+          // ✅ vẫn giữ id alias nếu DB cần
+          fromId,
+          toId,
+
+          // ✅ QUAN TRỌNG: from/to phải là TÊN để balancesByAccountTotal group đúng
+          from: fromName || fromId,
+          to: toName || toId,
+
+          // ✅ name để hiển thị/log
+          fromAccount: fromName || fromId,
+          toAccount: toName || toId,
+          fromName: fromName || "",
+          toName: toName || "",
+
           amount,
           date,
           note,
         });
 
-        // Reset form
-        const amountInput = document.getElementById("tfAmount");
-        const dateInput = document.getElementById("tfDate");
-        const noteInput = document.getElementById("tfNote");
+        // ===== RESET FORM =====
         if (amountInput) amountInput.value = "";
         if (dateInput) dateInput.value = "";
         if (noteInput) noteInput.value = "";
@@ -332,17 +381,56 @@ export function initAccountEvents() {
     });
 }
 
-/**
- * 2. Tính & render SỐ DƯ theo từng tài khoản cho Dashboard
- * - không reset theo tháng, luôn là số dư tích luỹ
- */
+// ===== Refresh balances (FIX: map đúng key id/name để không hiện "tài khoản lạ") =====
 export async function refreshBalances(uid) {
   if (!uid) return;
 
+  // 1) Lấy danh sách accounts để map ID -> NAME
+  const accounts = await listAccounts(uid);
+  const idToName = new Map(accounts.map((a) => [a.id, a.name]));
+  const nameSet = new Set(accounts.map((a) => (a.name || "").trim()));
+
+  // 2) Lấy số dư tổng hợp
   const items = await balancesByAccountTotal(uid);
 
+  // 3) Normalize key theo đúng ưu tiên:
+  // - Nếu item có accountId/id/fromAccountId/toAccountId => đó là docId
+  // - Nếu item có account (string) và trùng tên tài khoản => đó là name
+  const normalized = (items || []).map((it) => {
+    const accountId =
+      it.accountId ||
+      it.account_id ||
+      it.id ||
+      it.fromAccountId ||
+      it.toAccountId ||
+      null;
+
+    const accountNameCandidate =
+      typeof it.account === "string" ? it.account.trim() : "";
+
+    // Case A: Có docId => map sang name
+    if (accountId && idToName.has(accountId)) {
+      const name = idToName.get(accountId);
+      return { ...it, name, accountName: name };
+    }
+
+    // Case B: account là name hợp lệ => giữ nguyên (không biến thành ID)
+    if (accountNameCandidate && nameSet.has(accountNameCandidate)) {
+      return {
+        ...it,
+        name: accountNameCandidate,
+        accountName: accountNameCandidate,
+      };
+    }
+
+    // Case C: fallback cuối cùng (nếu DB trả về dạng lạ)
+    const fallback = accountId || it.name || it.account || "(Unknown)";
+    return { ...it, name: fallback, accountName: fallback };
+  });
+
+  // 4) Render
   const wrap = document.getElementById("balanceList");
   if (wrap && typeof renderBalancesList === "function") {
-    renderBalancesList(wrap, items);
+    renderBalancesList(wrap, normalized);
   }
 }
