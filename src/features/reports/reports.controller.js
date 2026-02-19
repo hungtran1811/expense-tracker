@@ -1,39 +1,54 @@
-// assets/reports.js
+// migrated to src structure
 import {
   getMonthValue,
   lastMonths,
   VND,
   formatVND,
   getReportAccountFilter,
-} from "./core.js";
-import { listExpensesByMonth, listIncomesByMonth } from "./db.js";
+} from "../../shared/ui/core.js";
+import {
+  listExpensesByMonth,
+  listIncomesByMonth,
+} from "../../services/firebase/firestore.js";
+import { getReportInsights } from "../../services/api/aiReportInsights.js";
 
-// 🔹 Top 3 danh mục chi nhiều nhất (overview card)
+// Top categories by spend (overview card)
 export async function refreshTopCategories(uid) {
   const ym = getMonthValue();
   const list = await listExpensesByMonth(uid, ym);
   const agg = new Map();
+
   list.forEach((x) => {
-    const k = x.category || "Khác";
+    const k = x.category || "Other";
     agg.set(k, (agg.get(k) || 0) + Number(x.amount || 0));
   });
-  const top = [...agg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  const top = [...agg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const max = top.length ? top[0][1] : 1;
   const wrap = document.getElementById("topCats");
   if (!wrap) return;
+
   wrap.innerHTML = top.length
     ? top
-        .map(
-          ([cat, total]) =>
-            `<button class="btn btn-outline-secondary d-flex justify-content-between">
-              <span>${cat}</span>
-              <strong>${Number(total).toLocaleString("vi-VN")}đ</strong>
-            </button>`
-        )
+        .map(([cat, total]) => {
+          const ratio = Math.max(8, Math.round((total / max) * 100));
+          return `
+            <div class="top-cat-item">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="top-cat-name">${cat}</span>
+                <strong class="top-cat-value">${Number(total).toLocaleString(
+                  "en-US"
+                )} VND</strong>
+              </div>
+              <div class="top-cat-track"><span style="width:${ratio}%"></span></div>
+            </div>
+          `;
+        })
         .join("")
-    : '<div class="text-muted">Chưa có dữ liệu</div>';
+    : '<div class="text-muted small">No spending data for this month.</div>';
 }
 
-// ---- 1) Giao dịch gần nhất (tháng hiện tại)
+// 1) Recent transactions (current month)
 export async function renderOverviewRecent(uid) {
   const ym = getMonthValue();
   const [exps, incs] = await Promise.all([
@@ -42,18 +57,18 @@ export async function renderOverviewRecent(uid) {
   ]);
   const merged = [
     ...exps.map((x) => ({
-      type: "chi",
+      type: "expense",
       date: x.date,
-      name: x.name || x.note || "Chi",
+      name: x.name || x.note || "Expense",
       amt: x.amount || x.money || 0,
-      cat: x.category || "Khác",
+      cat: x.category || "Other",
     })),
     ...incs.map((x) => ({
-      type: "thu",
+      type: "income",
       date: x.date,
-      name: x.name || x.note || "Thu",
+      name: x.name || x.note || "Income",
       amt: x.amount || x.money || 0,
-      cat: x.category || "Khác",
+      cat: x.category || "Other",
     })),
   ]
     .sort((a, b) => new Date(b.date) - new Date(a.date))
@@ -64,22 +79,22 @@ export async function renderOverviewRecent(uid) {
   ul.innerHTML = merged
     .map((item) => {
       const badge =
-        item.type === "chi"
-          ? '<span class="badge bg-danger-subtle text-danger ov-badge">Chi</span>'
-          : '<span class="badge bg-success-subtle text-success ov-badge">Thu</span>';
+        item.type === "expense"
+          ? '<span class="badge bg-danger-subtle text-danger ov-badge">Expense</span>'
+          : '<span class="badge bg-success-subtle text-success ov-badge">Income</span>';
       return `<li class="list-group-item">
       <span class="ov-note">${badge} ${
         item.name
-      } <span class="text-secondary ms-1">• ${item.cat}</span></span>
+      } <span class="text-secondary ms-1"> - ${item.cat}</span></span>
       <span class="ov-amt ${
-        item.type === "chi" ? "text-danger" : "text-success"
+        item.type === "expense" ? "text-danger" : "text-success"
       }">${VND(item.amt)}</span>
     </li>`;
     })
     .join("");
 }
 
-// ---- Top 5 khoản chi lớn nhất (tháng hiện tại)
+// Top 5 expenses (current month)
 export async function renderOverviewTopExpenses(uid) {
   const ym = getMonthValue();
   const exps = await listExpensesByMonth(uid, ym);
@@ -87,8 +102,8 @@ export async function renderOverviewTopExpenses(uid) {
   const top5 = exps
     .map((x) => ({
       id: x.id,
-      name: x.name || x.note || "Chi",
-      cat: x.category || "Khác",
+      name: x.name || x.note || "Expense",
+      cat: x.category || "Other",
       amt: Number(x.amount || x.money || 0),
       date: x.date,
     }))
@@ -112,7 +127,7 @@ export async function renderOverviewTopExpenses(uid) {
           <div>
             <div class="fw-semibold">${i.name}</div>
             <div class="text-secondary small">${i.cat}${
-            i.date ? " • " + toDDMM(i.date) : ""
+            i.date ? " - " + toDDMM(i.date) : ""
           }</div>
           </div>
           <div class="text-danger fw-semibold">${VND(i.amt)}</div>
@@ -120,20 +135,20 @@ export async function renderOverviewTopExpenses(uid) {
       `
         )
         .join("")
-    : '<li class="list-group-item text-muted">Chưa có dữ liệu</li>';
+    : '<li class="list-group-item text-muted">No data yet</li>';
 }
 
-// ---- 2) Xu hướng 6 tháng (sparkline)
+// 2) 6-month trend (sparkline)
 export async function renderOverviewTrend(uid) {
   const months = lastMonths(6);
   const sum = async (fn, ym) =>
     (await fn(uid, ym)).reduce((s, x) => s + (x.amount || x.money || 0), 0);
 
-  const chi = [];
-  const thu = [];
+  const exp = [];
+  const inc = [];
   for (const m of months) {
-    chi.push(await sum(listExpensesByMonth, m));
-    thu.push(await sum(listIncomesByMonth, m));
+    exp.push(await sum(listExpensesByMonth, m));
+    inc.push(await sum(listIncomesByMonth, m));
   }
 
   const el = document.getElementById("ov-trend");
@@ -141,7 +156,7 @@ export async function renderOverviewTrend(uid) {
   const W = el.clientWidth || 520,
     H = el.clientHeight || 140,
     pad = 12;
-  const max = Math.max(...chi, ...thu, 1);
+  const max = Math.max(...exp, ...inc, 1);
   const sx = (i) => pad + i * ((W - 2 * pad) / (months.length - 1));
   const sy = (v) => H - pad - (v / max) * (H - 2 * pad);
   const path = (arr) =>
@@ -149,8 +164,8 @@ export async function renderOverviewTrend(uid) {
 
   el.innerHTML = `
     <svg class="spark" viewBox="0 0 ${W} ${H}">
-      <path class="line-exp" d="${path(chi)}"></path>
-      <path class="line-inc" d="${path(thu)}"></path>
+      <path class="line-exp" d="${path(exp)}"></path>
+      <path class="line-inc" d="${path(inc)}"></path>
       <g font-size="10" fill="#64748b">
         ${months
           .map(
@@ -165,13 +180,13 @@ export async function renderOverviewTrend(uid) {
   `;
 }
 
-// ---- 3) Chi theo danh mục (tháng hiện tại) + alerts
+// 3) Expense by category (current month) + alerts
 export async function renderOverviewCategory(uid) {
   const ym = getMonthValue();
   const exps = await listExpensesByMonth(uid, ym);
   const byCat = {};
   exps.forEach((x) => {
-    const k = x.category || "Khác";
+    const k = x.category || "Other";
     byCat[k] = (byCat[k] || 0) + (x.amount || x.money || 0);
   });
   const total = Object.values(byCat).reduce((s, v) => s + v, 0) || 1;
@@ -190,52 +205,51 @@ export async function renderOverviewCategory(uid) {
     .join("");
 
   const wrap = document.getElementById("ov-cat");
-  if (wrap)
-    wrap.innerHTML = rows || '<div class="text-muted">Chưa có dữ liệu.</div>';
+  if (wrap) wrap.innerHTML = rows || '<div class="text-muted">No data yet.</div>';
 
   const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
   const alerts = [];
   const top = entries[0];
   if (top && top[1] > total * 0.4) {
     alerts.push(
-      `Danh mục <b>${top[0]}</b> chiếm ${Math.round(
+      `Category <b>${top[0]}</b> takes ${Math.round(
         (top[1] * 100) / total
-      )}% tổng chi.`
+      )}% of total spend.`
     );
   }
   if (exps.length === 0) {
-    alerts.push("Tháng này chưa có khoản chi.");
+    alerts.push("No expenses recorded this month.");
   }
 
   const lines = entries.map(([name, val]) => {
     const pct = Math.round((val * 100) / total);
-    return `• <b>${name}</b> chiếm ${pct}% (${VND(val)})`;
+    return `- <b>${name}</b> takes ${pct}% (${VND(val)})`;
   });
 
   const box = document.getElementById("ov-alerts");
   if (box) {
     box.innerHTML =
       (alerts.length
-        ? alerts.map((a) => `<div class="mb-1">• ${a}</div>`).join("") +
+        ? alerts.map((a) => `<div class="mb-1">- ${a}</div>`).join("") +
           "<hr class='my-2'/>"
         : "") +
       (lines.length
         ? `<div class="small">${lines.join("<br/>")}</div>`
-        : '<div class="text-muted">Không có dữ liệu.</div>');
+        : '<div class="text-muted">No data available.</div>');
   }
 }
 
-// Gói gọn: gọi 3 block overview cùng lúc
+// Run the overview blocks together
 export async function renderOverviewLower(uid) {
   await Promise.all([
     renderOverviewRecent(uid),
     renderOverviewTopExpenses(uid),
     renderOverviewCategory(uid),
-    // Nếu muốn: thêm renderOverviewTrend(uid) vào đây
+    // Optional: renderOverviewTrend(uid)
   ]);
 }
 
-// ---- Biểu đồ dòng tiền theo ngày trong tháng
+// Cashflow chart by day in month
 export async function renderReportCashflow(uid) {
   const el = document.getElementById("cashflowChart");
   if (!el || !uid) return;
@@ -244,7 +258,7 @@ export async function renderReportCashflow(uid) {
   const [year, month] = ym.split("-").map(Number);
   if (!year || !month) return;
 
-  el.textContent = "Đang tải biểu đồ dòng tiền...";
+  el.textContent = "Loading cashflow chart...";
 
   try {
     const [exps, incs] = await Promise.all([
@@ -253,8 +267,8 @@ export async function renderReportCashflow(uid) {
     ]);
 
     const daysInMonth = new Date(year, month, 0).getDate();
-    const chi = Array(daysInMonth).fill(0);
-    const thu = Array(daysInMonth).fill(0);
+    const exp = Array(daysInMonth).fill(0);
+    const inc = Array(daysInMonth).fill(0);
 
     const getDayIndex = (doc) => {
       const d = doc?.date?.seconds
@@ -267,19 +281,19 @@ export async function renderReportCashflow(uid) {
     exps.forEach((e) => {
       const idx = getDayIndex(e);
       if (idx == null || idx < 0 || idx >= daysInMonth) return;
-      chi[idx] += Number(e.amount || e.money || 0);
+      exp[idx] += Number(e.amount || e.money || 0);
     });
 
     incs.forEach((i) => {
       const idx = getDayIndex(i);
       if (idx == null || idx < 0 || idx >= daysInMonth) return;
-      thu[idx] += Number(i.amount || i.money || 0);
+      inc[idx] += Number(i.amount || i.money || 0);
     });
 
-    const hasData = chi.some((v) => v > 0) || thu.some((v) => v > 0);
+    const hasData = exp.some((v) => v > 0) || inc.some((v) => v > 0);
     if (!hasData) {
       el.innerHTML =
-        '<div class="text-muted small">Chưa có dữ liệu thu / chi trong tháng này.</div>';
+        '<div class="text-muted small">No income or expense data for this month.</div>';
       return;
     }
 
@@ -287,7 +301,7 @@ export async function renderReportCashflow(uid) {
     const H = 160;
     const pad = 16;
 
-    const max = Math.max(...chi, ...thu, 1);
+    const max = Math.max(...exp, ...inc, 1);
     const sx = (i) =>
       daysInMonth === 1 ? W / 2 : pad + (i * (W - 2 * pad)) / (daysInMonth - 1);
     const sy = (v) => H - pad - (v / max) * (H - 2 * pad);
@@ -298,8 +312,8 @@ export async function renderReportCashflow(uid) {
 
     el.innerHTML = `
       <svg class="spark" viewBox="0 0 ${W} ${H}">
-        <path class="line-exp" d="${path(chi)}"></path>
-        <path class="line-inc" d="${path(thu)}"></path>
+        <path class="line-exp" d="${path(exp)}"></path>
+        <path class="line-inc" d="${path(inc)}"></path>
         <g font-size="9" fill="#64748b">
           ${days
             .filter((d) => d === 1 || d === daysInMonth || d % 5 === 0)
@@ -314,21 +328,21 @@ export async function renderReportCashflow(uid) {
       </svg>
       <div class="cashflow-legend">
         <span class="legend-item">
-          <span class="dot dot-exp"></span> Chi
+          <span class="dot dot-exp"></span> Expense
         </span>
         <span class="legend-item">
-          <span class="dot dot-inc"></span> Thu
+          <span class="dot dot-inc"></span> Income
         </span>
       </div>
     `;
   } catch (err) {
     console.error("renderReportCashflow error:", err);
     el.innerHTML =
-      '<div class="text-danger small">Lỗi tải dữ liệu dòng tiền.</div>';
+      '<div class="text-danger small">Failed to load cashflow data.</div>';
   }
 }
 
-// ---- Biểu đồ cột + tròn cho Báo cáo
+// Bar + pie charts for Reports
 export async function renderReportsCharts(uid, accountFilter = "all") {
   const barWrap = document.getElementById("barChart");
   const pieWrap = document.getElementById("pieChart");
@@ -359,16 +373,16 @@ export async function renderReportsCharts(uid, accountFilter = "all") {
 
     if (!expFiltered.length && !incFiltered.length) {
       const msg =
-        '<div class="text-muted small">Chưa có dữ liệu trong tháng này cho tài khoản đã chọn.</div>';
+        '<div class="text-muted small">No data for this month and account selection.</div>';
       barWrap.innerHTML = msg;
       pieWrap.innerHTML = msg;
       return;
     }
 
-    // BAR: top 5 danh mục chi
+    // BAR: top 5 expense categories
     const catMap = new Map();
     expFiltered.forEach((e) => {
-      const cat = e.category || "Khác";
+      const cat = e.category || "Other";
       catMap.set(cat, (catMap.get(cat) || 0) + Number(e.amount || 0));
     });
 
@@ -379,7 +393,7 @@ export async function renderReportsCharts(uid, accountFilter = "all") {
 
     if (!topCats.length || maxVal <= 0) {
       barWrap.innerHTML =
-        '<div class="text-muted small">Chưa có dữ liệu chi tiêu trong tháng này.</div>';
+        '<div class="text-muted small">No expense data for this month.</div>';
     } else {
       barWrap.innerHTML = `
         <div class="ht-bar-chart">
@@ -390,8 +404,8 @@ export async function renderReportsCharts(uid, accountFilter = "all") {
               <div class="bar-col">
                 <div class="bar" style="height:${h}%">
                   <span class="bar-value">${Number(val).toLocaleString(
-                    "vi-VN"
-                  )}đ</span>
+                    "en-US"
+                  )} VND</span>
                 </div>
                 <div class="bar-label" title="${name}">${name}</div>
               </div>`;
@@ -400,11 +414,11 @@ export async function renderReportsCharts(uid, accountFilter = "all") {
         </div>`;
     }
 
-    // PIE: tỷ trọng chi
-    const totalChi = catEntries.reduce((s, [, v]) => s + v, 0);
-    if (!totalChi) {
+    // PIE: expense distribution
+    const totalExp = catEntries.reduce((s, [, v]) => s + v, 0);
+    if (!totalExp) {
       pieWrap.innerHTML =
-        '<div class="text-muted small">Chưa có dữ liệu chi tiêu trong tháng này.</div>';
+        '<div class="text-muted small">No expense data for this month.</div>';
       return;
     }
 
@@ -427,14 +441,14 @@ export async function renderReportsCharts(uid, accountFilter = "all") {
 
     usedCats.forEach(([name, val], idx) => {
       const start = currentDeg;
-      const angle = (val / totalChi) * 360;
+      const angle = (val / totalExp) * 360;
       const end = start + angle;
       const color = colors[idx % colors.length];
       currentDeg = end;
 
       segments.push(`${color} ${start}deg ${end}deg`);
 
-      const percent = ((val / totalChi) * 100).toFixed(1);
+      const percent = ((val / totalExp) * 100).toFixed(1);
       legends.push(`
         <div class="ht-pie-legend-row">
           <div class="d-flex align-items-center">
@@ -444,8 +458,8 @@ export async function renderReportsCharts(uid, accountFilter = "all") {
           <div class="text-end">
             <strong>${percent}%</strong>
             <span class="text-muted ms-1 small">${Number(val).toLocaleString(
-              "vi-VN"
-            )}đ</span>
+              "en-US"
+            )} VND</span>
           </div>
         </div>`);
     });
@@ -462,9 +476,9 @@ export async function renderReportsCharts(uid, accountFilter = "all") {
   } catch (err) {
     console.error("[renderReportsCharts]", err);
     barWrap.innerHTML =
-      '<div class="text-danger small">Lỗi tải dữ liệu báo cáo.</div>';
+      '<div class="text-danger small">Failed to load report data.</div>';
     pieWrap.innerHTML =
-      '<div class="text-danger small">Lỗi tải dữ liệu báo cáo.</div>';
+      '<div class="text-danger small">Failed to load report data.</div>';
   }
 }
 
@@ -473,9 +487,8 @@ export async function renderReportInsights(uid, accountFilter = "all") {
   const aiBox = document.getElementById("reportInsightsAi");
   if (!wrap || !uid) return;
 
-  // set trạng thái loading cho AI (nếu có box)
+  // Set loading state for AI (if box exists)
   if (aiBox) {
-    // aiBox.textContent = "AI đang phân tích dữ liệu tháng này...";
     renderAiSummaryBox(aiBox, "", "loading");
   }
 
@@ -511,67 +524,67 @@ export async function renderReportInsights(uid, accountFilter = "all") {
     const prevE = filterByAcc(prevExp);
     const prevI = filterByAcc(prevInc);
 
-    // Không có dữ liệu tháng này -> dừng luôn, AI cũng khỏi gọi
+    // No data this month -> stop, and skip AI
     if (!curE.length && !curI.length) {
       wrap.innerHTML =
-        '<span class="text-muted">Chưa có dữ liệu để phân tích cho tài khoản đã chọn.</span>';
+        '<span class="text-muted">No data to analyze for the selected account.</span>';
       if (aiBox) {
         aiBox.textContent =
-          "Không có dữ liệu tháng này để AI phân tích. Hãy thêm vài khoản chi / thu nhé.";
+          "No data this month for AI analysis. Add a few expenses or incomes to get insights.";
       }
       return;
     }
 
-    const totalChi = curE.reduce((s, x) => s + Number(x.amount || 0), 0);
-    const totalThu = curI.reduce((s, x) => s + Number(x.amount || 0), 0);
-    const net = totalThu - totalChi;
+    const totalExp = curE.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const totalInc = curI.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const net = totalInc - totalExp;
 
-    const prevChi = prevE.reduce((s, x) => s + Number(x.amount || 0), 0);
-    const prevThu = prevI.reduce((s, x) => s + Number(x.amount || 0), 0);
-    const prevNet = prevThu - prevChi;
+    const prevExpSum = prevE.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const prevIncSum = prevI.reduce((s, x) => s + Number(x.amount || 0), 0);
+    const prevNet = prevIncSum - prevExpSum;
 
-    // So sánh chi tiêu với tháng trước
-    let chiCompareHtml = "";
-    if (prevChi > 0) {
-      const diff = totalChi - prevChi;
-      const perc = Math.abs((diff / prevChi) * 100).toFixed(1);
+    // Compare expenses vs last month
+    let expCompareHtml = "";
+    if (prevExpSum > 0) {
+      const diff = totalExp - prevExpSum;
+      const perc = Math.abs((diff / prevExpSum) * 100).toFixed(1);
       if (diff > 0) {
-        chiCompareHtml = `<span class="insight-up">+${perc}%</span> so với chi tháng trước`;
+        expCompareHtml = `<span class="insight-up">+${perc}%</span> vs last month`;
       } else if (diff < 0) {
-        chiCompareHtml = `<span class="insight-down">-${perc}%</span> so với chi tháng trước`;
+        expCompareHtml = `<span class="insight-down">-${perc}%</span> vs last month`;
       } else {
-        chiCompareHtml = `Chi không đổi so với tháng trước`;
+        expCompareHtml = "No change vs last month";
       }
     } else {
-      chiCompareHtml = `Không có dữ liệu chi tháng trước để so sánh`;
+      expCompareHtml = "No expense data last month for comparison";
     }
 
-    // So sánh số dư với tháng trước
+    // Compare net vs last month
     let netCompareHtml = "";
     if (prevE.length || prevI.length) {
       const diffNet = net - prevNet;
       const percNet =
         prevNet === 0 ? null : Math.abs((diffNet / prevNet) * 100).toFixed(1);
       if (prevNet === 0 || percNet === null) {
-        netCompareHtml = `Không có đủ dữ liệu để so sánh số dư với tháng trước`;
+        netCompareHtml = "Not enough data to compare net vs last month";
       } else if (diffNet > 0) {
-        netCompareHtml = `<span class="insight-down">Tốt hơn ${percNet}%</span> so với số dư tháng trước`;
+        netCompareHtml = `<span class="insight-down">Improved ${percNet}%</span> vs last month`;
       } else if (diffNet < 0) {
-        netCompareHtml = `<span class="insight-up">Xấu hơn ${percNet}%</span> so với số dư tháng trước`;
+        netCompareHtml = `<span class="insight-up">Worse ${percNet}%</span> vs last month`;
       } else {
-        netCompareHtml = `Số dư không đổi so với tháng trước`;
+        netCompareHtml = "Net unchanged vs last month";
       }
     }
 
-    // Tổng hợp theo danh mục để tìm danh mục chi cao nhất
+    // Category totals to find highest spend category
     const catMap = new Map();
     curE.forEach((e) => {
-      const cat = e.category || "Khác";
+      const cat = e.category || "Other";
       catMap.set(cat, (catMap.get(cat) || 0) + Number(e.amount || 0));
     });
     const topCat = [...catMap.entries()].sort((a, b) => b[1] - a[1])[0];
 
-    // Tổng hợp theo ngày: dùng để tìm ngày chi nhiều nhất / ít nhất
+    // Aggregate by day to find peak/low spend days
     const dayMap = new Map();
     curE.forEach((e) => {
       const d = e?.date?.seconds
@@ -584,69 +597,66 @@ export async function renderReportInsights(uid, accountFilter = "all") {
 
     const dayEntries = [...dayMap.entries()].filter(([, total]) => total > 0);
 
-    // Ngày chi nhiều nhất
     const topDay =
       dayEntries.length > 0
         ? [...dayEntries].sort((a, b) => b[1] - a[1])[0]
         : null;
 
-    // Ngày chi ít nhất (nhưng phải có chi, > 0)
     const minDay =
       dayEntries.length > 0
         ? [...dayEntries].sort((a, b) => a[1] - b[1])[0]
         : null;
 
     const formatDayLabel = (key) => {
-      // "2025-12-03" -> "03/12"
-      const [yy, mm, dd] = key.split("-");
+      const [, mm, dd] = key.split("-");
       return `${dd}/${mm}`;
     };
 
     const accLabel =
-      account === "all" ? "tất cả tài khoản" : `tài khoản ${account}`;
+      account === "all" ? "all accounts" : `account ${account}`;
 
     const fallback = (() => {
       const netTxt =
         net >= 0
-          ? "Bạn đang thặng dư trong tháng này."
-          : "Bạn đang âm trong tháng này.";
+          ? "You are running a surplus this month."
+          : "You are running a deficit this month.";
       const topTxt = topCat
-        ? `Khoản chi lớn nhất nằm ở danh mục ${topCat[0]}.`
-        : "Hãy theo dõi danh mục chi lớn nhất để dễ tối ưu.";
+        ? `Your highest spend category is ${topCat[0]}.`
+        : "Track your top category to optimize spending.";
       const actTxt =
         net < 0
-          ? "Thử cắt bớt 1–2 khoản chi lớn hoặc đặt giới hạn theo danh mục cho tháng sau."
-          : "Bạn có thể giữ thói quen này và đặt giới hạn nhẹ cho các danh mục hay tăng.";
+          ? "Consider trimming 1-2 big expenses or setting category limits next month."
+          : "Keep this habit and set light limits on categories that tend to grow.";
       return `${netTxt} ${topTxt} ${actTxt}`;
     })();
 
-    // ====== PHẦN TEXT NHẬN XÉT NGẮN (LOCAL) ======
+    // Local insight text
     wrap.innerHTML = `
       <div class="insight-item">
-        • Tổng chi tháng này (${accLabel}): <strong>${formatVND(
-      totalChi
-    )}</strong>
+        - Total expenses this month (${accLabel}): <strong>${formatVND(
+          totalExp
+        )}</strong>
       </div>
       <div class="insight-item">
-        • Tổng thu tháng này (${accLabel}): <strong>${formatVND(
-      totalThu
-    )}</strong>
+        - Total income this month (${accLabel}): <strong>${formatVND(
+          totalInc
+        )}</strong>
       </div>
       <div class="insight-item">
-        • Số dư (Thu - Chi): <strong>${formatVND(net)}</strong>
+        - Net (Income - Expense): <strong>${formatVND(net)}</strong>
       </div>
       <div class="insight-item">
-        • So sánh chi tiêu: ${chiCompareHtml}
+        - Expense comparison: ${expCompareHtml}
       </div>
       ${
         netCompareHtml
-          ? `<div class="insight-item">• So sánh số dư: ${netCompareHtml}</div>`
+          ? `<div class="insight-item">- Net comparison: ${netCompareHtml}</div>`
           : ""
       }
       ${
         topCat
           ? `<div class="insight-item">
-              • Danh mục chi cao nhất: <strong>${topCat[0]}</strong>
+              - Top spend category: <strong>${topCat[0]}</strong>
               (${formatVND(topCat[1])})
             </div>`
           : ""
@@ -654,9 +664,7 @@ export async function renderReportInsights(uid, accountFilter = "all") {
       ${
         topDay
           ? `<div class="insight-item">
-              • Ngày chi nhiều nhất: <strong>${formatDayLabel(
-                topDay[0]
-              )}</strong>
+              - Highest spend day: <strong>${formatDayLabel(topDay[0])}</strong>
               (${formatVND(topDay[1])})
             </div>`
           : ""
@@ -664,7 +672,7 @@ export async function renderReportInsights(uid, accountFilter = "all") {
       ${
         minDay
           ? `<div class="insight-item">
-              • Ngày chi ít nhất (có chi): <strong>${formatDayLabel(
+              - Lowest spend day (with spend): <strong>${formatDayLabel(
                 minDay[0]
               )}</strong>
               (${formatVND(minDay[1])})
@@ -674,11 +682,9 @@ export async function renderReportInsights(uid, accountFilter = "all") {
       ${
         topDay && minDay
           ? `<div class="insight-item mt-1 text-secondary">
-              <em>Trong tháng này, bạn chi nhiều nhất vào ngày ${formatDayLabel(
+              <em>This month, you spent the most on ${formatDayLabel(
                 topDay[0]
-              )} (${formatVND(
-              topDay[1]
-            )}) và chi ít nhất vào ngày ${formatDayLabel(
+              )} (${formatVND(topDay[1])}) and the least on ${formatDayLabel(
               minDay[0]
             )} (${formatVND(minDay[1])}).</em>
             </div>`
@@ -686,16 +692,16 @@ export async function renderReportInsights(uid, accountFilter = "all") {
       }
     `;
 
-    // ====== PHẦN GỌI AI (AI REPORT INSIGHTS) ======
+    // AI summary
     if (aiBox) {
       const monthLabel = `${String(m).padStart(2, "0")}/${y}`;
       const payload = {
         monthLabel,
         accountLabel: accLabel,
-        totalChi,
-        totalThu,
+        totalChi: totalExp,
+        totalThu: totalInc,
         net,
-        chiCompareText: stripHtmlTags(chiCompareHtml),
+        chiCompareText: stripHtmlTags(expCompareHtml),
         netCompareText: stripHtmlTags(netCompareHtml),
         topCategory: topCat ? { name: topCat[0], amount: topCat[1] } : null,
         topDay: topDay
@@ -707,7 +713,7 @@ export async function renderReportInsights(uid, accountFilter = "all") {
       };
 
       try {
-        const rawSummary = await fetchAiReportInsights(payload);
+        const rawSummary = await getReportInsights(payload);
 
         const raw = (rawSummary || "").trim();
         const summary = normalizeAiSummary(raw, fallback);
@@ -716,34 +722,32 @@ export async function renderReportInsights(uid, accountFilter = "all") {
         console.error("AI report summary failed:", err);
         renderAiSummaryBox(
           aiBox,
-          "Không thể sử dụng AI vào lúc này. Bạn vẫn có thể xem phần nhận xét nhanh phía trên.",
+          "AI is unavailable right now. You can still review the quick insights above.",
           "error"
         );
       }
     }
   } catch (err) {
     wrap.innerHTML =
-      '<span class="text-danger small">Lỗi phân tích dữ liệu.</span>';
+      '<span class="text-danger small">Failed to analyze data.</span>';
     if (aiBox) {
       aiBox.textContent =
-        "Không thể sử dụng AI vào lúc này do lỗi phân tích dữ liệu.";
+        "AI is unavailable due to an analysis error.";
     }
     console.error("renderReportInsights error:", err);
   }
 }
 
-// ========== AI REPORT INSIGHTS ==========
-
-// Bỏ các thẻ HTML đơn giản ra khỏi chuỗi (để gửi text gọn cho AI)
+// Remove simple HTML tags for AI text
 function stripHtmlTags(str = "") {
   if (!str) return "";
   return str
-    .replace(/<[^>]+>/g, "") // bỏ mọi thẻ <...>
-    .replace(/\s+/g, " ") // gom khoảng trắng
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
-// ========== UI helpers (safe render) ==========
+// UI helpers (safe render)
 function escapeHtml(str = "") {
   return String(str)
     .replaceAll("&", "&amp;")
@@ -760,7 +764,7 @@ function renderAiSummaryBox(aiBox, summaryText, state = "done") {
     aiBox.innerHTML = `
       <div class="d-flex align-items-center gap-2">
         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-        <span class="text-secondary small">AI đang phân tích…</span>
+        <span class="text-secondary small">AI is analyzing...</span>
       </div>
     `;
     return;
@@ -779,7 +783,7 @@ function renderAiSummaryBox(aiBox, summaryText, state = "done") {
     .replace(/\n/g, "<br/>");
 
   aiBox.innerHTML = `
-    <div class="small text-secondary mb-1">AI gợi ý</div>
+    <div class="small text-secondary mb-1">AI insights</div>
     <div class="ai-summary">${safe}</div>
   `;
 }
@@ -787,17 +791,15 @@ function renderAiSummaryBox(aiBox, summaryText, state = "done") {
 function normalizeAiSummary(summary, fallback) {
   let s = (summary || "").replace(/\s+/g, " ").trim();
 
-  // quá ngắn / không có dấu câu -> coi như không đạt
+  // Too short or no punctuation => fallback
   const hasSentenceEnd = /[.!?]$/.test(s);
   const hasAnyPunc = /[.!?]/.test(s);
 
   if (!s || s.length < 45 || !hasAnyPunc) return fallback;
 
-  // Nếu không kết thúc bằng dấu câu -> thêm "."
   if (!hasSentenceEnd) s += ".";
 
-  // Tránh trường hợp kết thúc bằng từ cụt kiểu "bạn chi"
-  if (/\b(bạn chi|bạn thu|bạn tiêu)\.$/i.test(s)) return fallback;
+  if (/\b(you spend|you earn|you pay)\.$/i.test(s)) return fallback;
 
   return s;
 }
