@@ -7,6 +7,21 @@ const PERIOD_LABEL = {
   month: "Tháng",
 };
 
+const PERIOD_WEIGHT = {
+  day: 3,
+  week: 2,
+  month: 1,
+};
+
+const VIDEO_STAGE_ORDER = {
+  idea: 0,
+  research: 1,
+  script: 2,
+  shoot: 3,
+  edit: 4,
+  publish: 5,
+};
+
 function greetingKeyByHour(hour = new Date().getHours()) {
   if (hour < 12) return "morning";
   if (hour < 18) return "afternoon";
@@ -60,16 +75,18 @@ function normalizeAccountBalanceItem(item = {}) {
   };
 }
 
-function buildPriorityItems(state = {}) {
+function getHabitCandidates(state = {}) {
   const habits = Array.isArray(state.habits) ? state.habits : [];
   const habitProgress = state.habitProgress && typeof state.habitProgress === "object" ? state.habitProgress : {};
 
-  const habitItems = habits
+  return habits
     .map((habit) => {
       const progress = habitProgress[habit.id] || {};
       const target = Math.max(1, Number(progress.target || habit.targetCount || 1));
       const done = Math.max(0, Number(progress.done || 0));
       const remaining = Math.max(0, Number(progress.remaining ?? target - done));
+      const period = habit?.period || "day";
+
       return {
         key: `habit-${habit.id}`,
         type: "habit",
@@ -78,54 +95,119 @@ function buildPriorityItems(state = {}) {
         remaining,
         done,
         target,
-        period: PERIOD_LABEL[habit.period] || "Ngày",
+        period,
+        periodLabel: PERIOD_LABEL[period] || "Ngày",
+        periodWeight: PERIOD_WEIGHT[period] || 0,
       };
     })
-    .filter((item) => item.remaining > 0)
-    .sort((a, b) => b.remaining - a.remaining)
-    .slice(0, 2)
-    .map((item) => ({
-      key: item.key,
-      type: item.type,
-      id: item.id,
-      title: item.title,
-      meta: formatTemplate(t("dashboard.priority.habitMeta", ""), {
-        done: item.done,
-        target: item.target,
-        period: item.period,
-      }),
-      actionLabel: t("dashboard.priority.actionCheckIn", "Điểm danh"),
-    }));
+    .filter((item) => item.id && item.remaining > 0)
+    .sort((a, b) => {
+      if (b.remaining !== a.remaining) return b.remaining - a.remaining;
+      if (b.periodWeight !== a.periodWeight) return b.periodWeight - a.periodWeight;
+      return String(a.title).localeCompare(String(b.title), "vi");
+    });
+}
 
-  const videoItems = (Array.isArray(state.videoTasks) ? state.videoTasks : [])
+function getVideoCandidates(state = {}) {
+  return (Array.isArray(state.videoTasks) ? state.videoTasks : [])
     .filter((task) => task?.status !== "done")
     .map((task) => {
       const stage = String(task?.stage || "idea");
+      const stageIndex = Number(VIDEO_STAGE_ORDER[stage] ?? 0);
       const stageLabel = t(`videoPlan.stage.${stage}`, "Ý tưởng");
       const deadline = parseTaskDeadline(task);
-      const dueDate = toDateLabel(deadline);
 
       return {
         key: `video-${task.id}`,
         type: "video",
         id: task.id,
         title: task?.title || "(Không tên)",
+        stage,
+        stageIndex,
+        stageLabel,
         deadline,
-        meta: dueDate
-          ? formatTemplate(t("dashboard.priority.videoMetaDue", ""), { dueDate, stage: stageLabel })
-          : formatTemplate(t("dashboard.priority.videoMetaNoDue", ""), { stage: stageLabel }),
-        actionLabel: t("dashboard.priority.actionOpenVideo", "Mở bảng video"),
       };
     })
+    .filter((item) => item.id)
     .sort((a, b) => {
-      if (!a.deadline && !b.deadline) return 0;
-      if (!a.deadline) return 1;
-      if (!b.deadline) return -1;
-      return a.deadline.getTime() - b.deadline.getTime();
-    })
-    .slice(0, 1);
+      if (a.deadline && b.deadline) return a.deadline.getTime() - b.deadline.getTime();
+      if (a.deadline && !b.deadline) return -1;
+      if (!a.deadline && b.deadline) return 1;
+      return a.stageIndex - b.stageIndex;
+    });
+}
 
-  return [...habitItems, ...videoItems].slice(0, 3);
+function scorePriorityItem(item, now) {
+  if (item.type === "habit") {
+    return 1000 + item.remaining * 10 + item.periodWeight;
+  }
+
+  if (item.deadline instanceof Date && !Number.isNaN(item.deadline.getTime())) {
+    const hoursLeft = Math.max(0, (item.deadline.getTime() - now.getTime()) / 36e5);
+    return 1500 - Math.min(720, hoursLeft);
+  }
+
+  return 500 - item.stageIndex;
+}
+
+function mapPriorityItem(item) {
+  if (item.type === "habit") {
+    return {
+      key: item.key,
+      type: item.type,
+      id: item.id,
+      title: item.title,
+      meta: formatTemplate(t("dashboard.nextAction.habitMeta", "{{remaining}} lượt còn lại • {{period}}"), {
+        remaining: item.remaining,
+        period: item.periodLabel,
+      }),
+      badge: t("dashboard.nextAction.habitBadge", "Thói quen"),
+      actionLabel: t("dashboard.nextAction.actionCheckIn", "Điểm danh"),
+    };
+  }
+
+  const dueDate = toDateLabel(item.deadline);
+  const meta = dueDate
+    ? formatTemplate(t("dashboard.nextAction.videoMetaDue", "Hạn {{dueDate}} • {{stage}}"), {
+        dueDate,
+        stage: item.stageLabel,
+      })
+    : formatTemplate(t("dashboard.nextAction.videoMetaNoDue", "Chưa có hạn • {{stage}}"), {
+        stage: item.stageLabel,
+      });
+
+  return {
+    key: item.key,
+    type: item.type,
+    id: item.id,
+    title: item.title,
+    meta,
+    badge: t("dashboard.nextAction.videoBadge", "Video"),
+    actionLabel: dueDate
+      ? t("dashboard.nextAction.actionOpenVideo", "Mở task")
+      : t("dashboard.nextAction.actionOpenBoard", "Mở bảng"),
+  };
+}
+
+function getDeadlineWindowItems(videoItems = [], now = new Date(), windowHours = 72) {
+  const nowMs = now.getTime();
+  const hours = Number.isFinite(Number(windowHours)) ? Math.max(1, Number(windowHours)) : 72;
+  const horizonMs = nowMs + hours * 60 * 60 * 1000;
+
+  return videoItems
+    .filter((item) => item.deadline instanceof Date && !Number.isNaN(item.deadline.getTime()))
+    .filter((item) => {
+      const dueMs = item.deadline.getTime();
+      return dueMs >= nowMs && dueMs <= horizonMs;
+    })
+    .map((item) => ({
+      id: item.id,
+      title: item.title,
+      stage: item.stage,
+      stageLabel: item.stageLabel,
+      dueDate: toDateLabel(item.deadline),
+    }))
+    .slice(0, 4);
 }
 
 function resolveMissionText({ openVideoTasks, remainingHabitTurns }) {
@@ -140,6 +222,83 @@ function resolveMissionText({ openVideoTasks, remainingHabitTurns }) {
     });
   }
   return PROFILE_VI.missionDefault || t("dashboard.hero.missionDefault", "");
+}
+
+export function buildDashboardPriorityVM(state = {}, now = new Date(), options = {}) {
+  const maxItems = Math.max(1, Number(options?.maxItems || 3));
+  const deadlineWindowHours = Number(options?.deadlineWindowHours || 72);
+  const safeNow = now instanceof Date ? now : new Date();
+
+  const habits = getHabitCandidates(state);
+  const videos = getVideoCandidates(state);
+
+  const merged = [...habits, ...videos]
+    .map((item) => ({
+      ...item,
+      score: scorePriorityItem(item, safeNow),
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.type === b.type) return String(a.title).localeCompare(String(b.title), "vi");
+      return a.type === "habit" ? -1 : 1;
+    })
+    .slice(0, maxItems)
+    .map((item) => mapPriorityItem(item));
+
+  const topHabit = merged.find((item) => item.type === "habit");
+  const deadline72h = getDeadlineWindowItems(videos, safeNow, deadlineWindowHours);
+
+  return {
+    items: merged,
+    topHabitId: topHabit?.id || "",
+    topDeadlineTaskId: deadline72h[0]?.id || "",
+    habitRemainingTurns: calcRemainingHabitTurns(state.habitProgress),
+    openVideoTasks: calcOpenVideoTasks(state.videoTasks),
+  };
+}
+
+export function buildDashboardActionBoardVM(state = {}, now = new Date(), options = {}) {
+  const maxItems = Math.max(1, Number(options?.maxItems || 3));
+  const deadlineWindowHoursRaw = Number(options?.deadlineWindowHours || 72);
+  const deadlineWindowHours = Number.isFinite(deadlineWindowHoursRaw)
+    ? Math.max(12, Math.floor(deadlineWindowHoursRaw))
+    : 72;
+
+  const priority = buildDashboardPriorityVM(state, now, {
+    maxItems,
+    deadlineWindowHours,
+  });
+  const videos = getVideoCandidates(state);
+  const deadlineItems = getDeadlineWindowItems(videos, now, deadlineWindowHours);
+
+  const summaryText =
+    priority.habitRemainingTurns > 0 || priority.openVideoTasks > 0
+      ? formatTemplate(t("dashboard.actionBoard.summary", ""), {
+          habitCount: priority.habitRemainingTurns,
+          videoCount: priority.openVideoTasks,
+        })
+      : t("dashboard.actionBoard.summaryDone", "Hôm nay không có việc khẩn cấp.");
+
+  return {
+    title: t("dashboard.actionBoard.title", "Bảng hành động hôm nay"),
+    subtitle: formatTemplate(
+      t("dashboard.actionBoard.subtitle", "Tập trung vào việc kế tiếp và các task video cận hạn {{hours}} giờ."),
+      { hours: deadlineWindowHours }
+    ),
+    nextTitle: t("dashboard.actionBoard.nextTitle", "Việc kế tiếp"),
+    deadlineTitle: formatTemplate(t("dashboard.actionBoard.deadlineTitle", "Cận hạn {{hours}} giờ"), {
+      hours: deadlineWindowHours,
+    }),
+    summaryTitle: t("dashboard.actionBoard.summaryTitle", "Tóm tắt hành động"),
+    summaryText,
+    deadlineWindowHours,
+    nextActions: priority.items,
+    deadlineItems,
+    quickActions: {
+      habitId: priority.topHabitId || "",
+      deadlineTaskId: priority.topDeadlineTaskId || "",
+    },
+  };
 }
 
 export function buildDashboardHeroVM(state = {}, now = new Date()) {
@@ -202,9 +361,20 @@ export function buildDashboardModulesVM(state = {}) {
 }
 
 export function buildDashboardCommandCenterVM(state = {}, now = new Date()) {
+  const maxItems = Math.max(1, Number(state?.settings?.preferences?.dashboard?.nextActionsMax || 3));
+  const deadlineWindowHours = Number(state?.settings?.preferences?.dashboard?.deadlineWindowHours || 72);
+
+  const priority = buildDashboardPriorityVM(state, now, {
+    maxItems,
+    deadlineWindowHours,
+  });
   return {
     hero: buildDashboardHeroVM(state, now),
     modules: buildDashboardModulesVM(state),
-    priorityItems: buildPriorityItems(state),
+    priorityItems: priority.items,
+    actionBoard: buildDashboardActionBoardVM(state, now, {
+      maxItems,
+      deadlineWindowHours,
+    }),
   };
 }

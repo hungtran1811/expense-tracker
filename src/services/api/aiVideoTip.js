@@ -1,15 +1,9 @@
-﻿export async function getVideoTip(payload) {
-  const res = await fetch("/.netlify/functions/ai-video-tip", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+import { callNetlifyFunction } from "./netlifyClient.js";
+
+export async function getVideoTip(payload) {
+  const data = await callNetlifyFunction("ai-video-tip", payload || {}, {
+    timeoutMs: 15000,
   });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`AI video tip failed: ${res.status} ${text}`);
-  }
-
-  const data = await res.json();
   return data?.tip || "";
 }
+

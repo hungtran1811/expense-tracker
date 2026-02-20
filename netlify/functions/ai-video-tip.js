@@ -1,4 +1,4 @@
-﻿exports.handler = async function (event) {
+exports.handler = async function (event) {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
@@ -56,7 +56,7 @@ Yeu cau:
 `.trim();
 
   const url =
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-latest:generateContent?key=" +
     apiKey;
 
   try {
@@ -110,3 +110,6 @@ Yeu cau:
     };
   }
 };
+
+
+

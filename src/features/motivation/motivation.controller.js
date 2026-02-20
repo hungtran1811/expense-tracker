@@ -73,7 +73,7 @@ function sumByHabitIds(logs, habitIds) {
     .reduce((sum, log) => sum + Number(log?.count || 0), 0);
 }
 
-export async function getMotivationSummary(uid) {
+async function computeMotivationSummary(uid, { awardChallenges = false } = {}) {
   if (!uid) return buildDefaultMotivationSummary();
 
   const now = new Date();
@@ -122,34 +122,36 @@ export async function getMotivationSummary(uid) {
   const weekProgress = calcProgress(weekDone, weekTarget);
   const monthProgress = calcProgress(monthDone, monthTarget);
 
-  if (dayProgress.percent >= 100 && dayTarget > 0) {
-    await awardXp(uid, {
-      sourceType: "habit",
-      sourceId: "global",
-      action: "challenge_day",
-      points: 20,
-      periodKey: today,
-    });
-  }
+  if (awardChallenges) {
+    if (dayProgress.percent >= 100 && dayTarget > 0) {
+      await awardXp(uid, {
+        sourceType: "habit",
+        sourceId: "global",
+        action: "challenge_day",
+        points: 20,
+        periodKey: today,
+      });
+    }
 
-  if (weekProgress.percent >= 100 && weekTarget > 0) {
-    await awardXp(uid, {
-      sourceType: "habit",
-      sourceId: "global",
-      action: "challenge_week",
-      points: 80,
-      periodKey: weekKey(now),
-    });
-  }
+    if (weekProgress.percent >= 100 && weekTarget > 0) {
+      await awardXp(uid, {
+        sourceType: "habit",
+        sourceId: "global",
+        action: "challenge_week",
+        points: 80,
+        periodKey: weekKey(now),
+      });
+    }
 
-  if (monthProgress.percent >= 100 && monthTarget > 0) {
-    await awardXp(uid, {
-      sourceType: "habit",
-      sourceId: "global",
-      action: "challenge_month",
-      points: 250,
-      periodKey: monthKey(now),
-    });
+    if (monthProgress.percent >= 100 && monthTarget > 0) {
+      await awardXp(uid, {
+        sourceType: "habit",
+        sourceId: "global",
+        action: "challenge_month",
+        points: 250,
+        periodKey: monthKey(now),
+      });
+    }
   }
 
   return {
@@ -160,4 +162,12 @@ export async function getMotivationSummary(uid) {
     week: weekProgress,
     month: monthProgress,
   };
+}
+
+export async function getMotivationSummary(uid) {
+  return computeMotivationSummary(uid, { awardChallenges: true });
+}
+
+export async function getMotivationSummaryReadOnly(uid) {
+  return computeMotivationSummary(uid, { awardChallenges: false });
 }

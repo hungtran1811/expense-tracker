@@ -1,45 +1,61 @@
-# NEXUS OS — Smoke Checklist Baseline RC1
+# NEXUS OS - Smoke Checklist Phase 2.7
 
-## 1) Gate bắt buộc
-- Chạy `npm run check:i18n`.
-- Chạy `npm run build`.
-- Đảm bảo không có lỗi console mới ở các thao tác chính.
+## 1) Gate bat buoc
+- Chay `npm run check:i18n`.
+- Chay `npm run build`.
+- Chay `npm run check:baseline`.
+- Xac nhan khong co loi console moi o cac thao tac chinh.
 
-## 2) Dashboard + Số dư tài khoản
-- Mở `#dashboard`, xác nhận khối số dư tài khoản hiển thị đầu tiên.
-- Xác nhận không còn khối "Nhịp tài chính".
-- Tạo tài khoản mới trong `#accounts`, quay lại dashboard và xác nhận số dư cập nhật.
-- Sửa tài khoản, xác nhận tên/số dư hiển thị cập nhật.
-- Xóa tài khoản (có chuyển dữ liệu), xác nhận dashboard cập nhật ngay.
-- Chuyển tiền giữa 2 tài khoản, xác nhận số dư 2 bên thay đổi đúng ở dashboard và accounts.
+## 2) Dashboard + Action Board
+- Mo `#dashboard`, xac nhan khong con khoi AI Brief.
+- Xac nhan thu tu: Hero + Action Board + So du tai khoan + Video + Goals + Dong luc.
+- `dashPriorityList` hien thi dung nguon Habit + Video.
+- Nut quick action tu dashboard hoat dong dung (`Diem danh ngay`, `Mo task can han`).
 
-## 3) Tài chính (regression)
-- Đăng nhập/đăng xuất hoạt động bình thường.
-- CRUD khoản chi trong `#expenses` hoạt động đúng.
-- CRUD khoản thu trong `#incomes` hoạt động đúng.
-- Lọc theo tháng đồng bộ giữa `monthFilter` và `incomeMonthFilter`.
-- Xuất CSV thành công.
+## 3) Expense label AI v2
+- Mo form them chi, nhap ten giao dich ro nghia, dung go 600ms.
+- Neu confidence >= 0.75: category duoc auto-apply.
+- Neu confidence < 0.75: hien thi goi y + nut `Ap dung de xuat AI`.
+- Bam ap dung thu cong: category doi dung va khong crash form.
+- Tat AI/loi mang: form van thao tac binh thuong.
 
-## 4) Goals + Motivation
-- Tạo mục tiêu và cập nhật tiến độ.
-- Tạo habit `target=1`, điểm danh lần 1 thành công.
-- Điểm danh lần 2 trong cùng kỳ bị khóa.
-- Badge "Đã đạt/Hoàn thành" hiển thị đúng.
-- Day/Week/Month summary không bị cộng chéo.
+## 4) Video Copilot
+- O `#video-plan`, bam `AI goi y moi` va nhan 3 phuong an.
+- Bam `AI cai thien noi dung` khi da co input, nhan 3 phuong an theo context.
+- Bam `Ap dung toan bo` o 1 option: du lieu do vao form dung field.
+- Xac nhan chua tao task neu chua bam `Them cong viec video`.
+- Cooldown 8s hoat dong, khong spam request.
 
-## 5) Video plan
-- Tạo task video mới thành công.
-- Mở offcanvas sửa task từ nút "Sửa", dữ liệu được prefill.
-- Lưu sửa task thành công, board và summary cập nhật.
-- Kéo thả qua các giai đoạn hoạt động đúng.
-- Xóa task video hoạt động đúng.
+## 5) Goal Copilot Bundle
+- O `#goals`, bam `AI goi y moi` va nhan 3 bundle goal+habit.
+- Bam `AI cai thien noi dung` khi da co input, nhan 3 bundle theo context.
+- Bam `Ap dung toan bo` o 1 bundle: do du lieu vao ca form Goal va Habit.
+- Sau khi bam `Them muc tieu`/`Them thoi quen`, luong tao du lieu van hoat dong dung.
 
-## 6) i18n tiếng Việt 100%
-- Kiểm tra `#dashboard`, `#expenses`, `#goals`, `#video-plan`, `#accounts`, `#settings`.
-- Không còn chuỗi lỗi kiểu `�`, `T�m`, `th�ng`, `cÃ¡`.
-- Toast và label động đều hiển thị tiếng Việt có dấu.
+## 6) Weekly Review (khong AI insight)
+- Mo `#weekly-review`, xac nhan khong con nut/khung AI insight.
+- Snapshot 4 khoi render dung khi co va khi rong du lieu.
+- Luu ke hoach tuan moi thanh cong va reload van con du lieu.
+- `wrHistoryList` hien thi va mo lai tuan da luu dung thu tu gan nhat.
 
-## 7) Responsive
-- `<=767px`: không tràn ngang ở dashboard/expenses/goals/video-plan/accounts.
-- `768-991px`: bảng, filter, action group, offcanvas hiển thị ổn định.
-- `>=992px`: layout không bị nhảy khi mở/đóng offcanvas.
+## 7) Firestore apply-log AI
+- Khi chi xem goi y AI (chua bam ap dung): khong luu ban ghi apply.
+- Khi bam `Ap dung` (hoac auto-label confidence cao): luu vao `users/{uid}/aiSuggestions`.
+- Payload co du `type`, `mode`, `inputSnapshot`, `appliedOutput`, `appliedAt`.
+
+## 8) Regression nghiep vu
+- Auth login/logout binh thuong.
+- CRUD expense/income/account/transfer khong regress.
+- Habit `target=1`: tick lan 2 trong cung ky bi khoa.
+- Video create/edit/delete/move stage + XP rule khong doi.
+- Settings autosave + startRoute + remember filter khong regress.
+
+## 9) Responsive
+- `<=767px`: khong tran ngang o dashboard/expenses/goals/video/weekly/accounts.
+- `768-991px`: filter, form, board, action group co gian on dinh.
+- `>=992px`: layout on dinh, khong jump bat thuong khi mo offcanvas.
+
+## 10) i18n
+- Kiem tra phan moi (expense AI, goal AI, video AI) hien thi tieng Viet co dau day du.
+- Khong con wording cu: `AI Brief`, `insight AI` tren dashboard/weekly-review.
+- Khong co chuoi loi mojibake tren UI.

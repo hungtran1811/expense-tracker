@@ -28,6 +28,8 @@ export const colHabits = (uid) => collection(db, `users/${uid}/habits`);
 export const colHabitLogs = (uid) => collection(db, `users/${uid}/habitLogs`);
 export const colVideoTasks = (uid) => collection(db, `users/${uid}/videoTasks`);
 export const colXpLogs = (uid) => collection(db, `users/${uid}/xpLogs`);
+export const colWeeklyReviews = (uid) => collection(db, `users/${uid}/weeklyReviews`);
+export const colAiSuggestions = (uid) => collection(db, `users/${uid}/aiSuggestions`);
 export const docUser = (uid) => doc(db, `users/${uid}`);
 
 function ymToRange(ym) {
@@ -55,6 +57,12 @@ function toTimestamp(value) {
     return Timestamp.fromDate(d);
   }
   return null;
+}
+
+function toTimestampStrict(value, label = "date") {
+  const ts = toTimestamp(value);
+  if (!ts) throw new Error(`${label} không hợp lệ`);
+  return ts;
 }
 
 function mapDocs(snapshot) {
@@ -94,6 +102,20 @@ export async function listIncomesByMonth(uid, ym) {
     colIncomes(uid),
     where("date", ">=", rng.start),
     where("date", "<", rng.end),
+    orderBy("date", "desc")
+  );
+  const snap = await getDocs(qy);
+  return mapDocs(snap);
+}
+
+export async function listIncomesByDateRange(uid, fromDate, toDateExclusive) {
+  const fromTs = toTimestampStrict(fromDate, "fromDate");
+  const toTs = toTimestampStrict(toDateExclusive, "toDateExclusive");
+
+  const qy = query(
+    colIncomes(uid),
+    where("date", ">=", fromTs),
+    where("date", "<", toTs),
     orderBy("date", "desc")
   );
   const snap = await getDocs(qy);
@@ -160,6 +182,21 @@ export async function listTransfersByMonth(uid, ym) {
     colTransfers(uid),
     where("date", ">=", rng.start),
     where("date", "<", rng.end),
+    orderBy("date", "desc")
+  );
+
+  const snap = await getDocs(qy);
+  return mapDocs(snap);
+}
+
+export async function listTransfersByDateRange(uid, fromDate, toDateExclusive) {
+  const fromTs = toTimestampStrict(fromDate, "fromDate");
+  const toTs = toTimestampStrict(toDateExclusive, "toDateExclusive");
+
+  const qy = query(
+    colTransfers(uid),
+    where("date", ">=", fromTs),
+    where("date", "<", toTs),
     orderBy("date", "desc")
   );
 
@@ -237,9 +274,16 @@ export async function balancesByAccountTotal(uid) {
 }
 
 export async function saveProfile(uid, data) {
+  const displayName = data.displayName || "";
   await setDoc(
     docUser(uid),
-    { displayName: data.displayName || "", updatedAt: Timestamp.now() },
+    {
+      displayName,
+      profile: {
+        displayName,
+      },
+      updatedAt: Timestamp.now(),
+    },
     { merge: true }
   );
 }
@@ -247,6 +291,46 @@ export async function saveProfile(uid, data) {
 export async function readProfile(uid) {
   const snap = await getDoc(docUser(uid));
   return snap.exists() ? snap.data() : null;
+}
+
+export async function readUserSettings(uid) {
+  if (!uid) return null;
+
+  const snap = await getDoc(docUser(uid));
+  if (!snap.exists()) return null;
+
+  const data = snap.data() || {};
+  const legacyDisplayName = typeof data.displayName === "string" ? data.displayName : "";
+  const profile = data.profile && typeof data.profile === "object" ? data.profile : {};
+
+  if (!profile.displayName && legacyDisplayName) {
+    return {
+      ...data,
+      profile: {
+        ...profile,
+        displayName: legacyDisplayName,
+      },
+    };
+  }
+
+  return data;
+}
+
+export async function saveUserSettings(uid, partialPayload = {}) {
+  if (!uid || !partialPayload || typeof partialPayload !== "object") return false;
+
+  const payload = {
+    ...partialPayload,
+    updatedAt: Timestamp.now(),
+  };
+
+  const profileDisplayName = partialPayload?.profile?.displayName;
+  if (typeof profileDisplayName === "string" && profileDisplayName.trim()) {
+    payload.displayName = profileDisplayName.trim();
+  }
+
+  await setDoc(docUser(uid), payload, { merge: true });
+  return true;
 }
 
 export async function addExpense(uid, payload) {
@@ -288,6 +372,99 @@ export async function listExpensesByMonth(uid, ym) {
   );
   const snap = await getDocs(qy);
   return mapDocs(snap);
+}
+
+export async function listExpensesByDateRange(uid, fromDate, toDateExclusive) {
+  const fromTs = toTimestampStrict(fromDate, "fromDate");
+  const toTs = toTimestampStrict(toDateExclusive, "toDateExclusive");
+
+  const qy = query(
+    colExpenses(uid),
+    where("date", ">=", fromTs),
+    where("date", "<", toTs),
+    orderBy("date", "desc")
+  );
+  const snap = await getDocs(qy);
+  return mapDocs(snap);
+}
+
+export async function readWeeklyReview(uid, weekKey) {
+  const key = String(weekKey || "").trim();
+  if (!uid || !key) return null;
+
+  const ref = doc(db, `users/${uid}/weeklyReviews/${key}`);
+  const snap = await getDoc(ref);
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function saveWeeklyReview(uid, weekKey, payload = {}) {
+  const key = String(weekKey || "").trim();
+  if (!uid || !key) throw new Error("Thiếu uid hoặc weekKey");
+  if (!payload || typeof payload !== "object") throw new Error("Payload không hợp lệ");
+
+  const ref = doc(db, `users/${uid}/weeklyReviews/${key}`);
+  const prev = await getDoc(ref);
+  const now = Timestamp.now();
+
+  await setDoc(
+    ref,
+    {
+      weekKey: key,
+      ...payload,
+      createdAt: prev.exists() ? prev.data()?.createdAt || now : now,
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+  return true;
+}
+
+export async function listWeeklyReviews(uid, limitCount = 12) {
+  if (!uid) return [];
+  const safeLimit = Math.min(52, Math.max(1, Number(limitCount || 12)));
+
+  const snap = await getDocs(
+    query(colWeeklyReviews(uid), orderBy("updatedAt", "desc"), limit(safeLimit))
+  );
+  return mapDocs(snap).map((item) => ({
+    ...item,
+    weekKey: String(item.weekKey || item.id || "").trim(),
+  }));
+}
+
+export async function saveAppliedAiSuggestion(uid, payload = {}) {
+  if (!uid) throw new Error("Thiếu uid");
+  if (!payload || typeof payload !== "object") throw new Error("Payload không hợp lệ");
+
+  const type = String(payload?.type || "").trim();
+  if (!type) throw new Error("Thiếu loại gợi ý AI");
+
+  const mode = String(payload?.mode || "generate").trim() || "generate";
+  const appliedAt = toTimestamp(payload?.appliedAt || new Date()) || Timestamp.now();
+
+  const data = {
+    type,
+    mode,
+    inputSnapshot: payload?.inputSnapshot && typeof payload.inputSnapshot === "object" ? payload.inputSnapshot : {},
+    appliedOutput: payload?.appliedOutput && typeof payload.appliedOutput === "object" ? payload.appliedOutput : {},
+    appliedAt,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  };
+
+  await addDoc(colAiSuggestions(uid), data);
+  return true;
+}
+
+export async function listAppliedAiSuggestions(uid, options = {}) {
+  if (!uid) return [];
+  const typeFilter = String(options?.type || "").trim();
+  const limitCount = Math.min(60, Math.max(1, Number(options?.limitCount || 14)));
+
+  const snap = await getDocs(query(colAiSuggestions(uid), orderBy("updatedAt", "desc"), limit(limitCount)));
+  const list = mapDocs(snap);
+  if (!typeFilter) return list;
+  return list.filter((item) => String(item?.type || "").trim() === typeFilter);
 }
 
 export async function getExpense(uid, id) {

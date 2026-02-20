@@ -1,13 +1,41 @@
-export async function suggestCategory({ name, note, categories }) {
-  const res = await fetch("/.netlify/functions/ai-categorize", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, note, categories }),
-  });
+import { callNetlifyFunction } from "./netlifyClient.js";
 
-  if (!res.ok) {
-    throw new Error(`AI categorize failed: ${res.status}`);
-  }
-
-  return res.json();
+function normalizeHistory(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      name: String(item?.name || "").trim(),
+      note: String(item?.note || "").trim(),
+      category: String(item?.category || "").trim(),
+    }))
+    .filter((item) => item.name && item.category)
+    .slice(0, 40);
 }
+
+export async function suggestCategory({ name, note, categories, history }) {
+  const payload = {
+    name,
+    note,
+    categories,
+    history: normalizeHistory(history),
+  };
+  const data = await callNetlifyFunction(
+    "ai-categorize",
+    payload,
+    { timeoutMs: 15000 }
+  );
+  const category = String(data?.category || "").trim();
+  const confidence = Number(data?.confidence || 0);
+  const reason = String(data?.reason || "").trim();
+
+  return {
+    category,
+    confidence: Number.isFinite(confidence) ? confidence : 0,
+    reason,
+    model: String(data?.model || "gemini-3-flash-latest"),
+    promptVersion: String(data?.promptVersion || "2.7.0"),
+  };
+}
+
+
+

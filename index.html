@@ -53,6 +53,10 @@
             <i class="bi bi-camera-video"></i>
             <span class="rail-label">Video</span>
           </a>
+          <a href="#weekly-review" class="rail-link" data-nav="weekly-review" aria-label="Tổng kết tuần">
+            <i class="bi bi-calendar-week"></i>
+            <span class="rail-label">Tổng kết</span>
+          </a>
           <a href="#accounts" class="rail-link" data-nav="accounts" aria-label="Tài khoản">
             <i class="bi bi-wallet2"></i>
             <span class="rail-label">Tài khoản</span>
@@ -173,6 +177,9 @@
                         </button>
                         <a class="btn btn-outline-primary btn-sm" id="btnQuickGoGoals" href="#goals">Mở mục tiêu hôm nay</a>
                         <a class="btn btn-outline-primary btn-sm" id="btnQuickGoVideo" href="#video-plan">Mở bảng video</a>
+                        <a class="btn btn-outline-primary btn-sm" id="btnQuickGoWeeklyReview" href="#weekly-review">Tổng kết tuần</a>
+                        <button class="btn btn-outline-success btn-sm d-none" id="btnDashQuickCheckIn">Điểm danh ngay</button>
+                        <button class="btn btn-outline-primary btn-sm d-none" id="btnDashQuickDeadline">Mở task cận hạn</button>
                       </div>
                     </div>
                   </div>
@@ -180,7 +187,7 @@
                   <div class="dash-hero-mission mt-3">
                     <div class="small text-uppercase text-muted" id="dashMissionTitle">Nhiệm vụ hôm nay</div>
                     <p class="mb-2" id="dashMissionText">
-                      Giữ nhịp đều: hoàn thành 1 mục tiêu và đẩy 1 công việc video tiến lên.
+                      Hoàn thành 1 mục tiêu và đẩy 1 công việc video tiến lên trong hôm nay.
                     </p>
                     <div class="small text-muted" id="dashHeroMeta">Trạng thái theo thời gian thực của tháng đang chọn</div>
                   </div>
@@ -206,6 +213,37 @@
                       <small>Mục tiêu đang chạy</small>
                       <strong id="dashHeroGoalCount">0</strong>
                     </article>
+                  </div>
+                </div>
+
+                <div class="card p-3 dashboard-action-board" id="dashActionBoard">
+                  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+                    <div>
+                      <h6 class="mb-1" id="dashActionBoardTitle">Bảng hành động hôm nay</h6>
+                      <p class="text-muted small mb-0" id="dashActionBoardSub">
+                        Tập trung vào việc kế tiếp và các task video cận hạn 72 giờ.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="row g-3 dash-action-grid">
+                    <div class="col-12 col-xl-5">
+                      <div class="dash-action-col h-100">
+                        <div class="small text-uppercase text-muted mb-2" id="dashNextActionsTitle">Việc kế tiếp</div>
+                        <div id="dashNextActions" class="dash-action-list"></div>
+                      </div>
+                    </div>
+                    <div class="col-12 col-xl-4">
+                      <div class="dash-action-col h-100">
+                        <div class="small text-uppercase text-muted mb-2" id="dashDeadline72hTitle">Cận hạn 72 giờ</div>
+                        <div id="dashDeadline72h" class="dash-deadline-list"></div>
+                      </div>
+                    </div>
+                    <div class="col-12 col-xl-3">
+                      <div class="dash-action-col h-100">
+                        <div class="small text-uppercase text-muted mb-2" id="dashActionSummaryTitle">Tóm tắt hành động</div>
+                        <div id="dashActionSummary" class="dash-action-summary text-muted small"></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -268,6 +306,102 @@
                     </div>
                   </div>
 
+                </div>
+              </div>
+            </section>
+
+            <section id="weekly-review" class="route">
+              <div class="page-header">
+                <div>
+                  <h4 class="mb-1" id="wrHeaderTitle">Tổng kết tuần</h4>
+                  <p class="text-muted small mb-0" id="wrHeaderSubtitle">
+                    Nghi thức review cuối tuần để ra quyết định nhanh cho tuần mới.
+                  </p>
+                </div>
+                <div class="page-actions">
+                  <button class="btn btn-primary" id="btnWeeklyReviewSave">Lưu tổng kết tuần</button>
+                </div>
+              </div>
+
+              <div class="weekly-review-meta d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div class="small fw-semibold" id="wrWeekLabel">Tuần hiện tại</div>
+                <div class="small text-muted" id="wrSaveStatus">Sẵn sàng tổng kết tuần</div>
+              </div>
+
+              <div class="row g-3 weekly-review-grid">
+                <div class="col-12 col-md-6 col-xl-3">
+                  <div class="card p-3 h-100">
+                    <h6 class="mb-2" id="wrFinanceTitle">Tài chính tuần</h6>
+                    <div id="wrFinanceSnapshot" class="small"></div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                  <div class="card p-3 h-100">
+                    <h6 class="mb-2" id="wrGoalsTitle">Mục tiêu &amp; thói quen</h6>
+                    <div id="wrGoalsSnapshot" class="small"></div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                  <div class="card p-3 h-100">
+                    <h6 class="mb-2" id="wrVideoTitle">Video tuần này</h6>
+                    <div id="wrVideoSnapshot" class="small"></div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                  <div class="card p-3 h-100">
+                    <h6 class="mb-2" id="wrMotivationTitle">Động lực tuần</h6>
+                    <div id="wrMotivationSnapshot" class="small"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row g-3 mt-1">
+                <div class="col-12 col-xl-8">
+                  <div class="card p-3">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                      <h6 class="mb-0" id="wrPlanTitle">Kế hoạch tuần mới</h6>
+                    </div>
+                    <div class="row g-3">
+                      <div class="col-12">
+                        <label class="form-label" for="wrFocusTheme" id="wrLabelFocusTheme">Chủ đề trọng tâm</label>
+                        <input
+                          id="wrFocusTheme"
+                          type="text"
+                          class="form-control"
+                          placeholder="Ví dụ: Chốt lịch quay 2 video và tối ưu chi phí sản xuất"
+                        />
+                      </div>
+                      <div class="col-12 col-md-4">
+                        <label class="form-label" for="wrTopPriority1" id="wrLabelTopPriority1">Ưu tiên 1</label>
+                        <input id="wrTopPriority1" type="text" class="form-control" />
+                      </div>
+                      <div class="col-12 col-md-4">
+                        <label class="form-label" for="wrTopPriority2" id="wrLabelTopPriority2">Ưu tiên 2</label>
+                        <input id="wrTopPriority2" type="text" class="form-control" />
+                      </div>
+                      <div class="col-12 col-md-4">
+                        <label class="form-label" for="wrTopPriority3" id="wrLabelTopPriority3">Ưu tiên 3</label>
+                        <input id="wrTopPriority3" type="text" class="form-control" />
+                      </div>
+                      <div class="col-12 col-md-6">
+                        <label class="form-label" for="wrRiskNote" id="wrLabelRiskNote">Rủi ro cần lưu ý</label>
+                        <textarea id="wrRiskNote" class="form-control" rows="3"></textarea>
+                      </div>
+                      <div class="col-12 col-md-6">
+                        <label class="form-label" for="wrActionCommitments" id="wrLabelActionCommitments">
+                          Cam kết hành động
+                        </label>
+                        <textarea id="wrActionCommitments" class="form-control" rows="3"></textarea>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12 col-xl-4">
+                  <div class="card p-3">
+                    <h6 class="mb-2" id="wrHistoryTitle">Lịch sử review gần đây</h6>
+                    <div id="wrHistoryList"></div>
+                  </div>
                 </div>
               </div>
             </section>
@@ -382,7 +516,13 @@
               <div class="goals-tier goals-tier-forms row g-3 mt-1">
                 <div class="col-12 col-xl-6">
                   <div class="card p-3 h-100">
-                    <h6 class="mb-3">Tạo mục tiêu mới</h6>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                      <h6 class="mb-0">Tạo mục tiêu mới</h6>
+                      <div class="d-flex flex-wrap gap-2">
+                        <button class="btn btn-outline-primary btn-sm" id="btnGoalAiGenerate">AI gợi ý mới</button>
+                        <button class="btn btn-outline-secondary btn-sm" id="btnGoalAiImprove">AI cải thiện nội dung</button>
+                      </div>
+                    </div>
                     <div class="row g-2">
                       <div class="col-12 col-md-6">
                         <label class="form-label">Tên mục tiêu</label>
@@ -433,6 +573,7 @@
                         <button class="btn btn-primary" id="btnAddGoal">Thêm mục tiêu</button>
                       </div>
                     </div>
+                    <div id="goalAiSuggestionList" class="ai-suggestion-list mt-3"></div>
                   </div>
                 </div>
 
@@ -564,10 +705,20 @@
                     <label class="form-label">Ghi chú</label>
                     <textarea id="videoNote" class="form-control" rows="2" placeholder="Yêu cầu ảnh bìa, lời kêu gọi hành động, ý tưởng mở rộng..."></textarea>
                   </div>
-                  <div class="col-12 d-flex justify-content-end">
+                  <div class="col-12 d-flex flex-wrap justify-content-end gap-2 align-items-center">
+                    <div class="d-flex align-items-center gap-2">
+                      <label class="form-label mb-0 small" for="videoAiLanguage">Ngôn ngữ AI</label>
+                      <select id="videoAiLanguage" class="form-select form-select-sm">
+                        <option value="python" selected>Python</option>
+                        <option value="javascript">JavaScript</option>
+                      </select>
+                    </div>
+                    <button class="btn btn-outline-primary" id="btnVideoAiGenerate">AI gợi ý mới</button>
+                    <button class="btn btn-outline-secondary" id="btnVideoAiImprove">AI cải thiện nội dung</button>
                     <button class="btn btn-primary" id="btnAddVideoTask">Thêm công việc video</button>
                   </div>
                 </div>
+                <div id="videoAiSuggestionList" class="ai-suggestion-list mt-3"></div>
               </div>
 
               <div class="card p-3 mb-3">
@@ -718,11 +869,175 @@
               <div class="page-header">
                 <div>
                   <h4 class="mb-1">Cài đặt</h4>
-                  <p class="text-muted small mb-0">Module dự phòng cho giai đoạn mở rộng tiếp theo.</p>
+                  <p class="text-muted small mb-0">Tùy chỉnh trải nghiệm làm việc cá nhân trong NEXUS OS.</p>
                 </div>
+                <div class="small text-muted fw-medium" id="stSaveStatus">Thay đổi sẽ tự động lưu</div>
               </div>
-              <div class="card p-3">
-                <p class="mb-0">NEXUS OS giai đoạn 1 đang ưu tiên tài chính, mục tiêu và kế hoạch video.</p>
+
+              <div class="card p-3 p-md-4 settings-card">
+                <ul class="nav nav-tabs settings-tabs" id="settingsTabs" role="tablist">
+                  <li class="nav-item" role="presentation">
+                    <button
+                      class="nav-link active"
+                      id="settings-tab-profile"
+                      data-bs-toggle="tab"
+                      data-bs-target="#settingsPaneProfile"
+                      type="button"
+                      role="tab"
+                      aria-controls="settingsPaneProfile"
+                      aria-selected="true"
+                    >
+                      <span id="stTabProfile">Hồ sơ cá nhân</span>
+                    </button>
+                  </li>
+                  <li class="nav-item" role="presentation">
+                    <button
+                      class="nav-link"
+                      id="settings-tab-dashboard"
+                      data-bs-toggle="tab"
+                      data-bs-target="#settingsPaneDashboard"
+                      type="button"
+                      role="tab"
+                      aria-controls="settingsPaneDashboard"
+                      aria-selected="false"
+                    >
+                      <span id="stTabDashboard">Tùy chọn Dashboard</span>
+                    </button>
+                  </li>
+                  <li class="nav-item" role="presentation">
+                    <button
+                      class="nav-link"
+                      id="settings-tab-filters"
+                      data-bs-toggle="tab"
+                      data-bs-target="#settingsPaneFilters"
+                      type="button"
+                      role="tab"
+                      aria-controls="settingsPaneFilters"
+                      aria-selected="false"
+                    >
+                      <span id="stTabFilters">Bộ lọc &amp; Hiển thị</span>
+                    </button>
+                  </li>
+                </ul>
+
+                <div class="tab-content settings-tab-content mt-3">
+                  <div
+                    class="tab-pane fade show active"
+                    id="settingsPaneProfile"
+                    role="tabpanel"
+                    aria-labelledby="settings-tab-profile"
+                    tabindex="0"
+                  >
+                    <div class="settings-section-head mb-3">
+                      <h6 class="mb-1" id="stProfileTitle">Hồ sơ cá nhân</h6>
+                      <p class="text-muted small mb-0" id="stProfileSub">
+                        Thông tin này ảnh hưởng trực tiếp đến dashboard cá nhân hóa.
+                      </p>
+                    </div>
+                    <div class="row g-3">
+                      <div class="col-12 col-lg-6">
+                        <label class="form-label" id="stLabelDisplayName" for="stDisplayName">Tên hiển thị</label>
+                        <input type="text" class="form-control" id="stDisplayName" />
+                      </div>
+                      <div class="col-12 col-lg-6">
+                        <label class="form-label" id="stLabelTagline" for="stTagline">Tagline</label>
+                        <input type="text" class="form-control" id="stTagline" />
+                      </div>
+                      <div class="col-12">
+                        <label class="form-label" id="stLabelMissionDefault" for="stMissionDefault">
+                          Nhiệm vụ mặc định
+                        </label>
+                        <textarea class="form-control" id="stMissionDefault" rows="3"></textarea>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    class="tab-pane fade"
+                    id="settingsPaneDashboard"
+                    role="tabpanel"
+                    aria-labelledby="settings-tab-dashboard"
+                    tabindex="0"
+                  >
+                    <div class="settings-section-head mb-3">
+                      <h6 class="mb-1" id="stDashboardTitle">Tùy chọn Dashboard</h6>
+                    </div>
+                    <div class="row g-3">
+                      <div class="col-12 col-md-4">
+                        <label class="form-label" id="stLabelNextActionsMax" for="stNextActionsMax">
+                          Số việc kế tiếp hiển thị
+                        </label>
+                        <input type="number" min="1" max="6" class="form-control" id="stNextActionsMax" />
+                      </div>
+                      <div class="col-12 col-md-4">
+                        <label class="form-label" id="stLabelDeadlineWindowHours" for="stDeadlineWindowHours">
+                          Khung giờ cảnh báo cận hạn
+                        </label>
+                        <input type="number" min="12" max="336" step="1" class="form-control" id="stDeadlineWindowHours" />
+                      </div>
+                      <div class="col-12 col-md-4">
+                        <label class="form-label" id="stLabelStartRoute" for="stStartRoute">
+                          Route mặc định sau đăng nhập
+                        </label>
+                        <select class="form-select" id="stStartRoute">
+                          <option value="dashboard" id="stOptStartDashboard">Trung tâm</option>
+                          <option value="goals" id="stOptStartGoals">Mục tiêu</option>
+                          <option value="video-plan" id="stOptStartVideoPlan">Kế hoạch video</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    class="tab-pane fade"
+                    id="settingsPaneFilters"
+                    role="tabpanel"
+                    aria-labelledby="settings-tab-filters"
+                    tabindex="0"
+                  >
+                    <div class="settings-section-head mb-3">
+                      <h6 class="mb-1" id="stFiltersTitle">Bộ lọc &amp; Hiển thị</h6>
+                    </div>
+                    <div class="row g-3">
+                      <div class="col-12 col-md-6">
+                        <label class="form-label" id="stLabelMonthMode" for="stMonthMode">Chế độ tháng mặc định</label>
+                        <select class="form-select" id="stMonthMode">
+                          <option value="current" id="stOptMonthCurrent">Luôn về tháng hiện tại</option>
+                          <option value="lastUsed" id="stOptMonthLastUsed">Nhớ tháng đã dùng gần nhất</option>
+                        </select>
+                      </div>
+                      <div class="col-12 col-md-6">
+                        <label class="form-label" id="stLabelUiDensity" for="stUiDensity">Mật độ giao diện</label>
+                        <select class="form-select" id="stUiDensity">
+                          <option value="comfortable" id="stOptDensityComfortable">Thoải mái</option>
+                          <option value="compact" id="stOptDensityCompact">Gọn</option>
+                        </select>
+                      </div>
+                      <div class="col-12">
+                        <div class="settings-switches">
+                          <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="stRememberExpenseFilters" />
+                            <label class="form-check-label" id="stLabelRememberExpenseFilters" for="stRememberExpenseFilters">
+                              Nhớ bộ lọc Chi tiêu
+                            </label>
+                          </div>
+                          <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="stRememberIncomeFilters" />
+                            <label class="form-check-label" id="stLabelRememberIncomeFilters" for="stRememberIncomeFilters">
+                              Nhớ bộ lọc Thu nhập
+                            </label>
+                          </div>
+                          <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="stRememberVideoFilters" />
+                            <label class="form-check-label" id="stLabelRememberVideoFilters" for="stRememberVideoFilters">
+                              Nhớ bộ lọc Video
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
           </div>
@@ -816,6 +1131,12 @@
           <div class="col-6">
             <label class="form-label">Tài khoản</label>
             <select class="form-select" id="eAccount"></select>
+          </div>
+          <div class="col-12">
+            <div class="ai-inline-hint d-none" id="expenseAiHint"></div>
+            <button class="btn btn-sm btn-outline-primary d-none mt-2" id="btnExpenseAiApply" type="button">
+              Áp dụng đề xuất AI
+            </button>
           </div>
           <div class="col-12">
             <label class="form-label">Ghi chú</label>
