@@ -1,5 +1,6 @@
 ﻿const MODEL = "gemini-3-flash-latest";
 const PROMPT_VERSION = "2.6.1";
+const { guardAiRequest, jsonResponse } = require("../utils/aiGuard.js");
 
 function safeString(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -69,28 +70,23 @@ function extractGeminiText(data = {}) {
 }
 
 exports.handler = async function handler(event) {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
+  const guard = await guardAiRequest(event, {
+    routeKey: "ai-report-insights",
+    maxRequests: 10,
+    windowMs: 60000,
+  });
+  if (!guard.ok) return guard.response;
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return {
-      statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Missing GEMINI_API_KEY" }),
-    };
+    return jsonResponse(500, { error: "Missing GEMINI_API_KEY" });
   }
 
   let payload = {};
   try {
     payload = JSON.parse(event.body || "{}");
   } catch {
-    return {
-      statusCode: 400,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Invalid JSON body" }),
-    };
+    return jsonResponse(400, { error: "Invalid JSON body" });
   }
 
   const isWeeklyMode = String(payload?.mode || "").trim() === "weekly-review";
@@ -113,35 +109,23 @@ exports.handler = async function handler(event) {
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       console.error("ai-report-insights Gemini error:", res.status, errText);
-      return {
-        statusCode: 500,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          error: "Gemini API error",
-          status: res.status,
-          details: errText,
-        }),
-      };
+      return jsonResponse(500, {
+        error: "Gemini API error",
+        status: res.status,
+        details: errText,
+      });
     }
 
     const data = await res.json();
     const summary = extractGeminiText(data);
 
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        summary,
-        model: MODEL,
-        promptVersion: PROMPT_VERSION,
-      }),
-    };
+    return jsonResponse(200, {
+      summary,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+    });
   } catch (err) {
     console.error("ai-report-insights error:", err);
-    return {
-      statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Internal error", details: String(err) }),
-    };
+    return jsonResponse(500, { error: "Internal error", details: String(err) });
   }
 };

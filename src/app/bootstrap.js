@@ -3,10 +3,12 @@ import { refreshExpensesFeature } from "../features/expenses/expenses.controller
 import { applyIncomeFiltersAndRender } from "../features/incomes/incomes.filters.js";
 import { refreshIncomesFeature } from "../features/incomes/incomes.controller.js";
 import {
-  loadAccountsAndFill,
-  refreshBalances,
   initAccountEvents,
 } from "../features/accounts/accounts.controller.js";
+import {
+  loadAccountsRuntime,
+  loadBalancesRuntime,
+} from "../features/accounts/accounts.runtime.js";
 import { setActiveRoute } from "./router.js";
 import { watchAuth, auth, bindAuthButtons } from "../services/firebase/auth.js";
 import {
@@ -833,17 +835,6 @@ async function loadFinance(uid) {
   });
 }
 
-async function loadAccounts(uid) {
-  const { accounts } = await loadAccountsAndFill(uid, "all");
-  state.accounts = Array.isArray(accounts) ? accounts : [];
-}
-
-async function loadBalances(uid) {
-  const balances = await refreshBalances(uid);
-  state.accountBalances = Array.isArray(balances) ? balances : [];
-  renderDashboardCenter();
-}
-
 async function loadGoals(uid) {
   const { goals, habits, todayLogs, habitProgress } = await loadGoalsData(uid);
   state.goals = Array.isArray(goals) ? goals : [];
@@ -991,12 +982,12 @@ async function refreshAll(uid) {
   setGlobalLoading(true);
   try {
     await Promise.all([
-      loadAccounts(uid),
+      loadAccountsRuntime(uid, state),
       loadFinance(uid),
       loadGoals(uid),
       loadVideo(uid),
       loadMotivation(uid),
-      loadBalances(uid),
+      loadBalancesRuntime(uid, state, renderDashboardCenter),
     ]);
     await refreshWeeklyReviewIfVisible(uid);
   } catch (err) {
@@ -1009,7 +1000,7 @@ async function refreshAll(uid) {
 
 async function refreshAfterTransaction(uid) {
   if (!uid) return;
-  await Promise.all([loadFinance(uid), loadBalances(uid)]);
+  await Promise.all([loadFinance(uid), loadBalancesRuntime(uid, state, renderDashboardCenter)]);
   await refreshWeeklyReviewIfVisible(uid);
 }
 

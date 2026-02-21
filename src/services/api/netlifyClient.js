@@ -1,3 +1,5 @@
+﻿import { getCurrentIdToken } from "../firebase/auth.js";
+
 function isLocalhost(hostname = "") {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
@@ -33,10 +35,30 @@ async function parseResponse(res) {
 }
 
 function normalizeErrorMessage(payload, status = 500, defaultMessage = "Không thể gọi AI") {
+  if (status === 401) return "Bạn cần đăng nhập để sử dụng AI.";
+  if (status === 403) return "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+  if (status === 429) {
+    const retryAfter = Number(payload?.retryAfterSec || payload?.retryAfter || 0);
+    if (Number.isFinite(retryAfter) && retryAfter > 0) {
+      return `Bạn gọi AI quá nhanh. Vui lòng thử lại sau ${retryAfter}s.`;
+    }
+    return "Bạn gọi AI quá nhanh. Vui lòng thử lại sau.";
+  }
+
   if (!payload) return `HTTP ${status}: ${defaultMessage}`;
   if (typeof payload === "string") return `HTTP ${status}: ${payload || defaultMessage}`;
+
   const msg = payload.error || payload.message || payload.details || defaultMessage;
   return `HTTP ${status}: ${msg}`;
+}
+
+async function buildRequestHeaders(extraHeaders = {}) {
+  const token = await getCurrentIdToken(false);
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(extraHeaders || {}),
+  };
 }
 
 export async function callNetlifyFunction(functionName, payload = {}, options = {}) {
@@ -53,14 +75,12 @@ export async function callNetlifyFunction(functionName, payload = {}, options = 
     typeof window !== "undefined" && window.location && window.location.hostname
       ? window.location.hostname
       : "";
-  const localFallbackBase =
-    isLocalhost(runtimeHostname) ? "http://localhost:8899" : "";
+  const localFallbackBase = isLocalhost(runtimeHostname) ? "http://localhost:8899" : "";
 
   const candidateBases = [customBase, configuredBase, "", localFallbackBase]
     .map((item) => String(item || "").trim())
-    .filter(Boolean);
+    .filter((item, idx, arr) => arr.indexOf(item) === idx);
 
-  // ensure relative path is still tested
   if (!candidateBases.includes("")) candidateBases.splice(2, 0, "");
 
   const tried = [];
@@ -70,13 +90,12 @@ export async function callNetlifyFunction(functionName, payload = {}, options = 
     const url = buildFunctionUrl(base, functionName);
     tried.push(url);
     const { controller, timer } = createAbortController(timeoutMs);
+
     try {
+      const headers = await buildRequestHeaders(options?.headers || {});
       const res = await fetch(url, {
         method,
-        headers: {
-          "Content-Type": "application/json",
-          ...(options?.headers || {}),
-        },
+        headers,
         body: method === "GET" ? undefined : JSON.stringify(payload || {}),
         signal: controller.signal,
       });
@@ -86,11 +105,11 @@ export async function callNetlifyFunction(functionName, payload = {}, options = 
         const body = await parseResponse(res);
         const message = normalizeErrorMessage(body, res.status, "Function trả lỗi");
 
-        // Dev fallback: same-origin 404 thì thử endpoint tiếp theo.
         const isSameOrigin404 =
           res.status === 404 &&
           isLocalhost(runtimeHostname) &&
           (base === "" || (sameOriginBase && url.startsWith(sameOriginBase)));
+
         if (isSameOrigin404) {
           lastError = new Error(message);
           continue;

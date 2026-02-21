@@ -29,6 +29,18 @@ export function signOutNow() {
   return signOut(auth);
 }
 
+export async function getCurrentIdToken(forceRefresh = false) {
+  const user = auth.currentUser;
+  if (!user) return "";
+
+  try {
+    const token = await user.getIdToken(!!forceRefresh);
+    return String(token || "");
+  } catch {
+    return "";
+  }
+}
+
 function enforceSingleUser(user) {
   if (!user) return false;
   const okUid = AUTH_LOCK.allowedUid && user.uid === AUTH_LOCK.allowedUid;

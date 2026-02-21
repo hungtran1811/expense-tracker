@@ -78,3 +78,16 @@
 - Ứng dụng hiện chưa tích hợp drag-drop trực tiếp trong month grid calendar.
 - Hạn không có giờ được xử lý là cuối ngày local (23:59).
 - Không có thông báo riêng khi mở quick action vào task đã bị xóa, chỉ bỏ qua an toàn.
+
+## 10) Ổn định 2.8.x (bổ sung sau RC)
+- AI endpoint bảo mật:
+- gọi AI khi chưa đăng nhập phải nhận lỗi `401`.
+- đăng nhập hợp lệ, gọi AI bình thường.
+- bấm AI liên tục vượt ngưỡng phải nhận `429`.
+- Tối ưu số dư tài khoản:
+- sau `add/edit/delete income` số dư cập nhật đúng.
+- sau `add/edit/delete expense` số dư cập nhật đúng.
+- sau `transfer` số dư 2 tài khoản thay đổi đúng.
+- thao tác lặp trong cùng phiên không gây full refresh nặng bất thường.
+- i18n gate mở rộng:
+- `npm run check:i18n` phải quét cả `src`, `netlify/functions`, `docs/releases`, `docs/qa`, `index.html`.

@@ -13,6 +13,7 @@ import {
 } from "../../shared/ui/tables.js";
 import { showToast } from "../../shared/ui/core.js";
 import { auth } from "../../services/firebase/auth.js";
+import { t } from "../../shared/constants/copy.vi.js";
 
 let _accountsCache = [];
 let _eventsBound = false;
@@ -27,6 +28,10 @@ function safeErrorMessage(err, fallback) {
     return String(err.message);
   }
   return fallback;
+}
+
+function tx(path, fallback = "") {
+  return t(path, fallback);
 }
 
 function toSafeAccountList(list) {
@@ -134,16 +139,16 @@ export function initAccountEvents() {
     if (!btn) return;
 
     const user = auth.currentUser;
-    if (!user) return showToast("Vui lòng đăng nhập trước", "error");
+    if (!user) return showToast(tx("toast.signInRequired", "Vui lòng đăng nhập trước"), "error");
 
     const name = (document.getElementById("aName")?.value || "").trim();
     const type = document.getElementById("aType")?.value || "bank";
     const isDefault = !!document.getElementById("aDefault")?.checked;
 
     try {
-      if (!name) throw new Error("Vui lòng nhập tên tài khoản");
+      if (!name) throw new Error(tx("accounts.validation.nameRequired", "Vui lòng nhập tên tài khoản"));
       if (_accountsCache.some((a) => (a.name || "").toLowerCase() === name.toLowerCase())) {
-        throw new Error("Tên tài khoản đã tồn tại");
+        throw new Error(tx("accounts.validation.nameDuplicate", "Tên tài khoản đã tồn tại"));
       }
 
       await addAccount(user.uid, { name, type, isDefault });
@@ -159,11 +164,11 @@ export function initAccountEvents() {
 
       const { accounts } = await loadAccountsAndFill(user.uid, "all");
       _accountsCache = accounts || [];
-      await refreshBalances(user.uid);
+      await refreshBalances(user.uid, accounts);
 
-      showToast("Đã thêm tài khoản mới", "success");
+      showToast(tx("accounts.toast.addSuccess", "Đã thêm tài khoản mới"), "success");
     } catch (err) {
-      showToast(safeErrorMessage(err, "Không thể thêm tài khoản"), "error");
+      showToast(safeErrorMessage(err, tx("accounts.toast.addFail", "Không thể thêm tài khoản")), "error");
     }
   });
 
@@ -224,11 +229,11 @@ export function initAccountEvents() {
     const isDefault = !!document.getElementById("eaDefault")?.checked;
 
     try {
-      if (!id) throw new Error("Thiếu ID tài khoản");
-      if (!name) throw new Error("Tên tài khoản không được để trống");
+      if (!id) throw new Error(tx("accounts.validation.idMissing", "Thiếu ID tài khoản"));
+      if (!name) throw new Error(tx("accounts.validation.nameEmpty", "Tên tài khoản không được để trống"));
 
       if (_accountsCache.some((a) => a.id !== id && (a.name || "").toLowerCase() === name.toLowerCase())) {
-        throw new Error("Tên tài khoản đã tồn tại");
+        throw new Error(tx("accounts.validation.nameDuplicate", "Tên tài khoản đã tồn tại"));
       }
 
       await updateAccount(user.uid, id, { name, type, isDefault });
@@ -236,11 +241,11 @@ export function initAccountEvents() {
 
       const { accounts } = await loadAccountsAndFill(user.uid, "all");
       _accountsCache = accounts || [];
-      await refreshBalances(user.uid);
+      await refreshBalances(user.uid, accounts);
 
-      showToast("Đã cập nhật tài khoản", "success");
+      showToast(tx("accounts.toast.updateSuccess", "Đã cập nhật tài khoản"), "success");
     } catch (err) {
-      showToast(safeErrorMessage(err, "Không thể cập nhật tài khoản"), "error");
+      showToast(safeErrorMessage(err, tx("accounts.toast.updateFail", "Không thể cập nhật tài khoản")), "error");
     }
   });
 
@@ -252,25 +257,25 @@ export function initAccountEvents() {
     const targetId = document.getElementById("daTarget")?.value;
 
     try {
-      if (!id) throw new Error("Thiếu ID tài khoản cần xóa");
-      if (!targetId) throw new Error("Vui lòng chọn tài khoản để chuyển dữ liệu");
+      if (!id) throw new Error(tx("accounts.validation.deleteIdMissing", "Thiếu ID tài khoản cần xóa"));
+      if (!targetId) throw new Error(tx("accounts.validation.reassignRequired", "Vui lòng chọn tài khoản để chuyển dữ liệu"));
 
       await deleteAccountWithReassign(user.uid, id, targetId);
       toggleOffcanvas("deleteAccountModal", "hide");
 
       const { accounts } = await loadAccountsAndFill(user.uid, "all");
       _accountsCache = accounts || [];
-      await refreshBalances(user.uid);
+      await refreshBalances(user.uid, accounts);
 
-      showToast("Đã xóa tài khoản", "success");
+      showToast(tx("accounts.toast.deleteSuccess", "Đã xóa tài khoản"), "success");
     } catch (err) {
-      showToast(safeErrorMessage(err, "Không thể xóa tài khoản"), "error");
+      showToast(safeErrorMessage(err, tx("accounts.toast.deleteFail", "Không thể xóa tài khoản")), "error");
     }
   });
 
   document.getElementById("btnDoTransfer")?.addEventListener("click", async () => {
     const user = auth.currentUser;
-    if (!user) return showToast("Vui lòng đăng nhập trước", "error");
+    if (!user) return showToast(tx("toast.signInRequired", "Vui lòng đăng nhập trước"), "error");
 
     const fromSel = document.getElementById("tfFrom");
     const toSel = document.getElementById("tfTo");
@@ -291,11 +296,11 @@ export function initAccountEvents() {
       );
       const toName = toSafeText(toSel?.selectedOptions?.[0]?.dataset?.name || findAccountNameById(toId));
 
-      if (!fromId || !toId) throw new Error("Vui lòng chọn đầy đủ tài khoản");
-      if (fromId === toId) throw new Error("Tài khoản chuyển và nhận phải khác nhau");
-      if (!amountRaw) throw new Error("Vui lòng nhập số tiền");
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error("Số tiền không hợp lệ");
-      if (!date) throw new Error("Vui lòng chọn ngày");
+      if (!fromId || !toId) throw new Error(tx("accounts.validation.transferAccountsRequired", "Vui lòng chọn đầy đủ tài khoản"));
+      if (fromId === toId) throw new Error(tx("accounts.validation.transferAccountDifferent", "Tài khoản chuyển và nhận phải khác nhau"));
+      if (!amountRaw) throw new Error(tx("accounts.validation.transferAmountRequired", "Vui lòng nhập số tiền"));
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error(tx("accounts.validation.transferAmountInvalid", "Số tiền không hợp lệ"));
+      if (!date) throw new Error(tx("accounts.validation.transferDateRequired", "Vui lòng chọn ngày"));
 
       await addTransfer(user.uid, {
         fromAccountId: fromId,
@@ -318,24 +323,27 @@ export function initAccountEvents() {
       if (noteInput) noteInput.value = "";
 
       toggleOffcanvas("transferModal", "hide");
-      await refreshBalances(user.uid);
-      showToast("Đã chuyển tiền giữa các tài khoản", "success");
+      await refreshBalances(user.uid, _accountsCache);
+      showToast(tx("accounts.toast.transferSuccess", "Đã chuyển tiền giữa các tài khoản"), "success");
     } catch (err) {
-      showToast(safeErrorMessage(err, "Không thể chuyển tiền"), "error");
+      showToast(safeErrorMessage(err, tx("accounts.toast.transferFail", "Không thể chuyển tiền")), "error");
     }
   });
 }
 
-export async function refreshBalances(uid) {
+export async function refreshBalances(uid, preloadedAccounts = null, options = {}) {
   if (!uid) return [];
 
-  const loadedAccounts = await listAccounts(uid);
-  const accounts = toSafeAccountList(loadedAccounts);
+  const accounts = toSafeAccountList(
+    Array.isArray(preloadedAccounts) ? preloadedAccounts : await listAccounts(uid)
+  );
   _accountsCache = accounts;
   const idToName = new Map(accounts.map((a) => [a.id, a.name]));
   const nameSet = new Set(accounts.map((a) => (a.name || "").trim()));
 
-  const loadedItems = await balancesByAccountTotal(uid);
+  const loadedItems = await balancesByAccountTotal(uid, {
+    forceRefresh: !!options?.forceRefresh,
+  });
   const items = Array.isArray(loadedItems) ? loadedItems : [];
 
   const normalized = items.map((it) => {

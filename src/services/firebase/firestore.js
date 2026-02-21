@@ -12,6 +12,7 @@
   getDoc,
   updateDoc,
   deleteDoc,
+  increment,
   limit,
   startAfter,
 } from "firebase/firestore";
@@ -31,6 +32,77 @@ export const colXpLogs = (uid) => collection(db, `users/${uid}/xpLogs`);
 export const colWeeklyReviews = (uid) => collection(db, `users/${uid}/weeklyReviews`);
 export const colAiSuggestions = (uid) => collection(db, `users/${uid}/aiSuggestions`);
 export const docUser = (uid) => doc(db, `users/${uid}`);
+
+const BALANCE_CACHE_TTL_MS = 5 * 60 * 1000;
+const _balanceCache = new Map();
+
+function normalizeBalanceKey(value) {
+  const text = String(value || "").trim();
+  return text || "Other";
+}
+
+function toBalanceItemsFromMap(map) {
+  return Array.from(map.entries())
+    .map(([account, balance]) => ({
+      account: normalizeBalanceKey(account),
+      balance: Number(balance || 0),
+    }))
+    .sort((a, b) => String(a.account).localeCompare(String(b.account), "vi"));
+}
+
+function toBalanceMap(items = []) {
+  const map = new Map();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const key = normalizeBalanceKey(item?.account || item?.accountName || item?.name);
+    const value = Number(item?.balance || 0);
+    map.set(key, Number.isFinite(value) ? value : 0);
+  });
+  return map;
+}
+
+function getCachedBalanceEntry(uid, maxAgeMs = BALANCE_CACHE_TTL_MS) {
+  if (!uid) return null;
+  const entry = _balanceCache.get(uid);
+  if (!entry || !(entry.map instanceof Map)) return null;
+  if (Date.now() - Number(entry.updatedAt || 0) > Math.max(1000, Number(maxAgeMs || BALANCE_CACHE_TTL_MS))) {
+    return null;
+  }
+  return entry;
+}
+
+function setCachedBalanceItems(uid, items = []) {
+  if (!uid) return [];
+  const map = toBalanceMap(items);
+  _balanceCache.set(uid, {
+    map,
+    updatedAt: Date.now(),
+  });
+  return toBalanceItemsFromMap(map);
+}
+
+function applyBalanceDeltaCache(uid, deltas = []) {
+  if (!uid) return;
+  const entry = _balanceCache.get(uid);
+  if (!entry || !(entry.map instanceof Map)) return;
+
+  const map = entry.map;
+  (Array.isArray(deltas) ? deltas : []).forEach((deltaItem) => {
+    const key = normalizeBalanceKey(deltaItem?.account || deltaItem?.name);
+    const delta = Number(deltaItem?.delta || 0);
+    if (!Number.isFinite(delta) || delta === 0) return;
+    map.set(key, (map.get(key) || 0) + delta);
+  });
+
+  entry.updatedAt = Date.now();
+}
+
+export function invalidateBalanceCache(uid) {
+  if (!uid) {
+    _balanceCache.clear();
+    return;
+  }
+  _balanceCache.delete(uid);
+}
 
 function ymToRange(ym) {
   if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return null;
@@ -91,7 +163,9 @@ export async function addIncome(uid, payload) {
     throw new Error("Thiếu tên hoặc tài khoản");
   }
 
-  return addDoc(colIncomes(uid), data);
+  const ref = await addDoc(colIncomes(uid), data);
+  applyBalanceDeltaCache(uid, [{ account: data.account, delta: Number(data.amount || 0) }]);
+  return ref;
 }
 
 export async function listIncomesByMonth(uid, ym) {
@@ -130,6 +204,8 @@ export async function getIncome(uid, id) {
 
 export async function updateIncome(uid, id, payload) {
   const ref = doc(db, `users/${uid}/incomes/${id}`);
+  const prevSnap = await getDoc(ref);
+  const prev = prevSnap.exists() ? prevSnap.data() : null;
   const data = {
     name: (payload.name || "").trim(),
     amount: Number(payload.amount || 0),
@@ -139,11 +215,35 @@ export async function updateIncome(uid, id, payload) {
   };
   if (payload.date) data.date = Timestamp.fromDate(new Date(payload.date));
   await updateDoc(ref, data);
+
+  const prevAccount = normalizeBalanceKey(prev?.account);
+  const prevAmount = Number(prev?.amount || 0);
+  const nextAccount = normalizeBalanceKey(data.account || prev?.account);
+  const nextAmount = Number(data.amount || 0);
+
+  if (prevAccount === nextAccount) {
+    applyBalanceDeltaCache(uid, [{ account: nextAccount, delta: nextAmount - prevAmount }]);
+  } else {
+    applyBalanceDeltaCache(uid, [
+      { account: prevAccount, delta: -prevAmount },
+      { account: nextAccount, delta: nextAmount },
+    ]);
+  }
+
   return true;
 }
 
 export async function deleteIncome(uid, id) {
-  await deleteDoc(doc(db, `users/${uid}/incomes/${id}`));
+  const ref = doc(db, `users/${uid}/incomes/${id}`);
+  const snap = await getDoc(ref);
+  const prev = snap.exists() ? snap.data() : null;
+
+  await deleteDoc(ref);
+  if (prev) {
+    applyBalanceDeltaCache(uid, [
+      { account: prev.account, delta: -Number(prev.amount || 0) },
+    ]);
+  }
   return true;
 }
 
@@ -171,7 +271,12 @@ export async function addTransfer(uid, payload) {
     throw new Error("Số tiền phải lớn hơn 0");
   }
 
-  return addDoc(colTransfers(uid), data);
+  const ref = await addDoc(colTransfers(uid), data);
+  applyBalanceDeltaCache(uid, [
+    { account: data.from, delta: -Number(data.amount || 0) },
+    { account: data.to, delta: Number(data.amount || 0) },
+  ]);
+  return ref;
 }
 
 export async function listTransfersByMonth(uid, ym) {
@@ -237,7 +342,16 @@ export async function balancesByAccount(uid, ym) {
   }));
 }
 
-export async function balancesByAccountTotal(uid) {
+export async function balancesByAccountTotal(uid, options = {}) {
+  const forceRefresh = !!options?.forceRefresh;
+  const cacheMaxAgeMs = Number(options?.cacheMaxAgeMs || BALANCE_CACHE_TTL_MS);
+  if (!forceRefresh) {
+    const cached = getCachedBalanceEntry(uid, cacheMaxAgeMs);
+    if (cached) {
+      return toBalanceItemsFromMap(cached.map);
+    }
+  }
+
   const [incomesSnap, expensesSnap, transfersSnap] = await Promise.all([
     getDocs(colIncomes(uid)),
     getDocs(colExpenses(uid)),
@@ -267,10 +381,13 @@ export async function balancesByAccountTotal(uid) {
     map.set(to, (map.get(to) || 0) + amount);
   });
 
-  return Array.from(map.entries()).map(([account, balance]) => ({
-    account,
-    balance,
-  }));
+  return setCachedBalanceItems(
+    uid,
+    Array.from(map.entries()).map(([account, balance]) => ({
+      account,
+      balance,
+    }))
+  );
 }
 
 export async function saveProfile(uid, data) {
@@ -357,7 +474,9 @@ export async function addExpense(uid, payload) {
     createdAt: Timestamp.now(),
   };
 
-  return addDoc(colExpenses(uid), data);
+  const ref = await addDoc(colExpenses(uid), data);
+  applyBalanceDeltaCache(uid, [{ account: data.account, delta: -Number(data.amount || 0) }]);
+  return ref;
 }
 
 export async function listExpensesByMonth(uid, ym) {
@@ -475,6 +594,8 @@ export async function getExpense(uid, id) {
 
 export async function updateExpense(uid, id, payload) {
   const ref = doc(db, `users/${uid}/expenses/${id}`);
+  const prevSnap = await getDoc(ref);
+  const prev = prevSnap.exists() ? prevSnap.data() : null;
   const data = {
     name: (payload.name || "").trim(),
     amount: Number(payload.amount || 0),
@@ -485,11 +606,35 @@ export async function updateExpense(uid, id, payload) {
   };
   if (payload.date) data.date = Timestamp.fromDate(new Date(payload.date));
   await updateDoc(ref, data);
+
+  const prevAccount = normalizeBalanceKey(prev?.account);
+  const prevAmount = Number(prev?.amount || 0);
+  const nextAccount = normalizeBalanceKey(data.account || prev?.account);
+  const nextAmount = Number(data.amount || 0);
+
+  if (prevAccount === nextAccount) {
+    applyBalanceDeltaCache(uid, [{ account: nextAccount, delta: prevAmount - nextAmount }]);
+  } else {
+    applyBalanceDeltaCache(uid, [
+      { account: prevAccount, delta: prevAmount },
+      { account: nextAccount, delta: -nextAmount },
+    ]);
+  }
+
   return true;
 }
 
 export async function deleteExpense(uid, id) {
-  await deleteDoc(doc(db, `users/${uid}/expenses/${id}`));
+  const ref = doc(db, `users/${uid}/expenses/${id}`);
+  const snap = await getDoc(ref);
+  const prev = snap.exists() ? snap.data() : null;
+
+  await deleteDoc(ref);
+  if (prev) {
+    applyBalanceDeltaCache(uid, [
+      { account: prev.account, delta: Number(prev.amount || 0) },
+    ]);
+  }
   return true;
 }
 
@@ -635,6 +780,7 @@ export async function deleteAccountWithReassign(uid, id, targetRefValue) {
   );
 
   await deleteDoc(sourceRef);
+  invalidateBalanceCache(uid);
   return true;
 }
 

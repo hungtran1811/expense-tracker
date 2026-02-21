@@ -1,5 +1,6 @@
 ﻿const MODEL = "gemini-3-flash-latest";
 const PROMPT_VERSION = "2.8.2";
+const { guardAiRequest, jsonResponse } = require("../utils/aiGuard.js");
 
 const SHOT_LIST_FALLBACK = {
   python:
@@ -355,19 +356,18 @@ function normalizeOptions(value, fallback = [], payload = {}, language = "python
 }
 
 exports.handler = async function handler(event) {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
+  const guard = await guardAiRequest(event, {
+    routeKey: "ai-video-copilot",
+    maxRequests: 12,
+    windowMs: 60000,
+  });
+  if (!guard.ok) return guard.response;
 
   let payload = {};
   try {
     payload = JSON.parse(event.body || "{}");
   } catch {
-    return {
-      statusCode: 400,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Invalid JSON body" }),
-    };
+    return jsonResponse(400, { error: "Invalid JSON body" });
   }
 
   const normalizedPayload = {
@@ -384,17 +384,13 @@ exports.handler = async function handler(event) {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        options: fallbackOptions,
-        language,
-        model: MODEL,
-        promptVersion: PROMPT_VERSION,
-        fallback: true,
-      }),
-    };
+    return jsonResponse(200, {
+      options: fallbackOptions,
+      language,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      fallback: true,
+    });
   }
 
   try {
@@ -417,17 +413,13 @@ exports.handler = async function handler(event) {
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       console.error("ai-video-copilot Gemini error:", res.status, errText);
-      return {
-        statusCode: 200,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          options: fallbackOptions,
-          language,
-          model: MODEL,
-          promptVersion: PROMPT_VERSION,
-          fallback: true,
-        }),
-      };
+      return jsonResponse(200, {
+        options: fallbackOptions,
+        language,
+        model: MODEL,
+        promptVersion: PROMPT_VERSION,
+        fallback: true,
+      });
     }
 
     const data = await res.json();
@@ -435,28 +427,20 @@ exports.handler = async function handler(event) {
     const parsed = parseJsonSafe(text);
     const options = normalizeOptions(parsed?.options, fallbackOptions, normalizedPayload, language);
 
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        options,
-        language,
-        model: MODEL,
-        promptVersion: PROMPT_VERSION,
-      }),
-    };
+    return jsonResponse(200, {
+      options,
+      language,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+    });
   } catch (err) {
     console.error("ai-video-copilot error:", err);
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        options: fallbackOptions,
-        language,
-        model: MODEL,
-        promptVersion: PROMPT_VERSION,
-        fallback: true,
-      }),
-    };
+    return jsonResponse(200, {
+      options: fallbackOptions,
+      language,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      fallback: true,
+    });
   }
 };

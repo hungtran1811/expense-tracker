@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check:i18n": "node scripts/check-i18n.js",
-    "check:baseline": "npm run check:i18n && npm run build"
+    "check:smoke": "node scripts/smoke-lite.js",
+    "check:baseline": "npm run check:i18n && npm run build && npm run check:smoke"
   },
   "repository": {
     "type": "git",

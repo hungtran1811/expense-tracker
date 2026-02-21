@@ -1,5 +1,6 @@
 ﻿const MODEL = "gemini-3-flash-latest";
 const PROMPT_VERSION = "2.7.1";
+const { guardAiRequest, jsonResponse } = require("../utils/aiGuard.js");
 
 function safeText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -208,19 +209,18 @@ Yêu cầu bắt buộc:
 }
 
 exports.handler = async function handler(event) {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
+  const guard = await guardAiRequest(event, {
+    routeKey: "ai-categorize",
+    maxRequests: 30,
+    windowMs: 60000,
+  });
+  if (!guard.ok) return guard.response;
 
   let payload = {};
   try {
     payload = JSON.parse(event.body || "{}");
   } catch {
-    return {
-      statusCode: 400,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Invalid JSON body" }),
-    };
+    return jsonResponse(400, { error: "Invalid JSON body" });
   }
 
   const normalizedPayload = {
@@ -232,20 +232,12 @@ exports.handler = async function handler(event) {
   };
 
   if (!safeText(normalizedPayload?.name, "") || !normalizedPayload.categories.length) {
-    return {
-      statusCode: 400,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Missing name or categories" }),
-    };
+    return jsonResponse(400, { error: "Missing name or categories" });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(localFallback(normalizedPayload)),
-    };
+    return jsonResponse(200, localFallback(normalizedPayload));
   }
 
   try {
@@ -267,28 +259,16 @@ exports.handler = async function handler(event) {
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       console.error("ai-categorize Gemini error:", res.status, errText);
-      return {
-        statusCode: 200,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(localFallback(normalizedPayload)),
-      };
+      return jsonResponse(200, localFallback(normalizedPayload));
     }
 
     const data = await res.json();
     const text = extractText(data);
     const parsed = parseJsonSafe(text);
 
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(normalizeResult(parsed || {}, normalizedPayload)),
-    };
+    return jsonResponse(200, normalizeResult(parsed || {}, normalizedPayload));
   } catch (err) {
     console.error("ai-categorize error:", err);
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(localFallback(normalizedPayload)),
-    };
+    return jsonResponse(200, localFallback(normalizedPayload));
   }
 };

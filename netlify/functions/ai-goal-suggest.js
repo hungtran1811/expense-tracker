@@ -1,5 +1,6 @@
 ﻿const MODEL = "gemini-3-flash-latest";
 const PROMPT_VERSION = "2.7.1";
+const { guardAiRequest, jsonResponse } = require("../utils/aiGuard.js");
 
 function safeText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -259,35 +260,30 @@ function normalizeOptions(value, fallback = []) {
 }
 
 exports.handler = async function handler(event) {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
+  const guard = await guardAiRequest(event, {
+    routeKey: "ai-goal-suggest",
+    maxRequests: 20,
+    windowMs: 60000,
+  });
+  if (!guard.ok) return guard.response;
 
   let payload = {};
   try {
     payload = JSON.parse(event.body || "{}");
   } catch {
-    return {
-      statusCode: 400,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ error: "Invalid JSON body" }),
-    };
+    return jsonResponse(400, { error: "Invalid JSON body" });
   }
 
   const fallbackOptions = buildLocalOptions(payload);
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        options: fallbackOptions,
-        model: MODEL,
-        promptVersion: PROMPT_VERSION,
-        fallback: true,
-      }),
-    };
+    return jsonResponse(200, {
+      options: fallbackOptions,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      fallback: true,
+    });
   }
 
   try {
@@ -309,16 +305,12 @@ exports.handler = async function handler(event) {
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       console.error("ai-goal-suggest Gemini error:", res.status, errText);
-      return {
-        statusCode: 200,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          options: fallbackOptions,
-          model: MODEL,
-          promptVersion: PROMPT_VERSION,
-          fallback: true,
-        }),
-      };
+      return jsonResponse(200, {
+        options: fallbackOptions,
+        model: MODEL,
+        promptVersion: PROMPT_VERSION,
+        fallback: true,
+      });
     }
 
     const data = await res.json();
@@ -326,26 +318,18 @@ exports.handler = async function handler(event) {
     const parsed = parseJsonSafe(text);
     const options = normalizeOptions(parsed?.options, fallbackOptions);
 
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        options,
-        model: MODEL,
-        promptVersion: PROMPT_VERSION,
-      }),
-    };
+    return jsonResponse(200, {
+      options,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+    });
   } catch (err) {
     console.error("ai-goal-suggest error:", err);
-    return {
-      statusCode: 200,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        options: fallbackOptions,
-        model: MODEL,
-        promptVersion: PROMPT_VERSION,
-        fallback: true,
-      }),
-    };
+    return jsonResponse(200, {
+      options: fallbackOptions,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      fallback: true,
+    });
   }
 };
