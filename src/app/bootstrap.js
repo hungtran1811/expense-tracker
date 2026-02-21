@@ -44,6 +44,9 @@ import {
   createHabit,
   removeHabit,
   checkInHabit,
+  loadWeeklyGoalsPlan,
+  saveWeeklyGoalsPlan,
+  getCurrentGoalsWeekKey,
 } from "../features/goals/goals.controller.js";
 import {
   renderGoalsTable,
@@ -53,7 +56,6 @@ import {
 } from "../features/goals/goals.ui.js";
 import { getMotivationSummary } from "../features/motivation/motivation.controller.js";
 import {
-  renderMotivationDashboard,
   renderMotivationDetails,
   buildDefaultMotivationSummary,
 } from "../features/motivation/motivation.ui.js";
@@ -107,7 +109,7 @@ import { loadRouteModule, preloadRouteModule, loadAiServices } from "./moduleLoa
 const SETTINGS_DEBOUNCE_MS = 700;
 const AI_REQUEST_TIMEOUT_MS = 15000;
 const VIDEO_AI_COOLDOWN_MS = 2000;
-const GOAL_AI_COOLDOWN_MS = 8000;
+const GOAL_AI_COOLDOWN_MS = 0;
 const AI_EXPENSE_DEBOUNCE_MS = 600;
 const AI_EXPENSE_AUTO_CONFIDENCE = 0.75;
 const DEFAULT_EXPENSE_FILTERS = { category: "all", account: "all", search: "" };
@@ -142,9 +144,18 @@ const state = {
   settingsSavePendingPatch: null,
   settingsSaveVersion: 0,
   weeklyReviewVm: null,
-  weeklyReviewSaveState: {
-    status: "idle",
-    savedAt: null,
+  weeklyGoals: {
+    weekKey: "",
+    plan: {
+      focusTheme: "",
+      topPriorities: [],
+      actionCommitments: "",
+      riskNote: "",
+    },
+    saveState: {
+      status: "idle",
+      savedAt: null,
+    },
   },
   expenseAiSuggestion: null,
   expenseAiRequestId: 0,
@@ -441,16 +452,6 @@ function resetSettingsSave() {
   renderSettingsSaveState(state.settingsSaveState);
 }
 
-function resetWeeklyReviewSaveState() {
-  state.weeklyReviewSaveState = {
-    status: "idle",
-    savedAt: null,
-  };
-  if (weeklyReviewModule?.renderWeeklyReviewSaveState) {
-    weeklyReviewModule.renderWeeklyReviewSaveState(state.weeklyReviewSaveState);
-  }
-}
-
 function setSettingsSaveState(next = {}) {
   state.settingsSaveState = {
     ...state.settingsSaveState,
@@ -459,13 +460,73 @@ function setSettingsSaveState(next = {}) {
   renderSettingsSaveState(state.settingsSaveState);
 }
 
-function setWeeklyReviewSaveState(next = {}) {
-  state.weeklyReviewSaveState = {
-    ...state.weeklyReviewSaveState,
-    ...next,
+function formatGoalsSaveStatus(saveState = {}) {
+  const status = String(saveState?.status || "idle");
+  if (status === "saving") return t("goals.weekly.saving", "Đang lưu kế hoạch tuần...");
+  if (status === "saved") {
+    const savedAt = saveState?.savedAt instanceof Date ? saveState.savedAt : null;
+    if (savedAt && !Number.isNaN(savedAt.getTime())) {
+      return formatTemplate(t("goals.weekly.savedAt", "Đã lưu lúc {{time}}"), {
+        time: savedAt.toLocaleTimeString("vi-VN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      });
+    }
+    return t("goals.weekly.saved", "Đã lưu kế hoạch tuần");
+  }
+  if (status === "error") return t("goals.weekly.error", "Lưu mục tiêu tuần thất bại");
+  return t("goals.weekly.ready", "Sẵn sàng cập nhật mục tiêu tuần");
+}
+
+function formatWeekLabel(weekKey = "") {
+  const key = String(weekKey || "").trim();
+  if (!key) return t("goals.weekly.currentWeek", "Tuần hiện tại");
+  return formatTemplate(t("goals.weekly.label", "Kế hoạch tuần {{weekKey}}"), {
+    weekKey: key,
+  });
+}
+
+function getGoalsTopPriorityAt(index = 0) {
+  const list = Array.isArray(state.weeklyGoals?.plan?.topPriorities) ? state.weeklyGoals.plan.topPriorities : [];
+  return String(list[index] || "").trim();
+}
+
+function renderWeeklyGoalsPanel() {
+  const weekLabel = byId("goalsWeekLabel");
+  if (weekLabel) weekLabel.textContent = formatWeekLabel(state.weeklyGoals?.weekKey || "");
+  setInputValue("weeklyFocusTheme", state.weeklyGoals?.plan?.focusTheme || "");
+  setInputValue("weeklyGoal1", getGoalsTopPriorityAt(0));
+  setInputValue("weeklyGoal2", getGoalsTopPriorityAt(1));
+  setInputValue("weeklyGoal3", getGoalsTopPriorityAt(2));
+  setInputValue("weeklyActionPlan", state.weeklyGoals?.plan?.actionCommitments || "");
+  const weeklyStatus = byId("goalsWeeklyStatus");
+  if (weeklyStatus) weeklyStatus.textContent = formatGoalsSaveStatus(state.weeklyGoals?.saveState || {});
+}
+
+function readWeeklyGoalsFormInput() {
+  return {
+    focusTheme: (byId("weeklyFocusTheme")?.value || "").trim(),
+    topPriorities: [
+      (byId("weeklyGoal1")?.value || "").trim(),
+      (byId("weeklyGoal2")?.value || "").trim(),
+      (byId("weeklyGoal3")?.value || "").trim(),
+    ].filter(Boolean),
+    actionCommitments: (byId("weeklyActionPlan")?.value || "").trim(),
   };
-  if (weeklyReviewModule?.renderWeeklyReviewSaveState) {
-    weeklyReviewModule.renderWeeklyReviewSaveState(state.weeklyReviewSaveState);
+}
+
+function setWeeklyGoalsSaveState(next = {}) {
+  state.weeklyGoals = {
+    ...state.weeklyGoals,
+    saveState: {
+      ...state.weeklyGoals.saveState,
+      ...next,
+    },
+  };
+  const weeklyStatus = byId("goalsWeeklyStatus");
+  if (weeklyStatus) {
+    weeklyStatus.textContent = formatGoalsSaveStatus(state.weeklyGoals?.saveState || {});
   }
 }
 
@@ -905,15 +966,31 @@ async function loadFinance(uid) {
 }
 
 async function loadGoals(uid) {
-  const { goals, habits, todayLogs, habitProgress } = await loadGoalsData(uid);
+  const weekKey = getCurrentGoalsWeekKey();
+  const [{ goals, habits, todayLogs, habitProgress }, weeklyGoals] = await Promise.all([
+    loadGoalsData(uid),
+    loadWeeklyGoalsPlan(uid, weekKey),
+  ]);
+
   state.goals = Array.isArray(goals) ? goals : [];
   state.habits = Array.isArray(habits) ? habits : [];
   state.todayHabitLogs = Array.isArray(todayLogs) ? todayLogs : [];
   state.habitProgress = habitProgress && typeof habitProgress === "object" ? habitProgress : {};
+  state.weeklyGoals = {
+    ...state.weeklyGoals,
+    weekKey: String(weeklyGoals?.weekKey || weekKey || "").trim(),
+    plan: {
+      focusTheme: String(weeklyGoals?.plan?.focusTheme || "").trim(),
+      topPriorities: Array.isArray(weeklyGoals?.plan?.topPriorities) ? weeklyGoals.plan.topPriorities : [],
+      actionCommitments: String(weeklyGoals?.plan?.actionCommitments || "").trim(),
+      riskNote: String(weeklyGoals?.plan?.riskNote || "").trim(),
+    },
+  };
 
   renderGoalsTable(byId("goalsTableBody"), state.goals);
   renderHabitsTable(byId("habitsTableBody"), state.habits, state.habitProgress);
   renderGoalsDailyFocus(byId("goalsDailyFocus"), state.habits, state.habitProgress);
+  renderWeeklyGoalsPanel();
   renderGoalsSummary(byId("dashboardGoalsSummary"), state.goals);
   renderDashboardCenter();
 }
@@ -922,7 +999,6 @@ async function loadMotivation(uid) {
   const summary = await getMotivationSummary(uid);
   state.motivation = summary || buildDefaultMotivationSummary();
 
-  renderMotivationDashboard(byId("dashboardMotivation"), state.motivation);
   renderMotivationDetails(state.motivation);
   renderDashboardCenter();
 }
@@ -1181,7 +1257,7 @@ async function loadWeeklyReview(uid, weekKey = "") {
   const targetWeekKey = String(weekKey || state.weeklyReviewVm?.weekKey || "").trim();
   const vm = await module.buildWeeklyReviewVM(uid, targetWeekKey, weeklyReviewOptions());
   state.weeklyReviewVm = vm;
-  module.renderWeeklyReviewPage(vm, state.weeklyReviewSaveState);
+  module.renderWeeklyReviewPage(vm);
 }
 
 async function refreshWeeklyReviewIfVisible(uid) {
@@ -1243,6 +1319,19 @@ function resetAppView() {
   state.videoRetrosByTaskId = {};
   state.contentBlueprints = [];
   state.weeklyReviewVm = null;
+  state.weeklyGoals = {
+    weekKey: "",
+    plan: {
+      focusTheme: "",
+      topPriorities: [],
+      actionCommitments: "",
+      riskNote: "",
+    },
+    saveState: {
+      status: "idle",
+      savedAt: null,
+    },
+  };
   state.expenseAiSuggestion = null;
   state.expenseAiRequestId = 0;
   state.pendingVideoFocusTaskId = "";
@@ -1296,11 +1385,11 @@ function resetAppView() {
   setVideoAiButtonsState();
   renderGoalAiSuggestions();
   setGoalAiButtonsState();
+  renderWeeklyGoalsPanel();
   resetExpenseAiHint();
-  renderMotivationDashboard(byId("dashboardMotivation"), state.motivation);
   renderMotivationDetails(state.motivation);
   if (weeklyReviewModule?.renderWeeklyReviewPage) {
-    weeklyReviewModule.renderWeeklyReviewPage(null, state.weeklyReviewSaveState);
+    weeklyReviewModule.renderWeeklyReviewPage(null);
   }
 
   const balance = byId("balanceList");
@@ -1310,7 +1399,6 @@ function resetAppView() {
   if (dashboardBalance) dashboardBalance.innerHTML = '<div class="text-muted small">Chưa có dữ liệu</div>';
 
   resetSettingsSave();
-  resetWeeklyReviewSaveState();
   renderSettingsForm(state.settings, state.settingsSaveState);
   applyUiDensityPreference();
 }
@@ -1840,12 +1928,7 @@ async function handleHabitCheckInAction(habitId) {
   if (result?.status === "locked") {
     showToast(t("toast.habitLocked", "Bạn đã đạt mục tiêu kỳ này"), "info");
   } else {
-    showToast(
-      formatTemplate(t("toast.habitChecked", "Điểm danh thành công. +{{xp}} XP"), {
-        xp: Number(habit.xpPerCheckin || 10),
-      }),
-      "success"
-    );
+    showToast(t("toast.habitChecked", "Điểm danh thành công."), "success");
   }
 
   await refreshGoalsAndMotivation(uid);
@@ -2289,7 +2372,7 @@ function renderGoalAiSuggestions() {
   if (!options.length) {
     root.innerHTML = `<div class="ai-suggestion-empty">${t(
       "ai.goalCopilot.empty",
-      "Bấm AI gợi ý để nhận bundle mục tiêu và thói quen phù hợp."
+      "Bấm AI gợi ý để nhận bộ mục tiêu cá nhân và mục tiêu tuần có thể áp dụng ngay."
     )}</div>`;
     return;
   }
@@ -2298,20 +2381,49 @@ function renderGoalAiSuggestions() {
     .map((item, index) => {
       const goal = item?.goal || {};
       const habit = item?.habit || {};
+      const weeklyPlan = item?.weeklyPlan || {};
       const goalTitle = String(goal?.title || "").trim() || t("ai.goalCopilot.optionUntitled", "Mục tiêu chưa có tên");
       const habitName = String(habit?.name || "").trim() || t("ai.goalCopilot.habitUntitled", "Thói quen chưa có tên");
       const reason = String(item?.reason || "").trim();
+      const weeklyFocus = String(weeklyPlan?.focusTheme || "").trim();
+      const weeklyPriorities = Array.isArray(weeklyPlan?.topPriorities)
+        ? weeklyPlan.topPriorities.map((line) => String(line || "").trim()).filter(Boolean).slice(0, 3)
+        : [];
+      const weeklyCommitment = String(weeklyPlan?.actionCommitments || "").trim();
       const safeGoalTitle = escapeHtml(goalTitle);
       const safeHabitName = escapeHtml(habitName);
       const safeReason = multilineToHtml(reason);
       const safePeriod = escapeHtml(String(goal?.period || "month"));
+      const safeWeeklyFocus = escapeHtml(weeklyFocus || t("ai.goalCopilot.weeklyFocusFallback", "Chưa có trọng tâm tuần"));
+      const safeWeeklyPriorities = weeklyPriorities.length
+        ? weeklyPriorities.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
+        : `<li>${escapeHtml(t("ai.goalCopilot.weeklyPriorityFallback", "AI chưa gợi ý mục tiêu tuần cụ thể."))}</li>`;
+      const safeWeeklyCommitment = escapeHtml(
+        weeklyCommitment || t("ai.goalCopilot.weeklyCommitFallback", "Bổ sung cam kết hành động trước khi lưu.")
+      );
       return `
         <article class="ai-suggestion-card">
+          <div class="ai-suggestion-index">${t("ai.goalCopilot.optionIndex", "Phương án {{index}}").replace(
+            "{{index}}",
+            String(index + 1)
+          )}</div>
           <div class="ai-suggestion-card-head">
             <strong>${safeGoalTitle}</strong>
             <span class="badge text-bg-light">${safePeriod}</span>
           </div>
           <div class="small mt-1">${t("ai.goalCopilot.habitLabel", "Thói quen đi kèm")}: ${safeHabitName}</div>
+          <div class="mt-2">
+            <div class="ai-suggestion-block-title">${t("ai.goalCopilot.weeklyFocusLabel", "Trọng tâm tuần")}</div>
+            <div class="ai-suggestion-content">${safeWeeklyFocus}</div>
+          </div>
+          <div class="mt-2">
+            <div class="ai-suggestion-block-title">${t("ai.goalCopilot.weeklyPriorityLabel", "3 mục tiêu tuần")}</div>
+            <ul class="small mb-0 ps-3">${safeWeeklyPriorities}</ul>
+          </div>
+          <div class="mt-2">
+            <div class="ai-suggestion-block-title">${t("ai.goalCopilot.weeklyCommitLabel", "Cam kết hành động")}</div>
+            <div class="ai-suggestion-content">${safeWeeklyCommitment}</div>
+          </div>
           ${reason ? `<div class="small mt-1 text-muted">${safeReason}</div>` : ""}
           <div class="mt-2">
             <button class="btn btn-sm btn-outline-primary btn-goal-ai-apply" data-index="${index}">
@@ -2366,7 +2478,16 @@ function readGoalContextInput() {
       name: (byId("habitName")?.value || "").trim(),
       period: byId("habitPeriod")?.value || "day",
       targetCount: Number(byId("habitTarget")?.value || 1),
-      xpPerCheckin: Number(byId("habitXp")?.value || 10),
+    },
+    weeklyPlan: {
+      focusTheme: (byId("weeklyFocusTheme")?.value || "").trim(),
+      topPriorities: [
+        (byId("weeklyGoal1")?.value || "").trim(),
+        (byId("weeklyGoal2")?.value || "").trim(),
+        (byId("weeklyGoal3")?.value || "").trim(),
+      ].filter(Boolean),
+      actionCommitments: (byId("weeklyActionPlan")?.value || "").trim(),
+      weekKey: String(state.weeklyGoals?.weekKey || getCurrentGoalsWeekKey()).trim(),
     },
   };
 }
@@ -2374,6 +2495,7 @@ function readGoalContextInput() {
 function applyGoalBundle(option = {}) {
   const goal = option?.goal || {};
   const habit = option?.habit || {};
+  const weeklyPlan = option?.weeklyPlan || {};
   setInputValue("goalTitle", String(goal?.title || "").trim());
   setInputValue("goalArea", String(goal?.area || "ca-nhan"));
   setInputValue("goalPeriod", String(goal?.period || "month"));
@@ -2388,7 +2510,19 @@ function applyGoalBundle(option = {}) {
   setInputValue("habitName", String(habit?.name || "").trim());
   setInputValue("habitPeriod", String(habit?.period || "day"));
   setInputValue("habitTarget", String(Number(habit?.targetCount || 1)));
-  setInputValue("habitXp", String(Number(habit?.xpPerCheckin || 10)));
+
+  const topPriorities = Array.isArray(weeklyPlan?.topPriorities)
+    ? weeklyPlan.topPriorities.map((line) => String(line || "").trim()).filter(Boolean)
+    : [];
+  setInputValue("weeklyFocusTheme", String(weeklyPlan?.focusTheme || "").trim());
+  setInputValue("weeklyGoal1", String(topPriorities[0] || ""));
+  setInputValue("weeklyGoal2", String(topPriorities[1] || ""));
+  setInputValue("weeklyGoal3", String(topPriorities[2] || ""));
+  setInputValue("weeklyActionPlan", String(weeklyPlan?.actionCommitments || "").trim());
+  const weeklyStatus = byId("goalsWeeklyStatus");
+  if (weeklyStatus) {
+    weeklyStatus.textContent = t("goals.weekly.unsaved", "Bạn đang có thay đổi chưa lưu cho mục tiêu tuần");
+  }
 }
 
 async function handleGoalAiAction(mode = "generate") {
@@ -2424,7 +2558,7 @@ async function handleGoalAiAction(mode = "generate") {
 
     state.goalAi.options = Array.isArray(res?.options) ? res.options.slice(0, 3) : [];
     renderGoalAiSuggestions();
-    showToast(t("toast.goalAiReady", "AI đã tạo 3 bundle mục tiêu."), "success");
+    showToast(t("toast.goalAiReady", "AI đã tạo 3 phương án mục tiêu cá nhân và mục tiêu tuần."), "success");
   } catch (err) {
     console.error("handleGoalAiAction error", err);
     state.goalAi.options = [];
@@ -2435,7 +2569,7 @@ async function handleGoalAiAction(mode = "generate") {
     );
   } finally {
     state.goalAi.loading = false;
-    state.goalAi.cooldownUntil = Date.now() + GOAL_AI_COOLDOWN_MS;
+    state.goalAi.cooldownUntil = GOAL_AI_COOLDOWN_MS > 0 ? Date.now() + GOAL_AI_COOLDOWN_MS : 0;
     setGoalAiButtonsState();
     scheduleAiCooldownUiTick();
   }
@@ -2472,50 +2606,12 @@ async function bindDashboardEvents() {
   });
 }
 
-async function handleWeeklyReviewSaveAction(planInput = {}) {
-  const uid = ensureUser();
-  if (!uid) return;
-
-  try {
-    const module = await ensureWeeklyReviewModule();
-    const normalizedPlan = module.parseWeeklyPlanInput(planInput);
-    const baseVm = state.weeklyReviewVm || (await module.buildWeeklyReviewVM(uid, "", weeklyReviewOptions()));
-    state.weeklyReviewVm = baseVm;
-
-    setWeeklyReviewSaveState({ status: "saving" });
-    const savedPlan = await module.saveWeeklyReviewPlan(uid, baseVm, normalizedPlan);
-
-    state.weeklyReviewVm = {
-      ...baseVm,
-      plan: savedPlan,
-    };
-
-    setWeeklyReviewSaveState({
-      status: "saved",
-      savedAt: new Date(),
-    });
-    showToast(t("toast.weeklyReviewSaved", "Đã lưu tổng kết tuần."), "success");
-
-    await loadWeeklyReview(uid, baseVm.weekKey);
-  } catch (err) {
-    console.error("save weekly review error", err);
-    setWeeklyReviewSaveState({ status: "error" });
-    showToast(
-      err?.message || t("toast.weeklyReviewSaveFail", "Không thể lưu tổng kết tuần."),
-      "error"
-    );
-  }
-}
-
 async function bindWeeklyReviewModule() {
   if (bindState.weeklyReview) return;
   const module = await ensureWeeklyReviewModule();
   bindState.weeklyReview = true;
 
   module.bindWeeklyReviewEvents({
-    onSave: (planInput) => {
-      void handleWeeklyReviewSaveAction(planInput);
-    },
     onOpenHistory: (weekKey) => {
       const uid = ensureUser();
       if (!uid) return;
@@ -2551,7 +2647,6 @@ function bindRouteSyncEvents() {
     }
 
     if (isWeeklyReviewRouteActive()) {
-      resetWeeklyReviewSaveState();
       void bindWeeklyReviewModule().then(() => loadWeeklyReview(uid, ""));
     }
   };
@@ -2568,6 +2663,7 @@ function bindRouteSyncEvents() {
 function bindGoalEvents() {
   renderGoalAiSuggestions();
   setGoalAiButtonsState();
+  renderWeeklyGoalsPanel();
 
   byId("btnGoalAiGenerate")?.addEventListener("click", () => {
     void handleGoalAiAction("generate");
@@ -2586,13 +2682,52 @@ function bindGoalEvents() {
     if (!option) return;
 
     applyGoalBundle(option);
-    showToast(t("toast.goalAiApplied", "Đã áp dụng bundle AI vào form mục tiêu."), "success");
+    showToast(t("toast.goalAiApplied", "Đã áp dụng gợi ý AI vào form mục tiêu và mục tiêu tuần."), "success");
     await saveAppliedAiSuggestionSafe({
       type: "goal-bundle",
       mode: state.goalAi.mode || "generate",
       inputSnapshot: state.goalAi.inputSnapshot || {},
       appliedOutput: option,
       appliedAt: new Date(),
+    });
+  });
+
+  byId("btnSaveWeeklyGoals")?.addEventListener("click", async () => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    const weekKey = String(state.weeklyGoals?.weekKey || getCurrentGoalsWeekKey()).trim();
+    const payload = readWeeklyGoalsFormInput();
+
+    try {
+      setWeeklyGoalsSaveState({ status: "saving" });
+      const saved = await saveWeeklyGoalsPlan(uid, weekKey, payload);
+      state.weeklyGoals = {
+        ...state.weeklyGoals,
+        weekKey: String(saved?.weekKey || weekKey).trim(),
+        plan: {
+          ...(state.weeklyGoals?.plan || {}),
+          ...(saved?.plan || {}),
+        },
+      };
+      setWeeklyGoalsSaveState({
+        status: "saved",
+        savedAt: new Date(),
+      });
+      showToast(t("toast.weeklyGoalsSaved", "Đã lưu mục tiêu tuần."), "success");
+    } catch (err) {
+      console.error("save weekly goals error", err);
+      setWeeklyGoalsSaveState({ status: "error" });
+      showToast(err?.message || t("toast.weeklyGoalsSaveFail", "Không thể lưu mục tiêu tuần."), "error");
+    }
+  });
+
+  ["weeklyFocusTheme", "weeklyGoal1", "weeklyGoal2", "weeklyGoal3", "weeklyActionPlan"].forEach((id) => {
+    byId(id)?.addEventListener("input", () => {
+      const statusEl = byId("goalsWeeklyStatus");
+      if (statusEl) {
+        statusEl.textContent = t("goals.weekly.unsaved", "Bạn đang có thay đổi chưa lưu cho mục tiêu tuần");
+      }
     });
   });
 
@@ -2637,7 +2772,6 @@ function bindGoalEvents() {
       name: (byId("habitName")?.value || "").trim(),
       period: byId("habitPeriod")?.value || "day",
       targetCount: Number(byId("habitTarget")?.value || 1),
-      xpPerCheckin: Number(byId("habitXp")?.value || 10),
       active: true,
     };
 
@@ -2645,7 +2779,6 @@ function bindGoalEvents() {
       await createHabit(uid, payload);
       setInputValue("habitName", "");
       setInputValue("habitTarget", "1");
-      setInputValue("habitXp", "10");
 
       showToast(t("toast.habitAdded", "Đã tạo thói quen mới."), "success");
       await refreshGoalsAndMotivation(uid);
@@ -2676,7 +2809,7 @@ function bindGoalEvents() {
 
       if (btn.classList.contains("btn-goal-done")) {
         await markGoalDone(uid, goal.id);
-        showToast(t("toast.goalDoneXp", "Đã hoàn thành mục tiêu. +120 XP"), "success");
+        showToast(t("toast.goalDoneXp", "Đã hoàn thành mục tiêu."), "success");
       }
 
       if (btn.classList.contains("btn-goal-del")) {

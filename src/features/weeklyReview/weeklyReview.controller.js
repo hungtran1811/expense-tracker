@@ -6,13 +6,8 @@ import {
   listHabits,
   listHabitLogsByRange,
   listVideoTasks,
-  listVideoRetrosByRange,
-  listXpLogsByRange,
-  readWeeklyReview,
-  saveWeeklyReview,
   listWeeklyReviews,
 } from "../../services/firebase/firestore.js";
-import { getMotivationSummaryReadOnly } from "../motivation/motivation.controller.js";
 import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
 
 const DEFAULT_HISTORY_LIMIT = 12;
@@ -124,29 +119,6 @@ function resolveWeekRange(inputWeekKey, now = new Date()) {
 
 function sumAmount(list = []) {
   return (Array.isArray(list) ? list : []).reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-}
-
-function normalizeTopPriorities(input) {
-  const arr = Array.isArray(input) ? input : [input];
-  return arr
-    .map((item) => String(item || "").trim())
-    .filter(Boolean)
-    .slice(0, 3);
-}
-
-function normalizeWeeklyPlan(plan = {}) {
-  const topPriorities = normalizeTopPriorities(plan.topPriorities || [
-    plan.topPriority1,
-    plan.topPriority2,
-    plan.topPriority3,
-  ]);
-
-  return {
-    focusTheme: String(plan.focusTheme || "").trim(),
-    topPriorities,
-    riskNote: String(plan.riskNote || "").trim(),
-    actionCommitments: String(plan.actionCommitments || "").trim(),
-  };
 }
 
 function parseTaskDeadline(task) {
@@ -264,78 +236,58 @@ function buildVideoSnapshot({ tasks, weekRange, now, deadlineWindowHours }) {
   };
 }
 
-function buildVideoPerformanceSnapshot(videoRetros = []) {
-  const safe = Array.isArray(videoRetros) ? videoRetros : [];
-  const videosPublished = safe.length;
+function buildReleasePlanSnapshot({ video = {}, goals = {}, finance = {} } = {}) {
+  const stageCounts = video?.stageCounts || {};
+  const stageRows = [
+    { key: "idea", label: t("videoPlan.stage.idea", "Ý tưởng"), count: Number(stageCounts.idea || 0) },
+    { key: "research", label: t("videoPlan.stage.research", "Nghiên cứu"), count: Number(stageCounts.research || 0) },
+    { key: "script", label: t("videoPlan.stage.script", "Kịch bản"), count: Number(stageCounts.script || 0) },
+    { key: "shoot", label: t("videoPlan.stage.shoot", "Quay"), count: Number(stageCounts.shoot || 0) },
+    { key: "edit", label: t("videoPlan.stage.edit", "Dựng"), count: Number(stageCounts.edit || 0) },
+    { key: "publish", label: t("videoPlan.stage.publish", "Xuất bản"), count: Number(stageCounts.publish || 0) },
+  ];
 
-  if (!videosPublished) {
-    return {
-      videosPublished: 0,
-      totalViews: 0,
-      avgCtr: 0,
-      avgRetention30s: 0,
-      avgDurationSec: 0,
-    };
+  const actions = [];
+  if (Number(video?.overdue || 0) > 0) {
+    actions.push(
+      formatTemplate(t("weeklyReview.release.actions.overdue", "Xử lý ngay {{count}} việc video quá hạn."), {
+        count: Number(video?.overdue || 0),
+      })
+    );
   }
-
-  const totalViews = safe.reduce((sum, item) => sum + Math.max(0, Number(item?.views || 0)), 0);
-  const totalCtr = safe.reduce((sum, item) => sum + Math.max(0, Number(item?.ctr || 0)), 0);
-  const totalRetention = safe.reduce(
-    (sum, item) => sum + Math.max(0, Number(item?.retention30s || 0)),
-    0
-  );
-  const totalDuration = safe.reduce(
-    (sum, item) => sum + Math.max(0, Number(item?.durationSec || 0)),
-    0
-  );
+  if (Number(video?.dueInWeek || 0) > 0) {
+    actions.push(
+      formatTemplate(t("weeklyReview.release.actions.dueWeek", "Chốt timeline cho {{count}} việc có hạn trong tuần."), {
+        count: Number(video?.dueInWeek || 0),
+      })
+    );
+  }
+  if (Number(video?.open || 0) > 0) {
+    actions.push(
+      formatTemplate(t("weeklyReview.release.actions.openVideo", "Ưu tiên đẩy {{count}} việc video đang mở tiến thêm ít nhất 1 bước."), {
+        count: Number(video?.open || 0),
+      })
+    );
+  }
+  if (Number(goals?.activeGoals || 0) > 0) {
+    actions.push(
+      formatTemplate(t("weeklyReview.release.actions.activeGoals", "Gắn tiến độ video với {{count}} mục tiêu cá nhân đang chạy."), {
+        count: Number(goals?.activeGoals || 0),
+      })
+    );
+  }
+  if (Number(finance?.net || 0) < 0) {
+    actions.push(t("weeklyReview.release.actions.netNegative", "Rà soát chi phí sản xuất trước khi chốt lịch quay tuần mới."));
+  }
+  if (!actions.length) {
+    actions.push(
+      t("weeklyReview.release.actions.default", "Tuần này ổn định, tiếp tục theo lịch đăng và nâng chất lượng từng video.")
+    );
+  }
 
   return {
-    videosPublished,
-    totalViews,
-    avgCtr: Number((totalCtr / videosPublished).toFixed(2)),
-    avgRetention30s: Number((totalRetention / videosPublished).toFixed(2)),
-    avgDurationSec: Number((totalDuration / videosPublished).toFixed(2)),
-  };
-}
-
-export function buildWeeklyLocalInsight(vm = {}) {
-  const perf = vm?.snapshot?.videoPerformance || {};
-  const lines = [];
-
-  if (Number(perf?.videosPublished || 0) < 2) {
-    lines.push(t("weeklyReview.videoPerformance.lowPublish"));
-  }
-  if (Number(perf?.avgCtr || 0) > 0 && Number(perf?.avgCtr || 0) < 4) {
-    lines.push(t("weeklyReview.videoPerformance.lowCtr"));
-  }
-  if (
-    Number(perf?.avgRetention30s || 0) > 0 &&
-    Number(perf?.avgRetention30s || 0) < 45
-  ) {
-    lines.push(t("weeklyReview.videoPerformance.lowRetention"));
-  }
-
-  if (!lines.length) {
-    lines.push(t("weeklyReview.videoPerformance.healthy"));
-  }
-
-  return lines;
-}
-
-function buildMotivationSnapshot({ summary, weekXpLogs }) {
-  const safeSummary = summary || {};
-  const safeWeekXpLogs = Array.isArray(weekXpLogs) ? weekXpLogs : [];
-  const weekXp = safeWeekXpLogs.reduce((sum, item) => sum + Number(item?.points || 0), 0);
-
-  return {
-    streak: Number(safeSummary?.streak || 0),
-    totalXp: Number(safeSummary?.totalXp || 0),
-    level: Number(safeSummary?.level || 1),
-    weekXp,
-    weekXpActions: safeWeekXpLogs.length,
-    dayProgress: safeSummary?.day || { done: 0, target: 0, percent: 0 },
-    weekProgress: safeSummary?.week || { done: 0, target: 0, percent: 0 },
-    monthProgress: safeSummary?.month || { done: 0, target: 0, percent: 0 },
+    stageRows,
+    actions: actions.slice(0, 5),
   };
 }
 
@@ -360,7 +312,6 @@ function normalizeHistoryItem(item) {
     weekKey,
     label: weekKey,
     updatedAt,
-    hasPlan: !!String(item?.plan?.focusTheme || "").trim(),
   };
 }
 
@@ -378,7 +329,6 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     DEFAULT_DEADLINE_WINDOW_HOURS
   );
   const historyLimit = clampNumber(options?.historyLimit, 1, 52, DEFAULT_HISTORY_LIMIT);
-  const weekEndInclusive = new Date(weekRange.endExclusive.getTime() - 1);
 
   const [
     expenses,
@@ -388,10 +338,6 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     habits,
     weekHabitLogs,
     tasks,
-    videoRetros,
-    motivationSummary,
-    weekXpLogs,
-    savedReview,
     historyRaw,
   ] = await Promise.all([
     listExpensesByDateRange(uid, weekRange.start, weekRange.endExclusive),
@@ -401,10 +347,6 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     listHabits(uid, { active: true }),
     listHabitLogsByRange(uid, weekRange.startKey, weekRange.endKey),
     listVideoTasks(uid),
-    listVideoRetrosByRange(uid, weekRange.start, weekRange.endExclusive),
-    getMotivationSummaryReadOnly(uid),
-    listXpLogsByRange(uid, weekRange.start, weekEndInclusive),
-    readWeeklyReview(uid, weekRange.weekKey),
     listWeeklyReviews(uid, historyLimit),
   ]);
 
@@ -412,11 +354,8 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     finance: buildFinanceSnapshot({ expenses, incomes, transfers }),
     goals: buildGoalsSnapshot({ goals, habits, weekHabitLogs }),
     video: buildVideoSnapshot({ tasks, weekRange, now, deadlineWindowHours }),
-    videoPerformance: buildVideoPerformanceSnapshot(videoRetros),
-    motivation: buildMotivationSnapshot({ summary: motivationSummary, weekXpLogs }),
   };
-
-  const storedPlan = normalizeWeeklyPlan(savedReview?.plan || {});
+  const releasePlan = buildReleasePlanSnapshot(snapshot);
 
   const history = (Array.isArray(historyRaw) ? historyRaw : [])
     .map((item) => normalizeHistoryItem(item))
@@ -427,7 +366,6 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
       weekKey: weekRange.weekKey,
       label: weekRange.weekKey,
       updatedAt: null,
-      hasPlan: !!storedPlan.focusTheme,
     });
   }
 
@@ -441,8 +379,7 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
       endKey: weekRange.endKey,
     },
     snapshot,
-    localInsight: buildWeeklyLocalInsight({ snapshot }),
-    plan: storedPlan,
+    releasePlan,
     history: history.slice(0, historyLimit),
     options: {
       deadlineWindowHours,
@@ -450,29 +387,4 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
   };
 }
 
-function createReviewPayload(vm, plan) {
-  return {
-    weekKey: vm.weekKey,
-    rangeStart: vm?.range?.startKey || "",
-    rangeEnd: vm?.range?.endKey || "",
-    snapshot: vm.snapshot || {},
-    plan,
-    finalizedAt: new Date(),
-  };
-}
-
-export async function saveWeeklyReviewPlan(uid, vm, planInput = {}) {
-  if (!uid) throw new Error("Thiếu thông tin người dùng");
-  if (!vm?.weekKey) throw new Error("Thiếu tuần cần lưu");
-
-  const normalizedPlan = normalizeWeeklyPlan(planInput);
-  const payload = createReviewPayload(vm, normalizedPlan);
-
-  await saveWeeklyReview(uid, vm.weekKey, payload);
-  return normalizedPlan;
-}
-
-export function parseWeeklyPlanInput(formValues = {}) {
-  return normalizeWeeklyPlan(formValues);
-}
 

@@ -8,9 +8,23 @@ function normalizeOptions(value) {
     .map((item) => {
       const goal = item?.goal || {};
       const habit = item?.habit || {};
+      const weeklyPlan = item?.weeklyPlan || {};
+      const goalTitle = String(goal?.title || "").trim() || "mục tiêu chính";
+      const weeklyPrioritiesRaw = (Array.isArray(weeklyPlan?.topPriorities) ? weeklyPlan.topPriorities : [])
+        .map((line) => String(line || "").trim())
+        .filter(Boolean)
+        .slice(0, 3);
+      const weeklyPriorities =
+        weeklyPrioritiesRaw.length >= 3
+          ? weeklyPrioritiesRaw
+          : [
+              weeklyPrioritiesRaw[0] || `Hoàn thành mốc quan trọng cho ${goalTitle}`,
+              weeklyPrioritiesRaw[1] || "Khóa lịch làm việc cố định cho tuần này",
+              weeklyPrioritiesRaw[2] || "Rà soát và chốt đầu việc còn mở trước cuối tuần",
+            ];
       return {
         goal: {
-          title: String(goal?.title || "").trim(),
+          title: goalTitle,
           area: String(goal?.area || "ca-nhan").trim() || "ca-nhan",
           period: String(goal?.period || "month").trim() || "month",
           targetValue: Number(goal?.targetValue || 1),
@@ -24,6 +38,11 @@ function normalizeOptions(value) {
           period: String(habit?.period || "day").trim() || "day",
           targetCount: Number(habit?.targetCount || 1),
           xpPerCheckin: Number(habit?.xpPerCheckin || 10),
+        },
+        weeklyPlan: {
+          focusTheme: String(weeklyPlan?.focusTheme || "").trim() || `Tập trung hoàn thành ${goalTitle}`,
+          topPriorities: weeklyPriorities,
+          actionCommitments: String(weeklyPlan?.actionCommitments || "").trim() || "Mỗi ngày chốt ít nhất một đầu việc ưu tiên.",
         },
         reason: String(item?.reason || "").trim(),
       };
@@ -46,6 +65,6 @@ export async function getGoalSuggestions(payload = {}, options = {}) {
   return {
     options: suggestions,
     model: String(data?.model || "gemini-3-flash-latest"),
-    promptVersion: String(data?.promptVersion || "2.7.0"),
+    promptVersion: String(data?.promptVersion || "3.1.0"),
   };
 }

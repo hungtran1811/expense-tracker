@@ -274,6 +274,7 @@ export function renderDashboardCommandCenter(vm) {
   setText("dashMissionText", vm?.hero?.missionText || "");
   setText("dashHeroMeta", vm?.hero?.meta || "");
   setText("dashPriorityTitle", t("dashboard.priority.title", "Ưu tiên hôm nay"));
+  setText("dashBalancesTitle", t("dashboard.modules.accounts.title", "Số dư tài khoản"));
 
   setText("dashHeroVideoCount", String(vm?.hero?.kpis?.openVideoTasks ?? 0));
   setText("dashHeroHabitCount", String(vm?.hero?.kpis?.remainingHabitTurns ?? 0));
@@ -281,7 +282,6 @@ export function renderDashboardCommandCenter(vm) {
 
   setText("dashVideoPipelineSub", vm?.modules?.video?.subtitle || "");
   setText("dashGoalsSub", vm?.modules?.goals?.subtitle || "");
-  setText("dashMotivationSub", vm?.modules?.motivation?.subtitle || "");
 
   setText("dashVideoCountBadge", `${vm?.modules?.video?.count ?? 0}`);
   setText("dashGoalsCountBadge", `${vm?.modules?.goals?.count ?? 0}`);

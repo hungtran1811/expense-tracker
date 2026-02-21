@@ -360,12 +360,11 @@ export function buildDashboardHeroVM(state = {}, now = new Date()) {
 
 export function buildDashboardModulesVM(state = {}) {
   const goals = normalizeGoals(state.goals);
-  const remainingHabitTurns = calcRemainingHabitTurns(state.habitProgress);
   const openVideoTasks = calcOpenVideoTasks(state.videoTasks);
   const accountBalances = (Array.isArray(state.accountBalances) ? state.accountBalances : [])
     .map((item) => normalizeAccountBalanceItem(item))
     .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
-    .slice(0, 6);
+    .slice(0, 4);
 
   return {
     video: {
@@ -375,13 +374,6 @@ export function buildDashboardModulesVM(state = {}) {
     goals: {
       count: goals.length,
       subtitle: t("dashboard.modules.goals.subtitle", ""),
-    },
-    motivation: {
-      streak: Number(state?.motivation?.streak || 0),
-      xp: Number(state?.motivation?.totalXp || 0),
-      level: Number(state?.motivation?.level || 1),
-      subtitle: t("dashboard.modules.motivation.subtitle", ""),
-      remainingHabitTurns,
     },
     accounts: {
       title: t("dashboard.modules.accounts.title", "Số dư tài khoản"),

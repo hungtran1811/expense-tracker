@@ -1,5 +1,5 @@
 ﻿const MODEL = "gemini-3-flash-latest";
-const PROMPT_VERSION = "2.7.1";
+const PROMPT_VERSION = "3.1.0";
 const { guardAiRequest, jsonResponse } = require("../utils/aiGuard.js");
 
 function safeText(value, fallback = "") {
@@ -27,9 +27,28 @@ function normalizeDate(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
 }
 
+function normalizeTopPriorities(value) {
+  const list = Array.isArray(value) ? value : [value];
+  return list
+    .map((item) => safeText(item, ""))
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
 function toOption(item = {}) {
   const goal = item?.goal || {};
   const habit = item?.habit || {};
+  const weeklyPlan = item?.weeklyPlan || {};
+  const goalTitle = safeText(goal?.title, "mục tiêu chính");
+  const topPrioritiesRaw = normalizeTopPriorities(weeklyPlan?.topPriorities);
+  const topPriorities =
+    topPrioritiesRaw.length >= 3
+      ? topPrioritiesRaw
+      : [
+          topPrioritiesRaw[0] || `Hoàn thành mốc quan trọng cho ${goalTitle}`,
+          topPrioritiesRaw[1] || "Khóa lịch làm việc cố định cho tuần này",
+          topPrioritiesRaw[2] || "Rà soát và chốt đầu việc còn mở trước cuối tuần",
+        ];
   return {
     goal: {
       title: safeText(goal?.title, ""),
@@ -46,6 +65,11 @@ function toOption(item = {}) {
       period: normalizePeriod(habit?.period, "day"),
       targetCount: Math.max(1, Number(habit?.targetCount || 1)),
       xpPerCheckin: Math.max(1, Number(habit?.xpPerCheckin || 10)),
+    },
+    weeklyPlan: {
+      focusTheme: safeText(weeklyPlan?.focusTheme, `Tập trung hoàn thành ${goalTitle}`),
+      topPriorities,
+      actionCommitments: safeText(weeklyPlan?.actionCommitments, "Mỗi ngày chốt ít nhất một đầu việc ưu tiên."),
     },
     reason: safeText(item?.reason, ""),
   };
@@ -81,6 +105,15 @@ function buildLocalOptions(payload = {}) {
           targetCount: Math.max(1, Number(habit?.targetCount || 1)),
           xpPerCheckin: Math.max(10, Number(habit?.xpPerCheckin || 10)),
         },
+        weeklyPlan: {
+          focusTheme: "Giữ đều 2 phiên sản xuất quan trọng trong tuần",
+          topPriorities: [
+            "Chốt dứt điểm 1 video đang ở giai đoạn dựng",
+            "Hoàn thành 1 kịch bản mới trước giữa tuần",
+            "Rà soát checklist xuất bản trước cuối tuần",
+          ],
+          actionCommitments: "Mỗi ngày chốt một việc quan trọng trước 12h để không dồn việc.",
+        },
         reason: "Giữ đúng mục tiêu hiện tại nhưng tăng khả năng thực thi theo tuần.",
       }),
       toOption({
@@ -100,6 +133,15 @@ function buildLocalOptions(payload = {}) {
           targetCount: 1,
           xpPerCheckin: 12,
         },
+        weeklyPlan: {
+          focusTheme: "Giảm dồn việc cuối tuần",
+          topPriorities: [
+            "Khóa deadline quay cho 1 video trong tuần",
+            "Hoàn thành hook + outline cho video tiếp theo",
+            "Dành 1 buổi tối ưu tiêu đề và thumbnail",
+          ],
+          actionCommitments: "Không để quá 2 đầu việc mở cùng lúc trong pipeline video.",
+        },
         reason: "Tăng kỷ luật đầu ngày để giảm dồn việc cuối tuần.",
       }),
       toOption({
@@ -118,6 +160,15 @@ function buildLocalOptions(payload = {}) {
           period: "week",
           targetCount: 1,
           xpPerCheckin: 20,
+        },
+        weeklyPlan: {
+          focusTheme: "Duy trì lịch ra video ổn định",
+          topPriorities: [
+            "Đẩy 1 video sang trạng thái xuất bản",
+            "Khóa xong shot list cho video kế tiếp",
+            "Chuẩn bị sẵn chủ đề tuần sau",
+          ],
+          actionCommitments: "Mỗi mốc quá hạn phải xử lý ngay trong ngày, không dồn sang hôm sau.",
         },
         reason: "Giảm rủi ro trễ hạn nhờ khóa việc tiền kỳ sớm.",
       }),
@@ -142,6 +193,15 @@ function buildLocalOptions(payload = {}) {
         targetCount: 1,
         xpPerCheckin: 12,
       },
+      weeklyPlan: {
+        focusTheme: "Mỗi tuần chốt 1 video hoàn chỉnh",
+        topPriorities: [
+          "Hoàn tất kịch bản và shot list trước thứ 3",
+          "Quay và dựng xong trước thứ 6",
+          "Xuất bản trong cuối tuần",
+        ],
+        actionCommitments: "Mỗi ngày dành 1 block cố định cho video, không hủy lịch.",
+      },
       reason: "Tập trung vào output thực tế và giữ đều nhịp sản xuất.",
     }),
     toOption({
@@ -161,6 +221,15 @@ function buildLocalOptions(payload = {}) {
         targetCount: 1,
         xpPerCheckin: 10,
       },
+      weeklyPlan: {
+        focusTheme: "Tối ưu chi phí sản xuất có kiểm soát",
+        topPriorities: [
+          "Rà soát chi phí từng video ngay sau khi quay",
+          "Chuẩn hóa checklist chuẩn bị để tránh phát sinh",
+          "Theo dõi ngân sách tuần theo từng đầu việc",
+        ],
+        actionCommitments: "Cuối mỗi ngày cập nhật chi phí thực tế và điều chỉnh kế hoạch hôm sau.",
+      },
       reason: "Kết hợp mục tiêu tài chính với thói quen ghi nhận để dễ kiểm soát.",
     }),
     toOption({
@@ -179,6 +248,15 @@ function buildLocalOptions(payload = {}) {
         period: "day",
         targetCount: 1,
         xpPerCheckin: 8,
+      },
+      weeklyPlan: {
+        focusTheme: "Mở rộng pipeline ý tưởng khả thi",
+        topPriorities: [
+          "Chốt 3 ý tưởng có thể quay ngay trong tuần",
+          "Viết outline sơ bộ cho từng ý tưởng đã chọn",
+          "Xếp lịch ưu tiên theo deadline thực tế",
+        ],
+        actionCommitments: "Ý tưởng mới phải đi kèm 1 hành động cụ thể trong vòng 24h.",
       },
       reason: "Giữ pipeline ý tưởng luôn dồi dào cho các tuần tiếp theo.",
     }),
@@ -211,12 +289,18 @@ Bắt buộc:
         "targetCount": 1,
         "xpPerCheckin": 10
       },
+      "weeklyPlan": {
+        "focusTheme": "string",
+        "topPriorities": ["string", "string", "string"],
+        "actionCommitments": "string"
+      },
       "reason": "string ngắn"
     }
   ]
 }
 - Chính xác 3 options.
-- Mỗi option phải có goal + habit đầy đủ, hành động được ngay.
+- Mỗi option phải có goal + habit + weeklyPlan đầy đủ, hành động được ngay.
+- weeklyPlan.topPriorities phải có đúng 3 mục rõ ràng, cụ thể.
 - Tiếng Việt có dấu, ngắn gọn, thực dụng.
 
 Ngữ cảnh đầu vào:

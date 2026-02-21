@@ -12,20 +12,22 @@ export function renderMotivationDashboard(container, summary) {
   container.innerHTML = `
     <div class="motivation-grid">
       <div class="motivation-card">
-        <div class="label">Chuỗi ngày hiện tại</div>
-        <div class="value">${summary.streak}</div>
+        <div class="label">Tiến độ hôm nay</div>
+        <div class="value">${summary.day.percent}%</div>
       </div>
       <div class="motivation-card">
-        <div class="label">Tổng XP</div>
-        <div class="value">${summary.totalXp}</div>
+        <div class="label">Tiến độ tuần</div>
+        <div class="value">${summary.week.percent}%</div>
       </div>
       <div class="motivation-card">
-        <div class="label">Cấp độ</div>
-        <div class="value">${summary.level}</div>
+        <div class="label">Tiến độ tháng</div>
+        <div class="value">${summary.month.percent}%</div>
       </div>
     </div>
     <div class="small text-muted mt-2">
-      Thử thách ngày ${summary.day.percent}% • tuần ${summary.week.percent}% • tháng ${summary.month.percent}%
+      Hôm nay ${summary.day.done}/${summary.day.target} • Tuần ${summary.week.done}/${summary.week.target} • Tháng ${
+        summary.month.done
+      }/${summary.month.target}
     </div>
   `;
 }
@@ -34,28 +36,22 @@ export function renderMotivationDetails(summary) {
   const dayEl = document.getElementById("challengeDayValue");
   const weekEl = document.getElementById("challengeWeekValue");
   const monthEl = document.getElementById("challengeMonthValue");
-  const streakEl = document.getElementById("streakValue");
-  const xpEl = document.getElementById("totalXpValue");
-  const levelEl = document.getElementById("levelValue");
 
   if (dayEl) dayEl.textContent = `${summary.day.done}/${summary.day.target} (${summary.day.percent}%)`;
   if (weekEl) weekEl.textContent = `${summary.week.done}/${summary.week.target} (${summary.week.percent}%)`;
   if (monthEl) monthEl.textContent = `${summary.month.done}/${summary.month.target} (${summary.month.percent}%)`;
-  if (streakEl) streakEl.textContent = String(summary.streak);
-  if (xpEl) xpEl.textContent = String(summary.totalXp);
-  if (levelEl) levelEl.textContent = String(summary.level);
 
   const challengeLabel = document.getElementById("goalsChallengeLabel");
   if (challengeLabel) {
-    challengeLabel.textContent = `${t("dashboard.modules.motivation.subtitle", "")} • ${summary.day.percent}% hôm nay`;
+    challengeLabel.textContent = `${t(
+      "goals.dailyFocus.subtitle",
+      "Ưu tiên các thói quen còn thiếu quota để giữ tiến độ tuần."
+    )} • ${summary.day.percent}% hôm nay`;
   }
 }
 
 export function buildDefaultMotivationSummary() {
   return {
-    streak: 0,
-    totalXp: 0,
-    level: 1,
     day: { done: 0, target: 0, percent: 0 },
     week: { done: 0, target: 0, percent: 0 },
     month: { done: 0, target: 0, percent: 0 },

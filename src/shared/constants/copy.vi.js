@@ -36,7 +36,7 @@ export const copyVi = {
     },
     "weekly-review": {
       title: "Tổng kết tuần",
-      subtitle: "Nhìn lại tuần cũ và chốt kế hoạch tuần mới",
+      subtitle: "Nhìn lại tuần cũ và chuẩn bị lịch phát hành",
     },
     accounts: {
       title: "Tài khoản",
@@ -166,7 +166,7 @@ export const copyVi = {
     },
     dailyFocus: {
       title: "Hôm nay cần làm gì",
-      subtitle: "Ưu tiên các thói quen còn thiếu quota để giữ chuỗi ngày.",
+      subtitle: "Ưu tiên các thói quen còn thiếu quota để giữ tiến độ tuần.",
       empty: "Tuyệt vời! Bạn đã hoàn thành toàn bộ quota kỳ hiện tại.",
       action: "Điểm danh nhanh",
       remaining: "Còn {{remaining}} lượt",

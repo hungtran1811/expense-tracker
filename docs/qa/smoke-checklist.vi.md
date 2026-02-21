@@ -144,3 +144,13 @@
 - `Tìm nhanh` debounce mượt, không lag khi gõ liên tục.
 - `Đặt lại` đưa filter về mặc định và focus vào ô tìm nhanh.
 - Xác nhận không có text mới hardcode sai nguồn: các nhãn mới đi qua `copy.vi.js`.
+
+## 14) Weekly Review (Bản tối giản)
+- Vào `#weekly-review`:
+- Chỉ còn các khối tổng kết tuần phục vụ lập kế hoạch (tài chính, mục tiêu/thói quen, video tuần này, động lực, lịch sử review).
+- Không còn hiển thị các khối hiệu suất video tuần (`wrVideoPerformance*`, `wrPerf*`).
+- Chuyển tuần trong `wrHistoryList` vẫn hoạt động, không lỗi console.
+- Dashboard:
+- Card đầu tiên là `Số dư tài khoản` (ID `dashboardAccountBalances`), hiển thị gọn, không trùng card khác.
+- Regression nhanh:
+- Auth, CRUD finance, goals lock `target=1`, video workflow + XP, settings autosave vẫn hoạt động.

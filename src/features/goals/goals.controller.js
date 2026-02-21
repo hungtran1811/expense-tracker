@@ -8,7 +8,8 @@
   deleteHabit,
   addHabitLog,
   listHabitLogsByRange,
-  awardXp,
+  readWeeklyReview,
+  saveWeeklyReview,
 } from "../../services/firebase/firestore.js";
 
 function toLocalDateKey(date = new Date()) {
@@ -22,6 +23,15 @@ function normalizeTarget(value) {
   const n = Number(value || 1);
   if (!Number.isFinite(n)) return 1;
   return Math.max(1, Math.floor(n));
+}
+
+function isoWeekKeyFromDate(date = new Date()) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
 function weekStartLocal(date = new Date()) {
@@ -107,6 +117,77 @@ export function getHabitPeriodRange(period = "day", date = new Date()) {
   return { fromKey: key, toKey: key };
 }
 
+function normalizeTopPriorities(value) {
+  const list = Array.isArray(value) ? value : [value];
+  return list
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function normalizeWeeklyGoalsPlan(input = {}) {
+  const topPriorities = normalizeTopPriorities(
+    input?.topPriorities || [input?.topPriority1, input?.topPriority2, input?.topPriority3]
+  );
+
+  return {
+    focusTheme: String(input?.focusTheme || "").trim(),
+    topPriorities,
+    actionCommitments: String(input?.actionCommitments || "").trim(),
+    riskNote: String(input?.riskNote || "").trim(),
+  };
+}
+
+export function getCurrentGoalsWeekKey(date = new Date()) {
+  return isoWeekKeyFromDate(date);
+}
+
+export async function loadWeeklyGoalsPlan(uid, weekKey = "") {
+  const targetWeekKey = String(weekKey || getCurrentGoalsWeekKey()).trim();
+  if (!uid) {
+    return {
+      weekKey: targetWeekKey,
+      plan: normalizeWeeklyGoalsPlan({}),
+      updatedAt: null,
+    };
+  }
+
+  const saved = await readWeeklyReview(uid, targetWeekKey);
+  const savedPlan = saved?.plan || saved?.goalsPlan || {};
+
+  return {
+    weekKey: targetWeekKey,
+    plan: normalizeWeeklyGoalsPlan(savedPlan),
+    updatedAt: saved?.updatedAt || null,
+  };
+}
+
+export async function saveWeeklyGoalsPlan(uid, weekKey, planInput = {}) {
+  const targetWeekKey = String(weekKey || getCurrentGoalsWeekKey()).trim();
+  if (!uid || !targetWeekKey) throw new Error("Thiếu thông tin để lưu mục tiêu tuần");
+
+  const current = await readWeeklyReview(uid, targetWeekKey);
+  const currentPlan = normalizeWeeklyGoalsPlan(current?.plan || {});
+  const incomingPlan = normalizeWeeklyGoalsPlan(planInput);
+  const plan = {
+    focusTheme: incomingPlan.focusTheme || currentPlan.focusTheme || "",
+    topPriorities: incomingPlan.topPriorities.length ? incomingPlan.topPriorities : currentPlan.topPriorities,
+    actionCommitments: incomingPlan.actionCommitments || currentPlan.actionCommitments || "",
+    riskNote: incomingPlan.riskNote || currentPlan.riskNote || "",
+  };
+
+  await saveWeeklyReview(uid, targetWeekKey, {
+    weekKey: targetWeekKey,
+    plan,
+  });
+
+  return {
+    weekKey: targetWeekKey,
+    plan,
+    savedAt: new Date(),
+  };
+}
+
 export async function loadGoalsData(uid) {
   const now = new Date();
   const today = todayKey(now);
@@ -138,27 +219,10 @@ export async function saveGoalProgress(uid, goalId, currentValue, targetValue) {
   const target = Number(targetValue || 0);
   const status = next >= target && target > 0 ? "done" : "active";
   await updateGoal(uid, goalId, { currentValue: next, status });
-
-  if (status === "done") {
-    await awardXp(uid, {
-      sourceType: "goal",
-      sourceId: goalId,
-      action: "goal_done",
-      points: 120,
-      periodKey: goalId,
-    });
-  }
 }
 
 export async function markGoalDone(uid, goalId) {
   await updateGoal(uid, goalId, { status: "done" });
-  await awardXp(uid, {
-    sourceType: "goal",
-    sourceId: goalId,
-    action: "goal_done",
-    points: 120,
-    periodKey: goalId,
-  });
 }
 
 export async function removeGoal(uid, goalId) {
@@ -204,14 +268,6 @@ export async function checkInHabit(uid, habit) {
   });
 
   const nextDone = doneInPeriod + 1;
-
-  await awardXp(uid, {
-    sourceType: "habit",
-    sourceId: habitId,
-    action: "habit_checkin",
-    points: Number(habit.xpPerCheckin || 10),
-    periodKey: `${dateKey}_${nextDone}`,
-  });
 
   return {
     status: "success",

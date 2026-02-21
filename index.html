@@ -192,27 +192,19 @@
                     <div class="small text-muted" id="dashHeroMeta">Trạng thái theo thời gian thực của tháng đang chọn</div>
                   </div>
 
-                  <div class="dash-priority mt-3">
-                    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                      <div class="small text-uppercase text-muted" id="dashPriorityTitle">Ưu tiên hôm nay</div>
-                      <a href="#video-plan" id="dashPriorityLink" class="small text-decoration-none">Mở kế hoạch video</a>
+                  <div class="dash-hero-balances mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
+                      <div class="small text-uppercase text-muted" id="dashBalancesTitle">Số dư tài khoản</div>
+                      <a href="#accounts" class="small text-decoration-none">Xem chi tiết</a>
                     </div>
-                    <div id="dashPriorityList" class="dash-priority-list"></div>
+                    <div id="dashboardAccountBalances" class="small"></div>
                   </div>
 
-                  <div class="dash-hero-kpis mt-3">
-                    <article class="dash-hero-kpi">
-                      <small>Việc video đang mở</small>
-                      <strong id="dashHeroVideoCount">0</strong>
-                    </article>
-                    <article class="dash-hero-kpi">
-                      <small>Lượt thói quen còn lại</small>
-                      <strong id="dashHeroHabitCount">0</strong>
-                    </article>
-                    <article class="dash-hero-kpi">
-                      <small>Mục tiêu đang chạy</small>
-                      <strong id="dashHeroGoalCount">0</strong>
-                    </article>
+                  <div class="d-none">
+                    <div id="dashPriorityList"></div>
+                    <strong id="dashHeroVideoCount">0</strong>
+                    <strong id="dashHeroHabitCount">0</strong>
+                    <strong id="dashHeroGoalCount">0</strong>
                   </div>
                 </div>
 
@@ -249,20 +241,7 @@
                 </div>
 
                 <div class="row g-3 dashboard-grid">
-                  <div class="col-12 col-xxl-4">
-                    <div class="card h-100 p-3 dashboard-summary-card">
-                      <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
-                        <div>
-                          <h6 class="mb-0">Số dư tài khoản</h6>
-                          <div class="small text-muted">Theo dõi dòng tiền theo từng ví/tài khoản.</div>
-                        </div>
-                        <a href="#accounts" class="small text-decoration-none">Xem chi tiết</a>
-                      </div>
-                      <div id="dashboardAccountBalances" class="small"></div>
-                    </div>
-                  </div>
-
-                  <div class="col-12 col-xxl-8">
+                  <div class="col-12">
                     <div class="card h-100 p-3 dashboard-summary-card">
                       <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
                         <div>
@@ -278,7 +257,7 @@
                     </div>
                   </div>
 
-                  <div class="col-12 col-lg-6 col-xxl-6">
+                  <div class="col-12">
                     <div class="card h-100 p-3 dashboard-summary-card">
                       <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
                         <div>
@@ -294,19 +273,8 @@
                     </div>
                   </div>
 
-                  <div class="col-12 col-lg-6 col-xxl-6">
-                    <div class="card h-100 p-3 dashboard-summary-card">
-                      <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
-                        <div>
-                          <h6 class="mb-0">Động lực</h6>
-                          <div class="small text-muted" id="dashMotivationSub"></div>
-                        </div>
-                        <a href="#goals" class="small text-decoration-none">Xem thử thách</a>
-                      </div>
-                      <div id="dashboardMotivation"></div>
-                    </div>
-                  </div>
-
+                  <div class="d-none" id="dashboardMotivation"></div>
+                  <div class="d-none" id="dashMotivationSub"></div>
                 </div>
               </div>
             </section>
@@ -319,39 +287,29 @@
                     Nghi thức review cuối tuần để ra quyết định nhanh cho tuần mới.
                   </p>
                 </div>
-                <div class="page-actions">
-                  <button class="btn btn-primary" id="btnWeeklyReviewSave">Lưu tổng kết tuần</button>
-                </div>
               </div>
 
-              <div class="weekly-review-meta d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+              <div class="weekly-review-meta d-flex flex-wrap align-items-center gap-2 mb-3">
                 <div class="small fw-semibold" id="wrWeekLabel">Tuần hiện tại</div>
-                <div class="small text-muted" id="wrSaveStatus">Sẵn sàng tổng kết tuần</div>
               </div>
 
               <div class="row g-3 weekly-review-grid">
-                <div class="col-12 col-md-6 col-xl-3">
+                <div class="col-12 col-md-6 col-xl-4">
                   <div class="card p-3 h-100">
                     <h6 class="mb-2" id="wrFinanceTitle">Tài chính tuần</h6>
                     <div id="wrFinanceSnapshot" class="small"></div>
                   </div>
                 </div>
-                <div class="col-12 col-md-6 col-xl-3">
+                <div class="col-12 col-md-6 col-xl-4">
                   <div class="card p-3 h-100">
                     <h6 class="mb-2" id="wrGoalsTitle">Mục tiêu &amp; thói quen</h6>
                     <div id="wrGoalsSnapshot" class="small"></div>
                   </div>
                 </div>
-                <div class="col-12 col-md-6 col-xl-3">
+                <div class="col-12 col-md-6 col-xl-4">
                   <div class="card p-3 h-100">
                     <h6 class="mb-2" id="wrVideoTitle">Video tuần này</h6>
                     <div id="wrVideoSnapshot" class="small"></div>
-                  </div>
-                </div>
-                <div class="col-12 col-md-6 col-xl-3">
-                  <div class="card p-3 h-100">
-                    <h6 class="mb-2" id="wrMotivationTitle">Động lực tuần</h6>
-                    <div id="wrMotivationSnapshot" class="small"></div>
                   </div>
                 </div>
               </div>
@@ -359,56 +317,20 @@
               <div class="row g-3 mt-1">
                 <div class="col-12">
                   <div class="card p-3 h-100">
-                    <h6 class="mb-2" id="wrVideoPerformanceTitle">Hiệu suất video tuần</h6>
-                    <div id="wrVideoPerformanceSnapshot" class="small"></div>
-                    <div class="small text-muted mt-2" id="wrVideoInsight"></div>
+                    <h6 class="mb-2" id="wrDetailTitle">Bảng tổng kết chi tiết</h6>
+                    <div id="wrDetailTable"></div>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="card p-3 h-100">
+                    <h6 class="mb-2" id="wrReleaseStageTitle">Tiến độ pipeline video</h6>
+                    <div id="wrReleaseStage" class="small"></div>
                   </div>
                 </div>
               </div>
 
               <div class="row g-3 mt-1">
-                <div class="col-12 col-xl-8">
-                  <div class="card p-3">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                      <h6 class="mb-0" id="wrPlanTitle">Kế hoạch tuần mới</h6>
-                    </div>
-                    <div class="row g-3">
-                      <div class="col-12">
-                        <label class="form-label" for="wrFocusTheme" id="wrLabelFocusTheme">Chủ đề trọng tâm</label>
-                        <input
-                          id="wrFocusTheme"
-                          type="text"
-                          class="form-control"
-                          placeholder="Ví dụ: Chốt lịch quay 2 video và tối ưu chi phí sản xuất"
-                        />
-                      </div>
-                      <div class="col-12 col-md-4">
-                        <label class="form-label" for="wrTopPriority1" id="wrLabelTopPriority1">Ưu tiên 1</label>
-                        <input id="wrTopPriority1" type="text" class="form-control" />
-                      </div>
-                      <div class="col-12 col-md-4">
-                        <label class="form-label" for="wrTopPriority2" id="wrLabelTopPriority2">Ưu tiên 2</label>
-                        <input id="wrTopPriority2" type="text" class="form-control" />
-                      </div>
-                      <div class="col-12 col-md-4">
-                        <label class="form-label" for="wrTopPriority3" id="wrLabelTopPriority3">Ưu tiên 3</label>
-                        <input id="wrTopPriority3" type="text" class="form-control" />
-                      </div>
-                      <div class="col-12 col-md-6">
-                        <label class="form-label" for="wrRiskNote" id="wrLabelRiskNote">Rủi ro cần lưu ý</label>
-                        <textarea id="wrRiskNote" class="form-control" rows="3"></textarea>
-                      </div>
-                      <div class="col-12 col-md-6">
-                        <label class="form-label" for="wrActionCommitments" id="wrLabelActionCommitments">
-                          Cam kết hành động
-                        </label>
-                        <textarea id="wrActionCommitments" class="form-control" rows="3"></textarea>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="col-12 col-xl-4">
+                <div class="col-12">
                   <div class="card p-3">
                     <h6 class="mb-2" id="wrHistoryTitle">Lịch sử review gần đây</h6>
                     <div id="wrHistoryList"></div>
@@ -469,9 +391,9 @@
             <section id="goals" class="route">
               <div class="page-header">
                 <div>
-                  <h4 class="mb-1">Mục tiêu &amp; Động lực</h4>
+                  <h4 class="mb-1">Mục tiêu cá nhân</h4>
                   <p class="text-muted small mb-0">
-                    Theo dõi mục tiêu, thói quen và điểm XP theo ngày, tuần, tháng.
+                    Tập trung theo dõi mục tiêu, thói quen và kế hoạch tuần trong một nơi.
                   </p>
                 </div>
               </div>
@@ -479,48 +401,79 @@
               <div class="goals-tier goals-tier-kpi">
                 <div class="card p-3 goals-kpi-card">
                   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                    <h6 class="mb-0">Bảng điều khiển động lực</h6>
-                    <span class="badge text-bg-light">Cập nhật theo kỳ hiện tại</span>
+                    <h6 class="mb-0">Tiến độ thực hiện theo kỳ</h6>
+                    <span class="badge text-bg-light">Cập nhật theo dữ liệu hiện tại</span>
                   </div>
                   <div class="motivation-inline goals-kpi-progress">
                     <div class="motivation-inline-item">
-                      <small>Thử thách ngày</small>
+                      <small>Hôm nay</small>
                       <strong id="challengeDayValue">0/0 (0%)</strong>
                     </div>
                     <div class="motivation-inline-item">
-                      <small>Thử thách tuần</small>
+                      <small>Tuần này</small>
                       <strong id="challengeWeekValue">0/0 (0%)</strong>
                     </div>
                     <div class="motivation-inline-item">
-                      <small>Thử thách tháng</small>
+                      <small>Tháng này</small>
                       <strong id="challengeMonthValue">0/0 (0%)</strong>
-                    </div>
-                  </div>
-                  <div class="motivation-inline goals-kpi-stats mt-2">
-                    <div class="motivation-inline-item">
-                      <small>Chuỗi ngày</small>
-                      <strong id="streakValue">0</strong>
-                    </div>
-                    <div class="motivation-inline-item">
-                      <small>Tổng XP</small>
-                      <strong id="totalXpValue">0</strong>
-                    </div>
-                    <div class="motivation-inline-item">
-                      <small>Cấp độ</small>
-                      <strong id="levelValue">1</strong>
                     </div>
                   </div>
                 </div>
               </div>
-              <div class="goals-tier goals-tier-focus mt-1">
-                <div class="card p-3">
-                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                    <div>
-                      <h6 class="mb-1">Hôm nay cần làm gì</h6>
-                      <p class="small text-muted mb-0" id="goalsChallengeLabel">Ưu tiên các thói quen còn thiếu quota để giữ chuỗi ngày.</p>
+
+              <div class="goals-tier goals-tier-focus row g-3 mt-1">
+                <div class="col-12 col-xl-6">
+                  <div class="card p-3 h-100 goals-weekly-card">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                      <div>
+                        <h6 class="mb-1">Mục tiêu tuần</h6>
+                        <p class="small text-muted mb-0" id="goalsWeekLabel">Kế hoạch tuần hiện tại</p>
+                      </div>
+                      <span class="small text-muted" id="goalsWeeklyStatus">Sẵn sàng cập nhật mục tiêu tuần</span>
                     </div>
+                    <div class="row g-2">
+                      <div class="col-12">
+                        <label class="form-label">Trọng tâm tuần</label>
+                        <input id="weeklyFocusTheme" class="form-control" placeholder="Ví dụ: Hoàn thành 2 video chất lượng" />
+                      </div>
+                      <div class="col-12">
+                        <label class="form-label">Mục tiêu tuần 1</label>
+                        <input id="weeklyGoal1" class="form-control" placeholder="Mục tiêu ưu tiên số 1" />
+                      </div>
+                      <div class="col-12">
+                        <label class="form-label">Mục tiêu tuần 2</label>
+                        <input id="weeklyGoal2" class="form-control" placeholder="Mục tiêu ưu tiên số 2" />
+                      </div>
+                      <div class="col-12">
+                        <label class="form-label">Mục tiêu tuần 3</label>
+                        <input id="weeklyGoal3" class="form-control" placeholder="Mục tiêu ưu tiên số 3" />
+                      </div>
+                      <div class="col-12">
+                        <label class="form-label">Cam kết hành động</label>
+                        <textarea id="weeklyActionPlan" class="form-control" rows="2" placeholder="Bạn sẽ làm gì để chốt các mục tiêu trên?"></textarea>
+                      </div>
+                      <div class="col-12 d-flex flex-wrap gap-2 justify-content-end">
+                        <button class="btn btn-outline-primary btn-sm" id="btnGoalAiGenerate">AI gợi ý mới</button>
+                        <button class="btn btn-outline-secondary btn-sm" id="btnGoalAiImprove">AI cải thiện nội dung</button>
+                        <button class="btn btn-primary btn-sm" id="btnSaveWeeklyGoals">Lưu mục tiêu tuần</button>
+                      </div>
+                    </div>
+                    <div id="goalAiSuggestionList" class="ai-suggestion-list mt-3"></div>
                   </div>
-                  <div id="goalsDailyFocus"></div>
+                </div>
+
+                <div class="col-12 col-xl-6">
+                  <div class="card p-3 h-100">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                      <div>
+                        <h6 class="mb-1">Hôm nay cần làm gì</h6>
+                        <p class="small text-muted mb-0" id="goalsChallengeLabel">
+                          Ưu tiên các thói quen còn thiếu quota để giữ tiến độ tuần.
+                        </p>
+                      </div>
+                    </div>
+                    <div id="goalsDailyFocus"></div>
+                  </div>
                 </div>
               </div>
 
@@ -528,16 +481,12 @@
                 <div class="col-12 col-xl-6">
                   <div class="card p-3 h-100">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-                      <h6 class="mb-0">Tạo mục tiêu mới</h6>
-                      <div class="d-flex flex-wrap gap-2">
-                        <button class="btn btn-outline-primary btn-sm" id="btnGoalAiGenerate">AI gợi ý mới</button>
-                        <button class="btn btn-outline-secondary btn-sm" id="btnGoalAiImprove">AI cải thiện nội dung</button>
-                      </div>
+                      <h6 class="mb-0">Tạo mục tiêu cá nhân</h6>
                     </div>
                     <div class="row g-2">
                       <div class="col-12 col-md-6">
                         <label class="form-label">Tên mục tiêu</label>
-                        <input id="goalTitle" class="form-control" placeholder="Ví dụ: Quay máy quay mới" />
+                        <input id="goalTitle" class="form-control" placeholder="Ví dụ: Hoàn thành series Python cơ bản" />
                       </div>
                       <div class="col-6 col-md-3">
                         <label class="form-label">Lĩnh vực</label>
@@ -584,13 +533,12 @@
                         <button class="btn btn-primary" id="btnAddGoal">Thêm mục tiêu</button>
                       </div>
                     </div>
-                    <div id="goalAiSuggestionList" class="ai-suggestion-list mt-3"></div>
                   </div>
                 </div>
 
                 <div class="col-12 col-xl-6">
                   <div class="card p-3 h-100">
-                    <h6 class="mb-3">Tạo thói quen mới</h6>
+                    <h6 class="mb-3">Tạo thói quen hỗ trợ</h6>
                     <div class="row g-2">
                       <div class="col-12">
                         <label class="form-label">Tên thói quen</label>
@@ -608,10 +556,6 @@
                         <label class="form-label">Số lần mục tiêu</label>
                         <input id="habitTarget" type="number" min="1" value="1" class="form-control" />
                       </div>
-                      <div class="col-6">
-                        <label class="form-label">XP mỗi check-in</label>
-                        <input id="habitXp" type="number" min="1" value="10" class="form-control" />
-                      </div>
                       <div class="col-12 d-flex justify-content-end">
                         <button class="btn btn-outline-primary" id="btnAddHabit">Thêm thói quen</button>
                       </div>
@@ -625,7 +569,7 @@
                   <div class="card p-3">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                       <h6 class="mb-0">Theo dõi mục tiêu</h6>
-                      <span class="small text-muted">Mục tiêu đạt đủ sẽ tự động khóa thao tác</span>
+                      <span class="small text-muted">Mục tiêu đạt đủ sẽ tự động khóa thao tác cập nhật</span>
                     </div>
                     <div class="table-responsive">
                       <table class="table align-middle tx-table" id="goalsTable">
@@ -650,7 +594,7 @@
                   <div class="card p-3">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                       <h6 class="mb-0">Theo dõi thói quen</h6>
-                      <span class="small text-muted">Điểm danh sẽ khóa khi đạt quota của kỳ</span>
+                      <span class="small text-muted">Điểm danh sẽ khóa khi đạt quota của kỳ hiện tại</span>
                     </div>
                     <div class="table-responsive">
                       <table class="table align-middle tx-table" id="habitsTable">

@@ -91,41 +91,143 @@ function renderVideoSnapshot(snapshot = {}) {
   `;
 }
 
-function renderVideoPerformanceSnapshot(snapshot = {}) {
-  const published = Number(snapshot?.videosPublished || 0);
-  if (!published) {
+function renderDetailTable(snapshot = {}, releasePlan = {}) {
+  const finance = snapshot?.finance || {};
+  const goals = snapshot?.goals || {};
+  const video = snapshot?.video || {};
+  const deadlineWindowHours = Number(video?.deadlineWindowHours || 72);
+  const stageRows = Array.isArray(releasePlan?.stageRows) ? releasePlan.stageRows : [];
+  const actionRows = Array.isArray(releasePlan?.actions) ? releasePlan.actions : [];
+
+  const rows = [
+    {
+      group: t("weeklyReview.detail.groups.finance", "Tài chính"),
+      metric: t("weeklyReview.finance.income", "Tổng thu"),
+      value: formatVND(finance?.totalIncome || 0),
+      note: "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.finance", "Tài chính"),
+      metric: t("weeklyReview.finance.expense", "Tổng chi"),
+      value: formatVND(finance?.totalExpense || 0),
+      note: "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.finance", "Tài chính"),
+      metric: t("weeklyReview.finance.net", "Dòng tiền ròng"),
+      value: formatVND(finance?.net || 0),
+      note:
+        Number(finance?.net || 0) < 0
+          ? t("weeklyReview.detail.notes.netNegative", "Dòng tiền âm, cần rà soát chi phí tuần tới.")
+          : "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.goals", "Mục tiêu"),
+      metric: t("weeklyReview.goals.active", "Mục tiêu đang chạy"),
+      value: String(Number(goals?.activeGoals || 0)),
+      note: "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.goals", "Mục tiêu"),
+      metric: t("weeklyReview.goals.done", "Mục tiêu đã hoàn thành"),
+      value: String(Number(goals?.doneGoals || 0)),
+      note: "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.goals", "Mục tiêu"),
+      metric: t("weeklyReview.goals.habitsReached", "Thói quen đạt quota"),
+      value: `${Number(goals?.habitsReached || 0)}/${Number(goals?.habitsTotal || 0)}`,
+      note: "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.video", "Video"),
+      metric: t("weeklyReview.video.open", "Công việc đang mở"),
+      value: String(Number(video?.open || 0)),
+      note: "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.video", "Video"),
+      metric: formatTemplate(t("weeklyReview.video.dueWindow", "Công việc cận hạn {{hours}}h"), {
+        hours: deadlineWindowHours,
+      }),
+      value: String(Number(video?.dueInWindow || 0)),
+      note: "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.video", "Video"),
+      metric: t("weeklyReview.video.overdue", "Công việc quá hạn"),
+      value: String(Number(video?.overdue || 0)),
+      note:
+        Number(video?.overdue || 0) > 0
+          ? t("weeklyReview.detail.notes.overdue", "Ưu tiên xử lý các việc quá hạn trước.")
+          : "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.release", "Release"),
+      metric: t("weeklyReview.detail.stage", "Tiến độ pipeline"),
+      value: stageRows.length
+        ? stageRows.map((item) => `${item?.label || "-"}: ${Number(item?.count || 0)}`).join(" • ")
+        : t("weeklyReview.release.emptyStage", "Chưa có dữ liệu pipeline video tuần này."),
+      note: "",
+    },
+    {
+      group: t("weeklyReview.detail.groups.release", "Release"),
+      metric: t("weeklyReview.detail.actions", "Checklist ưu tiên"),
+      value: actionRows.length
+        ? actionRows.slice(0, 2).join(" | ")
+        : t("weeklyReview.release.emptyAction", "Tuần này chưa có hạng mục ưu tiên."),
+      note: "",
+    },
+  ];
+
+  return `
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0 wr-detail-table">
+        <thead>
+          <tr>
+            <th>${escapeHtml(t("weeklyReview.detail.columns.group", "Nhóm"))}</th>
+            <th>${escapeHtml(t("weeklyReview.detail.columns.metric", "Chỉ số"))}</th>
+            <th class="text-end">${escapeHtml(t("weeklyReview.detail.columns.value", "Giá trị"))}</th>
+            <th>${escapeHtml(t("weeklyReview.detail.columns.note", "Ghi chú hành động"))}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              (item) => `
+            <tr>
+              <td class="wr-detail-group">${escapeHtml(item.group)}</td>
+              <td>${escapeHtml(item.metric)}</td>
+              <td class="text-end fw-semibold">${escapeHtml(item.value)}</td>
+              <td class="text-muted">${escapeHtml(item.note || "-")}</td>
+            </tr>
+          `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderReleaseStage(releasePlan = {}) {
+  const rows = Array.isArray(releasePlan?.stageRows) ? releasePlan.stageRows : [];
+  if (!rows.length) {
     return `<div class="text-muted small">${escapeHtml(
-      t("weeklyReview.videoPerformance.noData")
+      t("weeklyReview.release.emptyStage", "Chưa có dữ liệu pipeline video tuần này.")
     )}</div>`;
   }
 
   return `
     <div class="wr-metric-list">
-      ${row(t("weeklyReview.videoPerformance.published"), `${published}`)}
-      ${row(t("weeklyReview.videoPerformance.totalViews"), `${Number(snapshot?.totalViews || 0)}`)}
-      ${row(t("weeklyReview.videoPerformance.avgCtr"), `${Number(snapshot?.avgCtr || 0)}%`)}
-      ${row(
-        t("weeklyReview.videoPerformance.avgRetention30s"),
-        `${Number(snapshot?.avgRetention30s || 0)}%`
-      )}
-      ${row(t("weeklyReview.videoPerformance.avgDuration"), `${Number(snapshot?.avgDurationSec || 0)}s`)}
-    </div>
-  `;
-}
-
-function renderMotivationSnapshot(snapshot = {}) {
-  return `
-    <div class="wr-metric-list">
-      ${row(t("weeklyReview.motivation.streak"), `${Number(snapshot?.streak || 0)}`)}
-      ${row(t("weeklyReview.motivation.totalXp"), `${Number(snapshot?.totalXp || 0)}`)}
-      ${row(t("weeklyReview.motivation.level"), `${Number(snapshot?.level || 1)}`)}
-      ${row(t("weeklyReview.motivation.weekXp"), `${Number(snapshot?.weekXp || 0)}`)}
-      ${row(
-        t("weeklyReview.motivation.challengeWeek"),
-        `${Number(snapshot?.weekProgress?.done || 0)}/${Number(snapshot?.weekProgress?.target || 0)} (${Number(
-          snapshot?.weekProgress?.percent || 0
-        )}%)`
-      )}
+      ${rows
+        .map((item) =>
+          row(
+            String(item?.label || "").trim() || t("weeklyReview.release.stageFallback", "Giai đoạn"),
+            `${Number(item?.count || 0)}`
+          )
+        )
+        .join("")}
     </div>
   `;
 }
@@ -146,9 +248,9 @@ function renderHistoryList(history = [], currentWeekKey = "") {
 
           const activeClass = weekKey === currentWeekKey ? "active" : "";
           const updatedAt = formatDateTime(item?.updatedAt);
-          const note = item?.hasPlan
-            ? t("weeklyReview.history.hasPlan")
-            : t("weeklyReview.history.noPlan");
+          const note = updatedAt
+            ? t("weeklyReview.history.savedReview")
+            : t("weeklyReview.history.pendingReview");
 
           return `
             <button type="button" class="wr-history-item ${activeClass}" data-week-key="${escapeHtml(weekKey)}">
@@ -165,117 +267,32 @@ function renderHistoryList(history = [], currentWeekKey = "") {
   `;
 }
 
-function statusClass(status = "idle") {
-  if (status === "saving") return "text-primary";
-  if (status === "saved") return "text-success";
-  if (status === "error") return "text-danger";
-  return "text-muted";
-}
-
-function statusText(saveState = {}) {
-  const status = saveState?.status || "idle";
-
-  if (status === "saving") {
-    return t("weeklyReview.status.saving");
-  }
-  if (status === "saved") {
-    const savedAt = saveState?.savedAt instanceof Date ? saveState.savedAt : null;
-    if (savedAt && !Number.isNaN(savedAt.getTime())) {
-      return formatTemplate(t("weeklyReview.status.savedAt"), {
-        time: savedAt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
-      });
-    }
-    return t("weeklyReview.status.saved");
-  }
-  if (status === "error") {
-    return t("weeklyReview.status.error");
-  }
-  return t("weeklyReview.status.idle");
-}
-
-export function renderWeeklyReviewSaveState(saveState = {}) {
-  const el = byId("wrSaveStatus");
-  if (!el) return;
-
-  el.classList.remove("text-primary", "text-success", "text-danger", "text-muted");
-  el.classList.add(statusClass(saveState?.status || "idle"));
-  el.textContent = statusText(saveState);
-}
-
-export function readWeeklyReviewPlanForm() {
-  return {
-    focusTheme: byId("wrFocusTheme")?.value || "",
-    topPriorities: [byId("wrTopPriority1")?.value || "", byId("wrTopPriority2")?.value || "", byId("wrTopPriority3")?.value || ""],
-    riskNote: byId("wrRiskNote")?.value || "",
-    actionCommitments: byId("wrActionCommitments")?.value || "",
-  };
-}
-
-export function renderWeeklyReviewPage(vm, saveState = {}) {
+export function renderWeeklyReviewPage(vm) {
   setText("wrHeaderTitle", t("weeklyReview.header.title"));
-  setText(
-    "wrHeaderSubtitle",
-    t("weeklyReview.header.subtitle")
-  );
+  setText("wrHeaderSubtitle", t("weeklyReview.header.subtitle"));
   setText("wrFinanceTitle", t("weeklyReview.cards.finance"));
   setText("wrGoalsTitle", t("weeklyReview.cards.goals"));
   setText("wrVideoTitle", t("weeklyReview.cards.video"));
-  setText("wrVideoPerformanceTitle", t("weeklyReview.cards.videoPerformance"));
-  setText("wrMotivationTitle", t("weeklyReview.cards.motivation"));
+  setText("wrDetailTitle", t("weeklyReview.cards.detail", "Bảng tổng kết chi tiết"));
+  setText("wrReleaseStageTitle", t("weeklyReview.cards.releaseStage"));
   setText("wrHistoryTitle", t("weeklyReview.history.title"));
-  setText("wrPlanTitle", t("weeklyReview.plan.title"));
-  setText("wrLabelFocusTheme", t("weeklyReview.plan.focusTheme"));
-  setText("wrLabelTopPriority1", t("weeklyReview.plan.priority1"));
-  setText("wrLabelTopPriority2", t("weeklyReview.plan.priority2"));
-  setText("wrLabelTopPriority3", t("weeklyReview.plan.priority3"));
-  setText("wrLabelRiskNote", t("weeklyReview.plan.riskNote"));
-  setText("wrLabelActionCommitments", t("weeklyReview.plan.actionCommitments"));
-
-  const saveBtn = byId("btnWeeklyReviewSave");
-  if (saveBtn) saveBtn.textContent = t("weeklyReview.plan.save");
 
   setText("wrWeekLabel", vm?.weekLabel || t("weeklyReview.header.fallbackWeek"));
 
   setHtml("wrFinanceSnapshot", renderFinanceSnapshot(vm?.snapshot?.finance || {}));
   setHtml("wrGoalsSnapshot", renderGoalsSnapshot(vm?.snapshot?.goals || {}));
   setHtml("wrVideoSnapshot", renderVideoSnapshot(vm?.snapshot?.video || {}));
-  setHtml("wrVideoPerformanceSnapshot", renderVideoPerformanceSnapshot(vm?.snapshot?.videoPerformance || {}));
-  setHtml("wrMotivationSnapshot", renderMotivationSnapshot(vm?.snapshot?.motivation || {}));
-  const insightList = Array.isArray(vm?.localInsight) ? vm.localInsight : [];
-  setHtml(
-    "wrVideoInsight",
-    insightList.length
-      ? `
-      <div class="fw-semibold mb-1">${escapeHtml(t("weeklyReview.videoPerformance.insightTitle"))}</div>
-      <ul class="mb-0 ps-3">${insightList
-        .map((line) => `<li>${escapeHtml(String(line || ""))}</li>`)
-        .join("")}</ul>
-    `
-      : `<span class="text-muted">${escapeHtml(t("weeklyReview.videoPerformance.healthy"))}</span>`
-  );
-  const plan = vm?.plan || {};
-  if (byId("wrFocusTheme")) byId("wrFocusTheme").value = plan.focusTheme || "";
-  if (byId("wrTopPriority1")) byId("wrTopPriority1").value = plan?.topPriorities?.[0] || "";
-  if (byId("wrTopPriority2")) byId("wrTopPriority2").value = plan?.topPriorities?.[1] || "";
-  if (byId("wrTopPriority3")) byId("wrTopPriority3").value = plan?.topPriorities?.[2] || "";
-  if (byId("wrRiskNote")) byId("wrRiskNote").value = plan.riskNote || "";
-  if (byId("wrActionCommitments")) byId("wrActionCommitments").value = plan.actionCommitments || "";
-
+  setHtml("wrDetailTable", renderDetailTable(vm?.snapshot || {}, vm?.releasePlan || {}));
+  setHtml("wrReleaseStage", renderReleaseStage(vm?.releasePlan || {}));
   setHtml("wrHistoryList", renderHistoryList(vm?.history || [], vm?.weekKey || ""));
-  renderWeeklyReviewSaveState(saveState);
 }
 
-export function bindWeeklyReviewEvents({ onSave, onOpenHistory } = {}) {
+export function bindWeeklyReviewEvents({ onOpenHistory } = {}) {
   if (_eventsBound) return;
 
   const root = byId("weekly-review");
   if (!root) return;
   _eventsBound = true;
-
-  byId("btnWeeklyReviewSave")?.addEventListener("click", () => {
-    if (typeof onSave !== "function") return;
-    onSave(readWeeklyReviewPlanForm());
-  });
 
   byId("wrHistoryList")?.addEventListener("click", (e) => {
     if (typeof onOpenHistory !== "function") return;
