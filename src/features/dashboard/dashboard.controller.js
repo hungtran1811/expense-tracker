@@ -1,4 +1,4 @@
-import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
+﻿import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
 import { PROFILE_VI } from "../../shared/constants/profile.vi.js";
 
 const PERIOD_LABEL = {
@@ -184,30 +184,58 @@ function mapPriorityItem(item) {
     meta,
     badge: t("dashboard.nextAction.videoBadge", "Video"),
     actionLabel: dueDate
-      ? t("dashboard.nextAction.actionOpenVideo", "Mở task")
+      ? t("dashboard.nextAction.actionOpenVideo", "Mở công việc")
       : t("dashboard.nextAction.actionOpenBoard", "Mở bảng"),
   };
 }
 
 function getDeadlineWindowItems(videoItems = [], now = new Date(), windowHours = 72) {
   const nowMs = now.getTime();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).getTime();
   const hours = Number.isFinite(Number(windowHours)) ? Math.max(1, Number(windowHours)) : 72;
   const horizonMs = nowMs + hours * 60 * 60 * 1000;
 
-  return videoItems
+  const all = videoItems
     .filter((item) => item.deadline instanceof Date && !Number.isNaN(item.deadline.getTime()))
-    .filter((item) => {
+    .map((item) => {
       const dueMs = item.deadline.getTime();
-      return dueMs >= nowMs && dueMs <= horizonMs;
+      const reminderType =
+        dueMs < nowMs ? "overdue" : dueMs >= todayStart && dueMs <= todayEnd ? "dueToday" : dueMs <= horizonMs ? "dueSoon" : "";
+      return {
+        ...item,
+        dueMs,
+        reminderType,
+      };
     })
+    .filter((item) => !!item.reminderType)
+    .sort((a, b) => a.dueMs - b.dueMs);
+
+  const counts = all.reduce(
+    (acc, item) => {
+      if (item.reminderType === "overdue") acc.overdue += 1;
+      if (item.reminderType === "dueToday") acc.dueToday += 1;
+      if (item.reminderType === "dueSoon") acc.dueSoon += 1;
+      return acc;
+    },
+    { overdue: 0, dueToday: 0, dueSoon: 0 }
+  );
+
+  const items = all
     .map((item) => ({
       id: item.id,
       title: item.title,
       stage: item.stage,
       stageLabel: item.stageLabel,
       dueDate: toDateLabel(item.deadline),
+      reminderType: item.reminderType,
     }))
     .slice(0, 4);
+
+  return {
+    items,
+    counts,
+  };
 }
 
 function resolveMissionText({ openVideoTasks, remainingHabitTurns }) {
@@ -246,12 +274,12 @@ export function buildDashboardPriorityVM(state = {}, now = new Date(), options =
     .map((item) => mapPriorityItem(item));
 
   const topHabit = merged.find((item) => item.type === "habit");
-  const deadline72h = getDeadlineWindowItems(videos, safeNow, deadlineWindowHours);
+  const reminder = getDeadlineWindowItems(videos, safeNow, deadlineWindowHours);
 
   return {
     items: merged,
     topHabitId: topHabit?.id || "",
-    topDeadlineTaskId: deadline72h[0]?.id || "",
+    topDeadlineTaskId: reminder.items[0]?.id || "",
     habitRemainingTurns: calcRemainingHabitTurns(state.habitProgress),
     openVideoTasks: calcOpenVideoTasks(state.videoTasks),
   };
@@ -269,7 +297,9 @@ export function buildDashboardActionBoardVM(state = {}, now = new Date(), option
     deadlineWindowHours,
   });
   const videos = getVideoCandidates(state);
-  const deadlineItems = getDeadlineWindowItems(videos, now, deadlineWindowHours);
+  const reminder = getDeadlineWindowItems(videos, now, deadlineWindowHours);
+  const deadlineItems = reminder.items;
+  const reminderCounts = reminder.counts;
 
   const summaryText =
     priority.habitRemainingTurns > 0 || priority.openVideoTasks > 0
@@ -282,7 +312,7 @@ export function buildDashboardActionBoardVM(state = {}, now = new Date(), option
   return {
     title: t("dashboard.actionBoard.title", "Bảng hành động hôm nay"),
     subtitle: formatTemplate(
-      t("dashboard.actionBoard.subtitle", "Tập trung vào việc kế tiếp và các task video cận hạn {{hours}} giờ."),
+      t("dashboard.actionBoard.subtitle", "Tập trung vào việc kế tiếp và các công việc video cận hạn {{hours}} giờ."),
       { hours: deadlineWindowHours }
     ),
     nextTitle: t("dashboard.actionBoard.nextTitle", "Việc kế tiếp"),
@@ -292,11 +322,12 @@ export function buildDashboardActionBoardVM(state = {}, now = new Date(), option
     summaryTitle: t("dashboard.actionBoard.summaryTitle", "Tóm tắt hành động"),
     summaryText,
     deadlineWindowHours,
+    reminders: reminderCounts,
     nextActions: priority.items,
     deadlineItems,
     quickActions: {
       habitId: priority.topHabitId || "",
-      deadlineTaskId: priority.topDeadlineTaskId || "",
+      deadlineTaskId: deadlineItems[0]?.id || priority.topDeadlineTaskId || "",
     },
   };
 }

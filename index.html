@@ -179,7 +179,7 @@
                         <a class="btn btn-outline-primary btn-sm" id="btnQuickGoVideo" href="#video-plan">Mở bảng video</a>
                         <a class="btn btn-outline-primary btn-sm" id="btnQuickGoWeeklyReview" href="#weekly-review">Tổng kết tuần</a>
                         <button class="btn btn-outline-success btn-sm d-none" id="btnDashQuickCheckIn">Điểm danh ngay</button>
-                        <button class="btn btn-outline-primary btn-sm d-none" id="btnDashQuickDeadline">Mở task cận hạn</button>
+                        <button class="btn btn-outline-primary btn-sm d-none" id="btnDashQuickDeadline">Mở việc cận hạn</button>
                       </div>
                     </div>
                   </div>
@@ -221,9 +221,10 @@
                     <div>
                       <h6 class="mb-1" id="dashActionBoardTitle">Bảng hành động hôm nay</h6>
                       <p class="text-muted small mb-0" id="dashActionBoardSub">
-                        Tập trung vào việc kế tiếp và các task video cận hạn 72 giờ.
+                        Tập trung vào việc kế tiếp và các công việc video cận hạn 72 giờ.
                       </p>
                     </div>
+                    <div id="dashReminderBadges" class="dash-reminder-badges"></div>
                   </div>
                   <div class="row g-3 dash-action-grid">
                     <div class="col-12 col-xl-5">
@@ -753,31 +754,82 @@
                 <div class="small text-muted mt-2" id="videoFilterSummary"></div>
               </div>
 
-              <div class="video-board">
-                <article class="video-stage">
-                  <header>Ý tưởng</header>
-                  <div class="video-stage-body" id="videoColIdea" data-stage="idea"></div>
-                </article>
-                <article class="video-stage">
-                  <header>Nghiên cứu</header>
-                  <div class="video-stage-body" id="videoColResearch" data-stage="research"></div>
-                </article>
-                <article class="video-stage">
-                  <header>Kịch bản</header>
-                  <div class="video-stage-body" id="videoColScript" data-stage="script"></div>
-                </article>
-                <article class="video-stage">
-                  <header>Quay</header>
-                  <div class="video-stage-body" id="videoColShoot" data-stage="shoot"></div>
-                </article>
-                <article class="video-stage">
-                  <header>Dựng</header>
-                  <div class="video-stage-body" id="videoColEdit" data-stage="edit"></div>
-                </article>
-                <article class="video-stage">
-                  <header>Xuất bản</header>
-                  <div class="video-stage-body" id="videoColPublish" data-stage="publish"></div>
-                </article>
+              <div class="card p-3 mb-3 video-plan-view-switch">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                  <div class="btn-group btn-group-sm" role="group" aria-label="Chuyển chế độ hiển thị video">
+                    <button class="btn btn-outline-primary active" id="videoViewBoard" type="button" aria-pressed="true">
+                      Bảng
+                    </button>
+                    <button class="btn btn-outline-primary" id="videoViewCalendar" type="button" aria-pressed="false">
+                      Lịch
+                    </button>
+                  </div>
+                  <div class="small text-muted" id="videoCalendarSelectedLabel">Lịch theo ngày</div>
+                </div>
+              </div>
+
+              <div id="videoPlanViewBoard">
+                <div class="video-board">
+                  <article class="video-stage">
+                    <header>Ý tưởng</header>
+                    <div class="video-stage-body" id="videoColIdea" data-stage="idea"></div>
+                  </article>
+                  <article class="video-stage">
+                    <header>Nghiên cứu</header>
+                    <div class="video-stage-body" id="videoColResearch" data-stage="research"></div>
+                  </article>
+                  <article class="video-stage">
+                    <header>Kịch bản</header>
+                    <div class="video-stage-body" id="videoColScript" data-stage="script"></div>
+                  </article>
+                  <article class="video-stage">
+                    <header>Quay</header>
+                    <div class="video-stage-body" id="videoColShoot" data-stage="shoot"></div>
+                  </article>
+                  <article class="video-stage">
+                    <header>Dựng</header>
+                    <div class="video-stage-body" id="videoColEdit" data-stage="edit"></div>
+                  </article>
+                  <article class="video-stage">
+                    <header>Xuất bản</header>
+                    <div class="video-stage-body" id="videoColPublish" data-stage="publish"></div>
+                  </article>
+                </div>
+              </div>
+
+              <div id="videoPlanViewCalendar" class="d-none">
+                <div class="card p-3 mb-3">
+                  <div class="video-calendar-head d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Điều hướng tháng lịch video">
+                      <button class="btn btn-outline-secondary" id="btnVideoCalPrevMonth" type="button">&lt;</button>
+                      <button class="btn btn-outline-secondary" id="btnVideoCalToday" type="button">Hôm nay</button>
+                      <button class="btn btn-outline-secondary" id="btnVideoCalNextMonth" type="button">&gt;</button>
+                    </div>
+                    <strong id="videoCalendarMonthLabel">Tháng hiện tại</strong>
+                    <div id="videoCalendarLegend" class="video-calendar-legend"></div>
+                  </div>
+
+                  <div id="videoCalendarWeekStrip" class="video-calendar-week-strip mt-3"></div>
+                  <div id="videoCalendarGrid" class="video-calendar-grid mt-2"></div>
+                </div>
+
+                <div class="row g-3">
+                  <div class="col-12 col-xl-8">
+                    <div class="card p-3 h-100">
+                      <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                        <h6 class="mb-0">Lịch trong ngày</h6>
+                        <a href="#video-plan" class="small text-decoration-none">Mở bảng video</a>
+                      </div>
+                      <div id="videoCalendarAgenda" class="video-calendar-agenda"></div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-xl-4">
+                    <div class="card p-3 h-100">
+                      <h6 class="mb-2">Chưa lên lịch</h6>
+                      <div id="videoUnscheduledList" class="video-unscheduled-list"></div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
             <section id="accounts" class="route">

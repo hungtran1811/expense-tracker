@@ -1,61 +1,71 @@
-# NEXUS OS - Smoke Checklist Phase 2.7
+# NEXUS OS - Smoke Checklist Phase 2.8 (Video Plan Calendar RC)
 
-## 1) Gate bat buoc
-- Chay `npm run check:i18n`.
-- Chay `npm run build`.
-- Chay `npm run check:baseline`.
-- Xac nhan khong co loi console moi o cac thao tac chinh.
+## 1) Gate bắt buộc
+- Chạy `npm run check:i18n`.
+- Chạy `npm run build`.
+- Chạy `npm run check:baseline`.
+- Xác nhận không có lỗi console mới ở thao tác chính.
 
-## 2) Dashboard + Action Board
-- Mo `#dashboard`, xac nhan khong con khoi AI Brief.
-- Xac nhan thu tu: Hero + Action Board + So du tai khoan + Video + Goals + Dong luc.
-- `dashPriorityList` hien thi dung nguon Habit + Video.
-- Nut quick action tu dashboard hoat dong dung (`Diem danh ngay`, `Mo task can han`).
+## 2) Video Plan - Chế độ Bảng/Lịch
+- Mở `#video-plan`, chuyển `Bảng -> Lịch -> Bảng` liên tục ít nhất 10 lần.
+- Xác nhận không phát sinh duplicate event handler.
+- Xác nhận bộ lọc (`giai đoạn`, `ưu tiên`, `tìm nhanh`) vẫn hoạt động khi ở cả hai chế độ.
 
-## 3) Expense label AI v2
-- Mo form them chi, nhap ten giao dich ro nghia, dung go 600ms.
-- Neu confidence >= 0.75: category duoc auto-apply.
-- Neu confidence < 0.75: hien thi goi y + nut `Ap dung de xuat AI`.
-- Bam ap dung thu cong: category doi dung va khong crash form.
-- Tat AI/loi mang: form van thao tac binh thuong.
+## 3) Video Calendar - Điều hướng thời gian
+- Bấm `Tháng trước`, `Tháng sau`, `Hôm nay` và kiểm tra:
+- `videoCalendarMonthLabel` cập nhật đúng.
+- `videoCalendarGrid` và `videoCalendarWeekStrip` cập nhật đúng dữ liệu.
+- Bấm chọn ngày trong lưới/thanh tuần:
+- `videoCalendarAgenda` đổi theo ngày đã chọn.
+- Reload trang giữ lại `viewMode`, `selectedDate`, `monthAnchor` từ `nexus_video_calendar_v1`.
 
-## 4) Video Copilot
-- O `#video-plan`, bam `AI goi y moi` va nhan 3 phuong an.
-- Bam `AI cai thien noi dung` khi da co input, nhan 3 phuong an theo context.
-- Bam `Ap dung toan bo` o 1 option: du lieu do vao form dung field.
-- Xac nhan chua tao task neu chua bam `Them cong viec video`.
-- Cooldown 8s hoat dong, khong spam request.
+## 4) Video Calendar - Mapping dữ liệu
+- Task có `deadline` phải hiển thị đúng ngày trên lịch.
+- Task không có `deadline` phải vào `videoUnscheduledList`.
+- Agenda hiển thị đúng thứ tự ưu tiên:
+- quá hạn trước,
+- sau đó đến hạn gần,
+- rồi theo mức ưu tiên/tên.
 
-## 5) Goal Copilot Bundle
-- O `#goals`, bam `AI goi y moi` va nhan 3 bundle goal+habit.
-- Bam `AI cai thien noi dung` khi da co input, nhan 3 bundle theo context.
-- Bam `Ap dung toan bo` o 1 bundle: do du lieu vao ca form Goal va Habit.
-- Sau khi bam `Them muc tieu`/`Them thoi quen`, luong tao du lieu van hoat dong dung.
+## 5) Nhắc việc in-app (Dashboard <-> Video Plan)
+- Trên `#dashboard`, kiểm tra badge nhắc việc:
+- Quá hạn,
+- Hôm nay,
+- Cận hạn.
+- Bấm quick action mở công việc từ dashboard:
+- điều hướng đúng `#video-plan`,
+- focus đúng thẻ công việc (nếu có),
+- không lỗi khi task không còn tồn tại.
 
-## 6) Weekly Review (khong AI insight)
-- Mo `#weekly-review`, xac nhan khong con nut/khung AI insight.
-- Snapshot 4 khoi render dung khi co va khi rong du lieu.
-- Luu ke hoach tuan moi thanh cong va reload van con du lieu.
-- `wrHistoryList` hien thi va mo lai tuan da luu dung thu tu gan nhat.
+## 6) Regression nghiệp vụ chính
+- Auth login/logout hoạt động bình thường.
+- CRUD expense/income/account/transfer không regress.
+- Goals/Habits:
+- Habit `target=1` vẫn khóa lần tick thứ 2 trong cùng kỳ.
+- Video:
+- create/edit/delete/move stage hoạt động đúng.
+- XP rule khi move/publish không đổi.
+- Settings:
+- autosave vẫn hoạt động,
+- `startRoute` không regress,
+- remember filters không regress.
 
-## 7) Firestore apply-log AI
-- Khi chi xem goi y AI (chua bam ap dung): khong luu ban ghi apply.
-- Khi bam `Ap dung` (hoac auto-label confidence cao): luu vao `users/{uid}/aiSuggestions`.
-- Payload co du `type`, `mode`, `inputSnapshot`, `appliedOutput`, `appliedAt`.
+## 7) Responsive
+- `<=767px`:
+- Không tràn ngang ở `#video-plan`.
+- Month grid/week strip/agenda/unscheduled thao tác được.
+- Action button wrap đúng, không đè nhau.
+- `768-991px`:
+- Calendar và board co giãn ổn định.
+- `>=992px`:
+- Layout ổn định, không jump bất thường khi mở offcanvas.
 
-## 8) Regression nghiep vu
-- Auth login/logout binh thuong.
-- CRUD expense/income/account/transfer khong regress.
-- Habit `target=1`: tick lan 2 trong cung ky bi khoa.
-- Video create/edit/delete/move stage + XP rule khong doi.
-- Settings autosave + startRoute + remember filter khong regress.
+## 8) i18n/UTF-8
+- Toàn bộ text mới ở dashboard/video-plan hiển thị tiếng Việt có dấu.
+- Không còn wording lẫn tiếng Anh ở phần calendar/reminder.
+- Không xuất hiện chuỗi lỗi encoding (mojibake).
 
-## 9) Responsive
-- `<=767px`: khong tran ngang o dashboard/expenses/goals/video/weekly/accounts.
-- `768-991px`: filter, form, board, action group co gian on dinh.
-- `>=992px`: layout on dinh, khong jump bat thuong khi mo offcanvas.
-
-## 10) i18n
-- Kiem tra phan moi (expense AI, goal AI, video AI) hien thi tieng Viet co dau day du.
-- Khong con wording cu: `AI Brief`, `insight AI` tren dashboard/weekly-review.
-- Khong co chuoi loi mojibake tren UI.
+## 9) Known limitations (ghi nhận trước RC)
+- Ứng dụng hiện chưa tích hợp drag-drop trực tiếp trong month grid calendar.
+- Hạn không có giờ được xử lý là cuối ngày local (23:59).
+- Không có thông báo riêng khi mở quick action vào task đã bị xóa, chỉ bỏ qua an toàn.

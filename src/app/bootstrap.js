@@ -63,16 +63,23 @@ import {
   moveTaskToStage,
   removeVideoTask,
   updateVideoTaskDetails,
+  buildVideoCalendarVM,
 } from "../features/videoPlan/videoPlan.controller.js";
 import {
   createDefaultVideoFilters,
+  createDefaultVideoCalendarState,
+  normalizeVideoCalendarState,
+  loadVideoCalendarState,
   loadVideoFilters,
+  saveVideoCalendarState,
   saveVideoFilters,
   hydrateVideoFilterControls,
   readVideoFiltersFromControls,
   filterVideoTasks,
   renderVideoFilterSummary,
   renderVideoBoard,
+  renderVideoViewState,
+  renderVideoCalendar,
   renderVideoSummary,
   VIDEO_STAGES,
 } from "../features/videoPlan/videoPlan.ui.js";
@@ -129,6 +136,9 @@ const state = {
   videoTasks: [],
   motivation: buildDefaultMotivationSummary(),
   videoFilters: createDefaultVideoFilters(),
+  videoCalendar: loadVideoCalendarState(new Date()),
+  videoCalendarVm: null,
+  pendingVideoFocusTaskId: "",
   expenseFilters: { ...DEFAULT_EXPENSE_FILTERS },
   incomeFilters: { ...DEFAULT_INCOME_FILTERS },
   settings: createDefaultSettings(),
@@ -213,6 +223,10 @@ function isWeeklyReviewRouteActive() {
   return isRouteActive("weekly-review");
 }
 
+function isVideoPlanRouteActive() {
+  return isRouteActive("video-plan");
+}
+
 function isObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
 }
@@ -240,6 +254,52 @@ function isValidYm(value) {
 function getCurrentYm() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function ymToDate(value) {
+  const raw = String(value || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(raw)) return null;
+  const [y, m] = raw.split("-").map((part) => Number(part));
+  const date = new Date(y, m - 1, 1);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function toYmFromDate(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return getCurrentYm();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftYm(value, delta = 0) {
+  const base = ymToDate(value) || new Date();
+  const shifted = new Date(base.getFullYear(), base.getMonth() + Number(delta || 0), 1);
+  return toYmFromDate(shifted);
+}
+
+function mergeVideoCalendarState(patch = {}, { persist = true } = {}) {
+  const merged = normalizeVideoCalendarState(
+    {
+      ...(state.videoCalendar || createDefaultVideoCalendarState(new Date())),
+      ...(patch || {}),
+    },
+    new Date()
+  );
+  const prev = state.videoCalendar || {};
+  const changed =
+    prev.viewMode !== merged.viewMode ||
+    prev.selectedDate !== merged.selectedDate ||
+    prev.monthAnchor !== merged.monthAnchor;
+  state.videoCalendar = merged;
+  if (persist && changed) {
+    saveVideoCalendarState(merged);
+  }
+  return merged;
+}
+
+function setVideoPlanViewMode(viewMode = "board", { persist = true } = {}) {
+  const nextMode = viewMode === "calendar" ? "calendar" : "board";
+  mergeVideoCalendarState({ viewMode: nextMode }, { persist });
+  renderVideoViewState(nextMode);
 }
 
 function ensureMonthOption(selectEl, ym) {
@@ -573,6 +633,9 @@ function handleSettingsPatch(partialPatch, meta = {}) {
   }
 
   if (partialPatch?.preferences?.dashboard || partialPatch?.profile) {
+    if (partialPatch?.preferences?.dashboard) {
+      renderVideoBoardWithFilters();
+    }
     renderDashboardCenter();
     if (state.currentUser?.uid && isWeeklyReviewRouteActive()) {
       void loadWeeklyReview(state.currentUser.uid, state.weeklyReviewVm?.weekKey || "");
@@ -804,23 +867,99 @@ async function loadMotivation(uid) {
   renderDashboardCenter();
 }
 
+function getFilteredVideoTasks() {
+  return filterVideoTasks(state.videoTasks, state.videoFilters);
+}
+
+function renderVideoCalendarWithTasks(tasks = []) {
+  const calendarState = mergeVideoCalendarState({}, { persist: false });
+  const deadlineWindowHours = Number(getDashboardPrefs()?.deadlineWindowHours || 72);
+  const vm = buildVideoCalendarVM(tasks, calendarState.selectedDate, new Date(), {
+    monthAnchor: calendarState.monthAnchor,
+    deadlineWindowHours,
+  });
+
+  state.videoCalendarVm = vm;
+  mergeVideoCalendarState(
+    {
+      selectedDate: vm?.selectedDateKey || calendarState.selectedDate,
+      monthAnchor: vm?.monthAnchor || calendarState.monthAnchor,
+    },
+    { persist: false }
+  );
+  renderVideoCalendar(vm);
+}
+
 function renderVideoBoardWithFilters() {
-  const filteredTasks = filterVideoTasks(state.videoTasks, state.videoFilters);
+  const filteredTasks = getFilteredVideoTasks();
   renderVideoBoard(filteredTasks);
   renderVideoFilterSummary(byId("videoFilterSummary"), filteredTasks.length, state.videoTasks.length);
+  renderVideoCalendarWithTasks(filteredTasks);
+  renderVideoViewState(state.videoCalendar?.viewMode || "board");
 }
 
 function syncVideoFilterControls() {
   hydrateVideoFilterControls(state.videoFilters);
 }
 
+function escapeSelector(value = "") {
+  const raw = String(value || "");
+  if (window.CSS?.escape) return window.CSS.escape(raw);
+  return raw.replace(/["\\]/g, "\\$&");
+}
+
+function focusVideoTaskCard(taskId = "") {
+  const id = String(taskId || "").trim();
+  if (!id) return false;
+
+  const card = document.querySelector(`.video-card[data-id="${escapeSelector(id)}"]`);
+  if (!card) return false;
+
+  card.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+  card.classList.add("video-card-focus");
+  setTimeout(() => {
+    card.classList.remove("video-card-focus");
+  }, 1400);
+  return true;
+}
+
+function focusPendingVideoTask() {
+  const taskId = String(state.pendingVideoFocusTaskId || "").trim();
+  if (!taskId) return false;
+
+  setVideoPlanViewMode("board", { persist: true });
+  renderVideoBoardWithFilters();
+  let found = focusVideoTaskCard(taskId);
+  if (!found) {
+    state.videoFilters = createDefaultVideoFilters();
+    syncVideoFilterControls();
+    saveVideoFilters(state.videoFilters);
+    persistRememberedFilterState("videoState", state.videoFilters);
+    renderVideoBoardWithFilters();
+    found = focusVideoTaskCard(taskId);
+  }
+  state.pendingVideoFocusTaskId = "";
+  return found;
+}
+
+function handleVideoFocusRequest(taskId) {
+  const id = String(taskId || "").trim();
+  if (!id) return;
+  state.pendingVideoFocusTaskId = id;
+
+  if (!isVideoPlanRouteActive()) return;
+  focusPendingVideoTask();
+}
+
 async function loadVideo(uid) {
   const tasks = await loadVideoTasks(uid);
   state.videoTasks = Array.isArray(tasks) ? tasks : [];
 
+  mergeVideoCalendarState(loadVideoCalendarState(new Date()), { persist: false });
   syncVideoFilterControls();
   renderVideoBoardWithFilters();
   renderVideoSummary(byId("dashboardVideoSummary"), state.videoTasks);
+  focusPendingVideoTask();
   renderDashboardCenter();
 }
 
@@ -900,6 +1039,7 @@ function resetAppView() {
   state.weeklyReviewVm = null;
   state.expenseAiSuggestion = null;
   state.expenseAiRequestId = 0;
+  state.pendingVideoFocusTaskId = "";
   state.videoAi = {
     loading: false,
     cooldownUntil: 0,
@@ -918,6 +1058,8 @@ function resetAppView() {
   state.aiTimer = null;
   clearAiCooldownUiTimer();
   state.videoFilters = createDefaultVideoFilters();
+  state.videoCalendar = loadVideoCalendarState(new Date());
+  state.videoCalendarVm = null;
   state.expenseFilters = { ...DEFAULT_EXPENSE_FILTERS };
   state.incomeFilters = { ...DEFAULT_INCOME_FILTERS };
   state.settings = applySettingsToApp(state, createDefaultSettings());
@@ -936,6 +1078,8 @@ function resetAppView() {
   renderHabitsTable(byId("habitsTableBody"), [], {});
   renderGoalsSummary(byId("dashboardGoalsSummary"), []);
   renderVideoBoard([]);
+  renderVideoCalendarWithTasks([]);
+  renderVideoViewState(state.videoCalendar?.viewMode || "board");
   renderVideoSummary(byId("dashboardVideoSummary"), []);
   renderVideoAiSuggestions();
   setVideoAiButtonsState();
@@ -1980,6 +2124,15 @@ function bindRouteSyncEvents() {
   bindState.routeSync = true;
 
   window.addEventListener("hashchange", () => {
+    if (isVideoPlanRouteActive()) {
+      setVideoPlanViewMode(state.videoCalendar?.viewMode || "board", { persist: false });
+      if (state.pendingVideoFocusTaskId) {
+        requestAnimationFrame(() => {
+          focusPendingVideoTask();
+        });
+      }
+    }
+
     const uid = state.currentUser?.uid;
     if (!uid) return;
 
@@ -2167,6 +2320,85 @@ function bindVideoEvents() {
   const videoEditPanel = byId("editVideoTaskModal");
   renderVideoAiSuggestions();
   setVideoAiButtonsState();
+  setVideoPlanViewMode(state.videoCalendar?.viewMode || "board", { persist: false });
+
+  const handleSelectCalendarDate = (dateKey) => {
+    const value = String(dateKey || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+    mergeVideoCalendarState(
+      {
+        selectedDate: value,
+        monthAnchor: value.slice(0, 7),
+      },
+      { persist: true }
+    );
+    renderVideoBoardWithFilters();
+  };
+
+  byId("videoViewBoard")?.addEventListener("click", () => {
+    setVideoPlanViewMode("board", { persist: true });
+  });
+
+  byId("videoViewCalendar")?.addEventListener("click", () => {
+    setVideoPlanViewMode("calendar", { persist: true });
+    renderVideoBoardWithFilters();
+  });
+
+  byId("btnVideoCalPrevMonth")?.addEventListener("click", () => {
+    const nextYm = shiftYm(state.videoCalendar?.monthAnchor, -1);
+    mergeVideoCalendarState(
+      {
+        monthAnchor: nextYm,
+        selectedDate: `${nextYm}-01`,
+      },
+      { persist: true }
+    );
+    renderVideoBoardWithFilters();
+  });
+
+  byId("btnVideoCalNextMonth")?.addEventListener("click", () => {
+    const nextYm = shiftYm(state.videoCalendar?.monthAnchor, 1);
+    mergeVideoCalendarState(
+      {
+        monthAnchor: nextYm,
+        selectedDate: `${nextYm}-01`,
+      },
+      { persist: true }
+    );
+    renderVideoBoardWithFilters();
+  });
+
+  byId("btnVideoCalToday")?.addEventListener("click", () => {
+    const now = new Date();
+    mergeVideoCalendarState(
+      {
+        selectedDate: getLocalDateKey(now),
+        monthAnchor: toYmFromDate(now),
+      },
+      { persist: true }
+    );
+    renderVideoBoardWithFilters();
+  });
+
+  byId("videoPlanViewCalendar")?.addEventListener("click", (e) => {
+    const dayBtn = e.target.closest("[data-date-key]");
+    if (dayBtn?.dataset?.dateKey) {
+      handleSelectCalendarDate(dayBtn.dataset.dateKey);
+      return;
+    }
+
+    const openBtn = e.target.closest(".btn-video-calendar-open");
+    const taskId = String(openBtn?.dataset?.id || "").trim();
+    if (!taskId) return;
+
+    handleVideoFocusRequest(taskId);
+  });
+
+  window.addEventListener("nexus:video-focus", (event) => {
+    const taskId = String(event?.detail?.taskId || "").trim();
+    if (!taskId) return;
+    handleVideoFocusRequest(taskId);
+  });
 
   byId("btnVideoAiGenerate")?.addEventListener("click", () => {
     void handleVideoAiAction("generate");

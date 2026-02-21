@@ -1,4 +1,4 @@
-import { formatVND } from "../../shared/ui/core.js";
+﻿import { formatVND } from "../../shared/ui/core.js";
 import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
 
 function safeText(value, fallback = "") {
@@ -46,10 +46,7 @@ function renderPriorityList(items = []) {
   if (!Array.isArray(items) || !items.length) {
     setHtml(
       "dashPriorityList",
-      `<div class="text-muted small">${t(
-      "dashboard.priority.empty",
-        "Không có việc gấp cần xử lý ngay."
-      )}</div>`
+      `<div class="text-muted small">${t("dashboard.priority.empty", "Không có việc gấp cần xử lý ngay.")}</div>`
     );
     return;
   }
@@ -123,6 +120,30 @@ function renderAccountBalances(items = []) {
   );
 }
 
+function renderReminderBadges(reminders = {}, windowHours = 72) {
+  const overdue = Number(reminders?.overdue || 0);
+  const dueToday = Number(reminders?.dueToday || 0);
+  const dueSoon = Number(reminders?.dueSoon || 0);
+
+  setHtml(
+    "dashReminderBadges",
+    `
+      <span class="dash-reminder-chip is-overdue">${formatTemplate(
+        t("dashboard.reminder.overdue", "Quá hạn {{count}}"),
+        { count: overdue }
+      )}</span>
+      <span class="dash-reminder-chip is-today">${formatTemplate(
+        t("dashboard.reminder.today", "Hôm nay {{count}}"),
+        { count: dueToday }
+      )}</span>
+      <span class="dash-reminder-chip is-soon">${formatTemplate(
+        t("dashboard.reminder.soon", "Cận hạn {{hours}}h {{count}}"),
+        { hours: Number(windowHours || 72), count: dueSoon }
+      )}</span>
+    `
+  );
+}
+
 function renderNextActions(items = []) {
   if (!Array.isArray(items) || !items.length) {
     setHtml(
@@ -169,31 +190,37 @@ function renderDeadline72h(items = [], windowHours = 72) {
     setHtml(
       "dashDeadline72h",
       `<div class="text-muted small">${formatTemplate(
-        t("dashboard.actionBoard.emptyDeadline", "Không có task video cận hạn trong {{hours}} giờ tới."),
+        t("dashboard.actionBoard.emptyDeadline", "Không có công việc video cận hạn trong {{hours}} giờ tới."),
         { hours: Number(windowHours || 72) }
       )}</div>`
     );
     return;
   }
 
+  const typeLabel = {
+    overdue: t("dashboard.reminder.overdueLabel", "Quá hạn"),
+    dueToday: t("dashboard.reminder.todayLabel", "Hôm nay"),
+    dueSoon: t("dashboard.reminder.soonLabel", "Cận hạn"),
+  };
+
   setHtml(
     "dashDeadline72h",
     items
       .map((item) => {
         const itemId = safeText(item?.id);
-        const dueLabel = t("dashboard.deadline.dueLabel", "Hạn {{dueDate}}").replace(
-          "{{dueDate}}",
-          safeText(item?.dueDate, "--/--")
-        );
-        const stageLabel = t("dashboard.deadline.stageLabel", "Giai đoạn: {{stage}}").replace(
-          "{{stage}}",
-          safeText(item?.stageLabel, "Ý tưởng")
-        );
+        const dueLabel = t("dashboard.deadline.dueLabel", "Hạn {{dueDate}}")
+          .replace("{{dueDate}}", safeText(item?.dueDate, "--/--"));
+        const stageLabel = t("dashboard.deadline.stageLabel", "Giai đoạn: {{stage}}")
+          .replace("{{stage}}", safeText(item?.stageLabel, "Ý tưởng"));
+        const statusType = safeText(item?.reminderType, "dueSoon");
 
         return `
-          <article class="dash-deadline-item">
+          <article class="dash-deadline-item ${statusType}">
             <div class="dash-deadline-main">
-              <strong>${escapeHtml(safeText(item?.title, "(Không tên)"))}</strong>
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <strong>${escapeHtml(safeText(item?.title, "(Không tên)"))}</strong>
+                <span class="dash-deadline-badge ${statusType}">${escapeHtml(typeLabel[statusType] || typeLabel.dueSoon)}</span>
+              </div>
               <div class="dash-deadline-meta">${escapeHtml(dueLabel)} • ${escapeHtml(stageLabel)}</div>
             </div>
             <button
@@ -201,7 +228,7 @@ function renderDeadline72h(items = [], windowHours = 72) {
               data-id="${escapeHtml(itemId)}"
               ${itemId ? "" : "disabled"}
             >
-              ${t("dashboard.nextAction.actionOpenVideo", "Mở task")}
+              ${t("dashboard.nextAction.actionOpenVideo", "Mở công việc")}
             </button>
           </article>
         `;
@@ -218,6 +245,7 @@ export function renderDashboardActionBoard(vm) {
   setText("dashActionSummaryTitle", vm?.summaryTitle || t("dashboard.actionBoard.summaryTitle", "Tóm tắt hành động"));
   setText("dashActionSummary", vm?.summaryText || "");
 
+  renderReminderBadges(vm?.reminders || {}, vm?.deadlineWindowHours || 72);
   renderNextActions(vm?.nextActions || []);
   renderDeadline72h(vm?.deadlineItems || [], vm?.deadlineWindowHours || 72);
 
@@ -229,7 +257,7 @@ export function renderDashboardActionBoard(vm) {
   });
 
   setButtonState("btnDashQuickDeadline", {
-    text: t("dashboard.actionBoard.quickOpenDeadline", "Mở task cận hạn"),
+    text: t("dashboard.actionBoard.quickOpenDeadline", "Mở việc cận hạn"),
     hidden: !vm?.quickActions?.deadlineTaskId,
     disabled: !vm?.quickActions?.deadlineTaskId,
     dataset: { taskId: vm?.quickActions?.deadlineTaskId || "" },

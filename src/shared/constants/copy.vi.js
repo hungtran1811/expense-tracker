@@ -94,22 +94,22 @@ export const copyVi = {
     },
     actionBoard: {
       title: "Bảng hành động hôm nay",
-      subtitle: "Tập trung vào việc kế tiếp và các task video cận hạn {{hours}} giờ.",
+      subtitle: "Tập trung vào việc kế tiếp và các công việc video cận hạn {{hours}} giờ.",
       nextTitle: "Việc kế tiếp",
       deadlineTitle: "Cận hạn {{hours}} giờ",
       summaryTitle: "Tóm tắt hành động",
       emptyNext: "Không còn việc ưu tiên cần xử lý ngay.",
-      emptyDeadline: "Không có task video cận hạn trong {{hours}} giờ tới.",
-      summary: "Hôm nay còn {{habitCount}} lượt habit và {{videoCount}} task video mở.",
+      emptyDeadline: "Không có công việc video cận hạn trong {{hours}} giờ tới.",
+      summary: "Hôm nay còn {{habitCount}} lượt thói quen và {{videoCount}} công việc video mở.",
       summaryDone: "Hôm nay không có việc khẩn cấp.",
       quickCheckin: "Điểm danh ngay",
-      quickOpenDeadline: "Mở task cận hạn",
+      quickOpenDeadline: "Mở việc cận hạn",
     },
     nextAction: {
       habitBadge: "Thói quen",
       videoBadge: "Video",
       actionCheckIn: "Điểm danh",
-      actionOpenVideo: "Mở task",
+      actionOpenVideo: "Mở công việc",
       actionOpenBoard: "Mở bảng",
       habitMeta: "{{remaining}} lượt còn lại • {{period}}",
       videoMetaDue: "Hạn {{dueDate}} • {{stage}}",
@@ -118,6 +118,14 @@ export const copyVi = {
     deadline: {
       dueLabel: "Hạn {{dueDate}}",
       stageLabel: "Giai đoạn: {{stage}}",
+    },
+    reminder: {
+      overdue: "Quá hạn {{count}}",
+      today: "Hôm nay {{count}}",
+      soon: "Cận hạn {{hours}}h {{count}}",
+      overdueLabel: "Quá hạn",
+      todayLabel: "Hôm nay",
+      soonLabel: "Cận hạn",
     },
     modules: {
       video: {
@@ -194,6 +202,22 @@ export const copyVi = {
       medium: "Vừa",
       high: "Cao",
     },
+    calendar: {
+      monthFallback: "Tháng hiện tại",
+      selectedDate: "Lịch ngày {{date}}",
+      selectedDateFallback: "Lịch theo ngày",
+      count: "{{count}} việc",
+      overdueCount: "Quá hạn {{count}}",
+      openTask: "Mở công việc",
+      empty: "Chưa có lịch video cho tháng đang chọn.",
+      emptyDay: "Ngày này chưa có công việc video.",
+      emptyUnscheduled: "Không có công việc chưa lên lịch.",
+    },
+    reminder: {
+      overdue: "Quá hạn: {{count}}",
+      today: "Hôm nay: {{count}}",
+      soon: "Cận hạn {{hours}}h: {{count}}",
+    },
   },
   ai: {
     common: {
@@ -260,11 +284,11 @@ export const copyVi = {
       checkins: "Lượt điểm danh",
     },
     video: {
-      open: "Task đang mở",
-      done: "Task đã xong",
-      dueWeek: "Task có hạn trong tuần",
-      dueWindow: "Task cận hạn {{hours}}h",
-      overdue: "Task quá hạn",
+      open: "Công việc đang mở",
+      done: "Công việc đã xong",
+      dueWeek: "Công việc có hạn trong tuần",
+      dueWindow: "Công việc cận hạn {{hours}}h",
+      overdue: "Công việc quá hạn",
     },
     motivation: {
       streak: "Chuỗi ngày",
