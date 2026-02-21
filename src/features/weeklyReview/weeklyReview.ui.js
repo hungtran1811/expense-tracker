@@ -91,6 +91,28 @@ function renderVideoSnapshot(snapshot = {}) {
   `;
 }
 
+function renderVideoPerformanceSnapshot(snapshot = {}) {
+  const published = Number(snapshot?.videosPublished || 0);
+  if (!published) {
+    return `<div class="text-muted small">${escapeHtml(
+      t("weeklyReview.videoPerformance.noData")
+    )}</div>`;
+  }
+
+  return `
+    <div class="wr-metric-list">
+      ${row(t("weeklyReview.videoPerformance.published"), `${published}`)}
+      ${row(t("weeklyReview.videoPerformance.totalViews"), `${Number(snapshot?.totalViews || 0)}`)}
+      ${row(t("weeklyReview.videoPerformance.avgCtr"), `${Number(snapshot?.avgCtr || 0)}%`)}
+      ${row(
+        t("weeklyReview.videoPerformance.avgRetention30s"),
+        `${Number(snapshot?.avgRetention30s || 0)}%`
+      )}
+      ${row(t("weeklyReview.videoPerformance.avgDuration"), `${Number(snapshot?.avgDurationSec || 0)}s`)}
+    </div>
+  `;
+}
+
 function renderMotivationSnapshot(snapshot = {}) {
   return `
     <div class="wr-metric-list">
@@ -198,6 +220,7 @@ export function renderWeeklyReviewPage(vm, saveState = {}) {
   setText("wrFinanceTitle", t("weeklyReview.cards.finance"));
   setText("wrGoalsTitle", t("weeklyReview.cards.goals"));
   setText("wrVideoTitle", t("weeklyReview.cards.video"));
+  setText("wrVideoPerformanceTitle", t("weeklyReview.cards.videoPerformance"));
   setText("wrMotivationTitle", t("weeklyReview.cards.motivation"));
   setText("wrHistoryTitle", t("weeklyReview.history.title"));
   setText("wrPlanTitle", t("weeklyReview.plan.title"));
@@ -216,7 +239,20 @@ export function renderWeeklyReviewPage(vm, saveState = {}) {
   setHtml("wrFinanceSnapshot", renderFinanceSnapshot(vm?.snapshot?.finance || {}));
   setHtml("wrGoalsSnapshot", renderGoalsSnapshot(vm?.snapshot?.goals || {}));
   setHtml("wrVideoSnapshot", renderVideoSnapshot(vm?.snapshot?.video || {}));
+  setHtml("wrVideoPerformanceSnapshot", renderVideoPerformanceSnapshot(vm?.snapshot?.videoPerformance || {}));
   setHtml("wrMotivationSnapshot", renderMotivationSnapshot(vm?.snapshot?.motivation || {}));
+  const insightList = Array.isArray(vm?.localInsight) ? vm.localInsight : [];
+  setHtml(
+    "wrVideoInsight",
+    insightList.length
+      ? `
+      <div class="fw-semibold mb-1">${escapeHtml(t("weeklyReview.videoPerformance.insightTitle"))}</div>
+      <ul class="mb-0 ps-3">${insightList
+        .map((line) => `<li>${escapeHtml(String(line || ""))}</li>`)
+        .join("")}</ul>
+    `
+      : `<span class="text-muted">${escapeHtml(t("weeklyReview.videoPerformance.healthy"))}</span>`
+  );
   const plan = vm?.plan || {};
   if (byId("wrFocusTheme")) byId("wrFocusTheme").value = plan.focusTheme || "";
   if (byId("wrTopPriority1")) byId("wrTopPriority1").value = plan?.topPriorities?.[0] || "";

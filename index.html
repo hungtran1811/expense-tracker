@@ -357,6 +357,16 @@
               </div>
 
               <div class="row g-3 mt-1">
+                <div class="col-12">
+                  <div class="card p-3 h-100">
+                    <h6 class="mb-2" id="wrVideoPerformanceTitle">Hiệu suất video tuần</h6>
+                    <div id="wrVideoPerformanceSnapshot" class="small"></div>
+                    <div class="small text-muted mt-2" id="wrVideoInsight"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="row g-3 mt-1">
                 <div class="col-12 col-xl-8">
                   <div class="card p-3">
                     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
@@ -663,17 +673,23 @@
             </section>
 
             <section id="video-plan" class="route">
-              <div class="page-header">
+              <div class="page-header video-plan-header">
                 <div>
-                  <h4 class="mb-1">Kế hoạch video YouTube</h4>
-                  <p class="text-muted small mb-0">
-                    Kanban 6 bước: ý tưởng → nghiên cứu → kịch bản → quay → dựng → xuất bản.
+                  <h4 class="mb-1" id="videoPlanTitle">Kế hoạch video YouTube</h4>
+                  <p class="text-muted small mb-0" id="videoPlanSubtitle">
+                    Vận hành lịch sản xuất nội dung theo 6 giai đoạn rõ ràng và dễ theo dõi.
                   </p>
                 </div>
               </div>
 
-              <div class="card p-3 mb-3">
-                <div class="row g-2">
+              <div class="card p-3 mb-3 video-plan-create-card">
+                <div class="video-block-head mb-3">
+                  <h6 class="mb-1" id="videoCreateTitle">Tạo nhanh công việc video</h6>
+                  <p class="small text-muted mb-0" id="videoCreateSubtitle">
+                    Điền thông tin cốt lõi, sau đó dùng AI hoặc template để hoàn thiện nội dung.
+                  </p>
+                </div>
+                <div class="row g-3 video-plan-form-grid">
                   <div class="col-12 col-md-6 col-xl-4">
                     <label class="form-label">Tiêu đề video</label>
                     <input id="videoTitle" class="form-control" placeholder="Ví dụ: Thiết lập ngân sách 2026" />
@@ -688,6 +704,13 @@
                       <option value="low">Thấp</option>
                       <option value="medium" selected>Vừa</option>
                       <option value="high">Cao</option>
+                    </select>
+                  </div>
+                  <div class="col-6 col-md-3 col-xl-2">
+                    <label class="form-label" for="videoType">Định dạng</label>
+                    <select id="videoType" class="form-select">
+                      <option value="short" selected>Video ngắn 30s</option>
+                      <option value="long">Video dài 5-10 phút</option>
                     </select>
                   </div>
                   <div class="col-12 col-md-6 col-xl-4">
@@ -706,25 +729,58 @@
                     <label class="form-label">Ghi chú</label>
                     <textarea id="videoNote" class="form-control" rows="2" placeholder="Yêu cầu ảnh bìa, lời kêu gọi hành động, ý tưởng mở rộng..."></textarea>
                   </div>
-                  <div class="col-12 d-flex flex-wrap justify-content-end gap-2 align-items-center">
+                  <div class="col-12 d-flex flex-wrap justify-content-end gap-2 align-items-center video-form-actions">
                     <div class="d-flex align-items-center gap-2">
-                      <label class="form-label mb-0 small" for="videoAiLanguage">Ngôn ngữ AI</label>
+                      <label class="form-label mb-0 small" for="videoAiLanguage">Trọng tâm AI</label>
                       <select id="videoAiLanguage" class="form-select form-select-sm">
                         <option value="python" selected>Python</option>
                         <option value="javascript">JavaScript</option>
+                        <option value="frontend">Frontend thực chiến</option>
+                        <option value="backend">Backend thực chiến</option>
+                        <option value="data_ai">Data/AI ứng dụng</option>
+                        <option value="automation">Tự động hóa thực tế</option>
+                        <option value="mobile">Mobile app cơ bản</option>
+                        <option value="system_design">System design nhập môn</option>
                       </select>
                     </div>
-                    <button class="btn btn-outline-primary" id="btnVideoAiGenerate">AI gợi ý mới</button>
-                    <button class="btn btn-outline-secondary" id="btnVideoAiImprove">AI cải thiện nội dung</button>
-                    <button class="btn btn-primary" id="btnAddVideoTask">Thêm công việc video</button>
+                    <button class="btn btn-outline-primary" id="btnVideoAiGenerate" type="button">AI gợi ý mới</button>
+                    <button class="btn btn-outline-secondary" id="btnVideoAiImprove" type="button">AI cải thiện nội dung</button>
+                    <button class="btn btn-primary" id="btnAddVideoTask" type="button">Thêm công việc video</button>
                   </div>
                 </div>
                 <div id="videoAiSuggestionList" class="ai-suggestion-list mt-3"></div>
+                <div class="card p-2 mt-3 border-0 bg-light-subtle video-blueprint-card">
+                  <div class="row g-2 align-items-end">
+                    <div class="col-12 col-md-4">
+                      <label class="form-label mb-1" for="videoBlueprintType">Loại template</label>
+                      <select id="videoBlueprintType" class="form-select form-select-sm">
+                        <option value="short" selected>Video ngắn 30s</option>
+                        <option value="long">Video dài 5-10 phút</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-5">
+                      <label class="form-label mb-1" for="videoBlueprintSelect">Template nội dung</label>
+                      <select id="videoBlueprintSelect" class="form-select form-select-sm">
+                        <option value="">Chọn mẫu nội dung</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-3 d-grid d-md-flex gap-2">
+                      <button class="btn btn-outline-primary btn-sm w-100" id="btnVideoApplyBlueprint" type="button">Áp dụng template</button>
+                      <button class="btn btn-outline-secondary btn-sm w-100" id="btnVideoSaveBlueprint" type="button">Lưu template</button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div class="card p-3 mb-3">
-                <div class="d-flex flex-wrap align-items-end gap-2">
-                  <div class="flex-grow-1">
+              <div class="card p-3 mb-3 video-plan-filter-card">
+                <div class="video-block-head mb-2">
+                  <h6 class="mb-1" id="videoFilterTitle">Bộ lọc và điều hướng</h6>
+                  <p class="small text-muted mb-0" id="videoFilterSubtitle">
+                    Lọc theo giai đoạn, ưu tiên, trạng thái kết quả và từ khóa.
+                  </p>
+                </div>
+                <div class="video-filter-grid">
+                  <div class="video-filter-item">
                     <label class="form-label">Lọc theo giai đoạn</label>
                     <select id="videoFilterStage" class="form-select form-select-sm">
                       <option value="all">Tất cả giai đoạn</option>
@@ -736,7 +792,7 @@
                       <option value="publish">Xuất bản</option>
                     </select>
                   </div>
-                  <div class="flex-grow-1">
+                  <div class="video-filter-item">
                     <label class="form-label">Lọc theo ưu tiên</label>
                     <select id="videoFilterPriority" class="form-select form-select-sm">
                       <option value="all">Tất cả ưu tiên</option>
@@ -745,17 +801,28 @@
                       <option value="high">Cao</option>
                     </select>
                   </div>
-                  <div class="flex-grow-1">
+                  <div class="video-filter-item">
+                    <label class="form-label" for="videoRetroFilter">Trạng thái kết quả</label>
+                    <select id="videoRetroFilter" class="form-select form-select-sm">
+                      <option value="all">Tất cả</option>
+                      <option value="withRetro">Đã ghi kết quả</option>
+                      <option value="withoutRetro">Chưa ghi kết quả</option>
+                    </select>
+                  </div>
+                  <div class="video-filter-item video-filter-query">
                     <label class="form-label">Tìm nhanh</label>
                     <input id="videoFilterQuery" class="form-control form-control-sm" placeholder="Tìm theo tiêu đề hoặc ghi chú..." />
                   </div>
-                  <button class="btn btn-outline-secondary btn-sm" id="btnVideoFilterReset">Đặt lại</button>
+                  <div class="video-filter-actions">
+                    <button class="btn btn-outline-secondary btn-sm" id="btnVideoFilterReset" type="button">Đặt lại</button>
+                  </div>
                 </div>
                 <div class="small text-muted mt-2" id="videoFilterSummary"></div>
               </div>
 
               <div class="card p-3 mb-3 video-plan-view-switch">
-                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 video-view-toolbar">
+                  <div class="small fw-semibold text-body-secondary" id="videoViewModeLabel">Chế độ hiển thị</div>
                   <div class="btn-group btn-group-sm" role="group" aria-label="Chuyển chế độ hiển thị video">
                     <button class="btn btn-outline-primary active" id="videoViewBoard" type="button" aria-pressed="true">
                       Bảng
@@ -764,7 +831,7 @@
                       Lịch
                     </button>
                   </div>
-                  <div class="small text-muted" id="videoCalendarSelectedLabel">Lịch theo ngày</div>
+                  <div class="small text-muted" id="videoCalendarSelectedLabel">Lịch ngày hôm nay</div>
                 </div>
               </div>
 
@@ -798,7 +865,7 @@
               </div>
 
               <div id="videoPlanViewCalendar" class="d-none">
-                <div class="card p-3 mb-3">
+                <div class="card p-3 mb-3 video-calendar-shell">
                   <div class="video-calendar-head d-flex flex-wrap align-items-center justify-content-between gap-2">
                     <div class="btn-group btn-group-sm" role="group" aria-label="Điều hướng tháng lịch video">
                       <button class="btn btn-outline-secondary" id="btnVideoCalPrevMonth" type="button">&lt;</button>
@@ -817,15 +884,15 @@
                   <div class="col-12 col-xl-8">
                     <div class="card p-3 h-100">
                       <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                        <h6 class="mb-0">Lịch trong ngày</h6>
-                        <a href="#video-plan" class="small text-decoration-none">Mở bảng video</a>
+                        <h6 class="mb-0" id="videoCalendarAgendaTitle">Lịch theo ngày</h6>
+                        <a href="#video-plan" class="small text-decoration-none" id="videoCalendarOpenBoardLink">Mở bảng video</a>
                       </div>
                       <div id="videoCalendarAgenda" class="video-calendar-agenda"></div>
                     </div>
                   </div>
                   <div class="col-12 col-xl-4">
                     <div class="card p-3 h-100">
-                      <h6 class="mb-2">Chưa lên lịch</h6>
+                      <h6 class="mb-2" id="videoCalendarUnscheduledTitle">Chưa lên lịch</h6>
                       <div id="videoUnscheduledList" class="video-unscheduled-list"></div>
                     </div>
                   </div>
@@ -1141,6 +1208,47 @@
         <div class="panel-footer">
           <button class="btn btn-outline-secondary" data-bs-dismiss="offcanvas">Đóng</button>
           <button class="btn btn-primary" id="btnSaveVideoTask">Lưu thay đổi</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="offcanvas offcanvas-end panel" id="videoRetroPanel" tabindex="-1">
+      <div class="offcanvas-header">
+        <h5 class="offcanvas-title">Kết quả xuất bản</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+      </div>
+      <div class="offcanvas-body">
+        <input type="hidden" id="vrTaskId" />
+        <div class="small text-muted mb-2" id="vrTaskTitle"></div>
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="vrPublishedAt">Ngày xuất bản</label>
+            <input id="vrPublishedAt" type="date" class="form-control" />
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="vrDurationSec">Thời lượng (giây)</label>
+            <input id="vrDurationSec" type="number" min="0" class="form-control" />
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="vrViews">Lượt xem</label>
+            <input id="vrViews" type="number" min="0" class="form-control" />
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="vrCtr">CTR (%)</label>
+            <input id="vrCtr" type="number" min="0" step="0.01" class="form-control" />
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="vrRetention30s">Retention 30s (%)</label>
+            <input id="vrRetention30s" type="number" min="0" step="0.01" class="form-control" />
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="vrNote">Ghi chú rút kinh nghiệm</label>
+            <textarea id="vrNote" class="form-control" rows="3"></textarea>
+          </div>
+        </div>
+        <div class="panel-footer">
+          <button class="btn btn-outline-secondary" data-bs-dismiss="offcanvas">Đóng</button>
+          <button class="btn btn-primary" id="btnVideoRetroSave">Lưu kết quả</button>
         </div>
       </div>
     </div>

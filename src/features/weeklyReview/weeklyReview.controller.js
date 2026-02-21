@@ -6,6 +6,7 @@ import {
   listHabits,
   listHabitLogsByRange,
   listVideoTasks,
+  listVideoRetrosByRange,
   listXpLogsByRange,
   readWeeklyReview,
   saveWeeklyReview,
@@ -263,6 +264,64 @@ function buildVideoSnapshot({ tasks, weekRange, now, deadlineWindowHours }) {
   };
 }
 
+function buildVideoPerformanceSnapshot(videoRetros = []) {
+  const safe = Array.isArray(videoRetros) ? videoRetros : [];
+  const videosPublished = safe.length;
+
+  if (!videosPublished) {
+    return {
+      videosPublished: 0,
+      totalViews: 0,
+      avgCtr: 0,
+      avgRetention30s: 0,
+      avgDurationSec: 0,
+    };
+  }
+
+  const totalViews = safe.reduce((sum, item) => sum + Math.max(0, Number(item?.views || 0)), 0);
+  const totalCtr = safe.reduce((sum, item) => sum + Math.max(0, Number(item?.ctr || 0)), 0);
+  const totalRetention = safe.reduce(
+    (sum, item) => sum + Math.max(0, Number(item?.retention30s || 0)),
+    0
+  );
+  const totalDuration = safe.reduce(
+    (sum, item) => sum + Math.max(0, Number(item?.durationSec || 0)),
+    0
+  );
+
+  return {
+    videosPublished,
+    totalViews,
+    avgCtr: Number((totalCtr / videosPublished).toFixed(2)),
+    avgRetention30s: Number((totalRetention / videosPublished).toFixed(2)),
+    avgDurationSec: Number((totalDuration / videosPublished).toFixed(2)),
+  };
+}
+
+export function buildWeeklyLocalInsight(vm = {}) {
+  const perf = vm?.snapshot?.videoPerformance || {};
+  const lines = [];
+
+  if (Number(perf?.videosPublished || 0) < 2) {
+    lines.push(t("weeklyReview.videoPerformance.lowPublish"));
+  }
+  if (Number(perf?.avgCtr || 0) > 0 && Number(perf?.avgCtr || 0) < 4) {
+    lines.push(t("weeklyReview.videoPerformance.lowCtr"));
+  }
+  if (
+    Number(perf?.avgRetention30s || 0) > 0 &&
+    Number(perf?.avgRetention30s || 0) < 45
+  ) {
+    lines.push(t("weeklyReview.videoPerformance.lowRetention"));
+  }
+
+  if (!lines.length) {
+    lines.push(t("weeklyReview.videoPerformance.healthy"));
+  }
+
+  return lines;
+}
+
 function buildMotivationSnapshot({ summary, weekXpLogs }) {
   const safeSummary = summary || {};
   const safeWeekXpLogs = Array.isArray(weekXpLogs) ? weekXpLogs : [];
@@ -329,6 +388,7 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     habits,
     weekHabitLogs,
     tasks,
+    videoRetros,
     motivationSummary,
     weekXpLogs,
     savedReview,
@@ -341,6 +401,7 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     listHabits(uid, { active: true }),
     listHabitLogsByRange(uid, weekRange.startKey, weekRange.endKey),
     listVideoTasks(uid),
+    listVideoRetrosByRange(uid, weekRange.start, weekRange.endExclusive),
     getMotivationSummaryReadOnly(uid),
     listXpLogsByRange(uid, weekRange.start, weekEndInclusive),
     readWeeklyReview(uid, weekRange.weekKey),
@@ -351,6 +412,7 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     finance: buildFinanceSnapshot({ expenses, incomes, transfers }),
     goals: buildGoalsSnapshot({ goals, habits, weekHabitLogs }),
     video: buildVideoSnapshot({ tasks, weekRange, now, deadlineWindowHours }),
+    videoPerformance: buildVideoPerformanceSnapshot(videoRetros),
     motivation: buildMotivationSnapshot({ summary: motivationSummary, weekXpLogs }),
   };
 
@@ -379,6 +441,7 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
       endKey: weekRange.endKey,
     },
     snapshot,
+    localInsight: buildWeeklyLocalInsight({ snapshot }),
     plan: storedPlan,
     history: history.slice(0, historyLimit),
     options: {

@@ -29,6 +29,13 @@ const PRIORITY_LABEL = {
   high: "Cao",
 };
 
+function toMs(value) {
+  if (!value) return 0;
+  if (value?.seconds) return Number(value.seconds) * 1000;
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? 0 : dt.getTime();
+}
+
 function safeText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
@@ -59,10 +66,33 @@ function toDeadlineLabel(rawValue) {
   return Number.isNaN(dt.getTime()) ? t("videoPlan.form.noDeadline", "Không hạn") : dt.toLocaleDateString("vi-VN");
 }
 
+function toDeadlineMs(rawValue) {
+  if (!rawValue) return Number.POSITIVE_INFINITY;
+  const dt = rawValue?.seconds ? new Date(rawValue.seconds * 1000) : new Date(rawValue);
+  return Number.isNaN(dt.getTime()) ? Number.POSITIVE_INFINITY : dt.getTime();
+}
+
+function compareStageTasks(a = {}, b = {}) {
+  const aDue = toDeadlineMs(a.deadline);
+  const bDue = toDeadlineMs(b.deadline);
+  if (aDue !== bDue) return aDue - bDue;
+
+  const aPriority = { high: 3, medium: 2, low: 1 }[String(a.priority || "medium")] || 2;
+  const bPriority = { high: 3, medium: 2, low: 1 }[String(b.priority || "medium")] || 2;
+  if (aPriority !== bPriority) return bPriority - aPriority;
+
+  const aCreated = toMs(a.createdAt);
+  const bCreated = toMs(b.createdAt);
+  if (aCreated !== bCreated) return bCreated - aCreated;
+
+  return String(a.title || "").localeCompare(String(b.title || ""), "vi");
+}
+
 export function createDefaultVideoFilters() {
   return {
     stage: "all",
     priority: "all",
+    retroStatus: "all",
     query: "",
   };
 }
@@ -71,11 +101,15 @@ export function normalizeVideoFilters(filters = {}) {
   const base = createDefaultVideoFilters();
   const stage = String(filters.stage || base.stage);
   const priority = String(filters.priority || base.priority);
+  const retroStatus = String(filters.retroStatus || base.retroStatus);
   const query = String(filters.query || "").trim();
 
   return {
     stage: stage === "all" || VIDEO_STAGES.includes(stage) ? stage : base.stage,
     priority: ["all", "low", "medium", "high"].includes(priority) ? priority : base.priority,
+    retroStatus: ["all", "withRetro", "withoutRetro"].includes(retroStatus)
+      ? retroStatus
+      : base.retroStatus,
     query,
   };
 }
@@ -102,21 +136,25 @@ export function hydrateVideoFilterControls(filters = {}) {
   const safe = normalizeVideoFilters(filters);
   const stageEl = document.getElementById("videoFilterStage");
   const priorityEl = document.getElementById("videoFilterPriority");
+  const retroEl = document.getElementById("videoRetroFilter");
   const queryEl = document.getElementById("videoFilterQuery");
 
   if (stageEl) stageEl.value = safe.stage;
   if (priorityEl) priorityEl.value = safe.priority;
+  if (retroEl) retroEl.value = safe.retroStatus;
   if (queryEl) queryEl.value = safe.query;
 }
 
 export function readVideoFiltersFromControls(current = {}) {
   const stageEl = document.getElementById("videoFilterStage");
   const priorityEl = document.getElementById("videoFilterPriority");
+  const retroEl = document.getElementById("videoRetroFilter");
   const queryEl = document.getElementById("videoFilterQuery");
 
   return normalizeVideoFilters({
     stage: stageEl?.value || current.stage || "all",
     priority: priorityEl?.value || current.priority || "all",
+    retroStatus: retroEl?.value || current.retroStatus || "all",
     query: queryEl?.value || current.query || "",
   });
 }
@@ -128,13 +166,25 @@ export function filterVideoTasks(tasks = [], filters = {}) {
   return (Array.isArray(tasks) ? tasks : []).filter((task) => {
     const okStage = safe.stage === "all" ? true : task.stage === safe.stage;
     const okPriority = safe.priority === "all" ? true : task.priority === safe.priority;
+    const hasRetro = !!task?.hasRetro;
+    const okRetro =
+      safe.retroStatus === "all"
+        ? true
+        : safe.retroStatus === "withRetro"
+        ? hasRetro
+        : !hasRetro;
 
-    if (!keyword) return okStage && okPriority;
+    if (!keyword) return okStage && okPriority && okRetro;
 
     const title = String(task.title || "").toLowerCase();
     const note = String(task.note || "").toLowerCase();
     const shotList = String(task.shotList || "").toLowerCase();
-    return okStage && okPriority && (title.includes(keyword) || note.includes(keyword) || shotList.includes(keyword));
+    return (
+      okStage &&
+      okPriority &&
+      okRetro &&
+      (title.includes(keyword) || note.includes(keyword) || shotList.includes(keyword))
+    );
   });
 }
 
@@ -222,13 +272,20 @@ export function renderVideoBoard(tasks = []) {
     const col = document.getElementById(`videoCol${capitalize(stage)}`);
     if (!col) return;
 
+    const stageLabel = getStageLabel(stage);
     const html = grouped[stage]
+      .slice()
+      .sort(compareStageTasks)
       .map((task) => {
         const taskId = safeText(task?.id);
         const priority = safeText(task?.priority, "medium");
         const title = escapeHtml(safeText(task?.title, "(Không tên)"));
         const note = escapeHtml(safeText(task?.note, t("videoPlan.form.noNote", "Không có ghi chú")));
         const deadline = toDeadlineLabel(task?.deadline);
+        const hasRetro = !!task?.hasRetro;
+        const retroBadge = hasRetro
+          ? `<span class="badge text-bg-success">${t("videoPlan.retro.doneBadge", "Đã ghi kết quả")}</span>`
+          : `<span class="badge text-bg-secondary">${t("videoPlan.retro.missingBadge", "Chưa ghi kết quả")}</span>`;
 
         return `
           <article class="video-card" draggable="true" data-id="${escapeHtml(taskId)}" data-stage="${stage}">
@@ -236,11 +293,22 @@ export function renderVideoBoard(tasks = []) {
               <strong>${title}</strong>
               <span class="badge text-bg-light ${priorityClass(priority)}">${PRIORITY_LABEL[priority] || "Vừa"}</span>
             </header>
-            <div class="small text-muted">Hạn: ${escapeHtml(deadline)}</div>
-            <div class="small text-muted mt-1">${note}</div>
+            <div class="video-card-meta-row small text-muted">
+              <span>${t("videoPlan.form.stageLabel", "Giai đoạn")}: ${escapeHtml(stageLabel)}</span>
+              <span>${t("videoPlan.form.deadlineLabel", "Hạn")}: ${escapeHtml(deadline)}</span>
+            </div>
+            <div class="mt-2">${retroBadge}</div>
+            <div class="small text-muted video-card-note mt-2">${note}</div>
             <div class="video-card-actions mt-2">
-              <button class="btn btn-sm btn-outline-secondary btn-video-edit" ${taskId ? "" : "disabled"}>Sửa</button>
-              <button class="btn btn-sm btn-outline-danger btn-video-del">Xóa</button>
+              <button class="btn btn-sm btn-outline-primary btn-video-retro-open" ${taskId ? "" : "disabled"}>
+                ${t("videoPlan.retro.openButton", "Kết quả xuất bản")}
+              </button>
+              <button class="btn btn-sm btn-outline-secondary btn-video-edit" ${taskId ? "" : "disabled"}>
+                ${t("videoPlan.form.editAction", "Sửa nhanh")}
+              </button>
+              <button class="btn btn-sm btn-outline-danger btn-video-del">
+                ${t("videoPlan.form.deleteAction", "Xóa")}
+              </button>
             </div>
           </article>
         `;
@@ -356,7 +424,7 @@ function renderAgenda(vm) {
     .map((item) => {
       const statusClass = item?.isOverdue ? "is-overdue" : item?.isDueToday ? "is-today" : item?.isDueSoon ? "is-soon" : "";
       return `
-        <article class="calendar-agenda-item ${statusClass}">
+        <article class="calendar-agenda-item ${statusClass}" data-task-id="${escapeHtml(safeText(item?.id))}">
           <div class="calendar-agenda-main">
             <strong>${escapeHtml(safeText(item?.title, "(Không tên)"))}</strong>
             <div class="small text-muted">${escapeHtml(getStageLabel(item?.stage))} • ${escapeHtml(t(`videoPlan.priority.${item?.priority || "medium"}`, "Vừa"))}</div>
@@ -382,7 +450,7 @@ function renderUnscheduled(vm) {
   root.innerHTML = list
     .map((item) => {
       return `
-        <article class="calendar-unscheduled-item">
+        <article class="calendar-unscheduled-item" data-task-id="${escapeHtml(safeText(item?.id))}">
           <div class="calendar-agenda-main">
             <strong>${escapeHtml(safeText(item?.title, "(Không tên)"))}</strong>
             <div class="small text-muted">${escapeHtml(getStageLabel(item?.stage))}</div>

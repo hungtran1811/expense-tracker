@@ -5,6 +5,10 @@ import {
   updateVideoTask as updateVideoTaskDoc,
   deleteVideoTask,
   awardXp,
+  listVideoRetrosByTaskIds,
+  upsertVideoRetro,
+  listContentBlueprints,
+  addContentBlueprint,
 } from "../../services/firebase/firestore.js";
 import { VIDEO_STAGES } from "./videoPlan.ui.js";
 import {
@@ -19,6 +23,7 @@ import {
   startOfMonth,
   toMonthLabelVi,
 } from "../../shared/utils/date.js";
+import { t } from "../../shared/constants/copy.vi.js";
 
 function stageIndex(stage) {
   return VIDEO_STAGES.indexOf(stage);
@@ -109,6 +114,107 @@ export async function moveTaskToStage(uid, task, nextStage) {
 
 export async function removeVideoTask(uid, taskId) {
   return deleteVideoTask(uid, taskId);
+}
+
+const DEFAULT_BLUEPRINTS = [
+  {
+    name: "Python Short 30s",
+    language: "python",
+    videoType: "short",
+    hookTemplate: "Hook 2 giây: nêu đúng vấn đề người mới hay mắc.",
+    outlineTemplate:
+      "1) Demo kết quả 5 giây.\n2) Giải thích 1 ý chính.\n3) Mini bài tập 1 dòng.",
+    shotListTemplate:
+      "- Hook 2s\n- Demo output 5s\n- Code chính 15s\n- Tổng kết + CTA 8s",
+    ctaTemplate: "Comment keyword để nhận checklist bài tập.",
+    active: true,
+  },
+  {
+    name: "Python Long 5-10 phút",
+    language: "python",
+    videoType: "long",
+    hookTemplate: "Mở đầu 10-15 giây: bài toán thực tế + kết quả cuối video.",
+    outlineTemplate:
+      "1) Bối cảnh vấn đề.\n2) Code từng bước rõ ràng.\n3) Test + lỗi thường gặp.\n4) Bài tập nâng cấp.",
+    shotListTemplate:
+      "- Giới thiệu bài toán\n- Demo output\n- Setup nhanh\n- Code phần 1\n- Code phần 2\n- Test + debug\n- Tổng kết",
+    ctaTemplate: "Làm lại dự án với 1 tính năng nâng cấp rồi chia sẻ kết quả.",
+    active: true,
+  },
+  {
+    name: "JavaScript Short 30s",
+    language: "javascript",
+    videoType: "short",
+    hookTemplate: "Hook 2 giây: lỗi UI/logic phổ biến và cách xử lý nhanh.",
+    outlineTemplate:
+      "1) Demo trước/sau khi sửa.\n2) 1 kỹ thuật JS cốt lõi.\n3) CTA thực hành ngay.",
+    shotListTemplate:
+      "- Hook 2s\n- Demo bug 5s\n- Sửa code 15s\n- Kết quả + CTA 8s",
+    ctaTemplate: "Lưu video để làm lại trong 10 phút tối nay.",
+    active: true,
+  },
+  {
+    name: "JavaScript Long 5-10 phút",
+    language: "javascript",
+    videoType: "long",
+    hookTemplate: "Mở đầu ngắn: hôm nay sẽ hoàn thành một mini app chạy được.",
+    outlineTemplate:
+      "1) Mục tiêu app.\n2) State + event.\n3) Render UI.\n4) Debug nhanh.\n5) Bài tập mở rộng.",
+    shotListTemplate:
+      "- Intro + mục tiêu\n- Demo app\n- Setup project\n- Code state\n- Code event\n- Render UI\n- Debug + tổng kết",
+    ctaTemplate: "Thử thêm 1 feature mới và comment kết quả.",
+    active: true,
+  },
+];
+
+export async function loadVideoRetros(uid, taskIds = []) {
+  if (!uid) return [];
+  return listVideoRetrosByTaskIds(uid, taskIds);
+}
+
+export async function saveVideoRetro(uid, taskId, payload = {}) {
+  return upsertVideoRetro(uid, taskId, payload);
+}
+
+export async function loadContentBlueprints(uid, filter = {}) {
+  if (!uid) return [];
+  return listContentBlueprints(uid, filter);
+}
+
+export async function saveContentBlueprint(uid, payload = {}) {
+  return addContentBlueprint(uid, payload);
+}
+
+export async function ensureDefaultContentBlueprints(uid) {
+  if (!uid) return [];
+  const existing = await listContentBlueprints(uid);
+  if (existing.length) return existing;
+
+  for (const blueprint of DEFAULT_BLUEPRINTS) {
+    await addContentBlueprint(uid, blueprint);
+  }
+
+  return listContentBlueprints(uid);
+}
+
+export function buildBlueprintPayloadFromSuggestion(option = {}, language = "python") {
+  const videoType = String(option?.videoType || "").trim() === "long_5_10" ? "long" : "short";
+  const title = String(option?.title || "").trim();
+  const hook = String(option?.hook || "").trim();
+  const outline = String(option?.outline || "").trim();
+  const shotList = String(option?.shotList || "").trim();
+  const cta = String(option?.cta || "").trim();
+
+  return {
+    name: title || t("videoPlan.blueprints.fallbackName", "Mẫu nội dung AI"),
+    language: String(language || "python").toLowerCase() === "javascript" ? "javascript" : "python",
+    videoType,
+    hookTemplate: hook,
+    outlineTemplate: outline,
+    shotListTemplate: shotList,
+    ctaTemplate: cta,
+    active: true,
+  };
 }
 
 function toCreatedAtMs(task = {}) {

@@ -28,6 +28,8 @@ export const colGoals = (uid) => collection(db, `users/${uid}/goals`);
 export const colHabits = (uid) => collection(db, `users/${uid}/habits`);
 export const colHabitLogs = (uid) => collection(db, `users/${uid}/habitLogs`);
 export const colVideoTasks = (uid) => collection(db, `users/${uid}/videoTasks`);
+export const colVideoRetros = (uid) => collection(db, `users/${uid}/videoRetros`);
+export const colContentBlueprints = (uid) => collection(db, `users/${uid}/contentBlueprints`);
 export const colXpLogs = (uid) => collection(db, `users/${uid}/xpLogs`);
 export const colWeeklyReviews = (uid) => collection(db, `users/${uid}/weeklyReviews`);
 export const colAiSuggestions = (uid) => collection(db, `users/${uid}/aiSuggestions`);
@@ -145,6 +147,18 @@ function parseLocalDate(ymd) {
   if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y, m - 1, d, 12, 0, 0);
+}
+
+function normalizeVideoLanguageKey(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  return text === "javascript" ? "javascript" : "python";
+}
+
+function normalizeVideoTypeKey(value = "") {
+  const text = String(value || "").trim().toLowerCase();
+  if (text === "long") return "long";
+  if (text === "short") return "short";
+  return "short";
 }
 
 export async function addIncome(uid, payload) {
@@ -1017,6 +1031,147 @@ export async function moveVideoTaskStage(uid, taskId, nextStage) {
 export async function deleteVideoTask(uid, taskId) {
   await deleteDoc(doc(db, `users/${uid}/videoTasks/${taskId}`));
   return true;
+}
+
+export async function upsertVideoRetro(uid, taskId, payload = {}) {
+  const id = String(taskId || "").trim();
+  if (!uid || !id) throw new Error("Thiếu thông tin bản ghi hậu xuất bản");
+
+  const now = Timestamp.now();
+  const ref = doc(db, `users/${uid}/videoRetros/${id}`);
+  const prev = await getDoc(ref);
+
+  const durationSec = Math.max(0, Math.floor(Number(payload.durationSec || 0)));
+  const views = Math.max(0, Math.floor(Number(payload.views || 0)));
+  const ctr = Math.max(0, Number(payload.ctr || 0));
+  const retention30s = Math.max(0, Number(payload.retention30s || 0));
+
+  const data = {
+    taskId: id,
+    titleSnapshot: String(payload.titleSnapshot || "").trim(),
+    language: normalizeVideoLanguageKey(payload.language),
+    videoType: normalizeVideoTypeKey(
+      payload.videoType || (durationSec > 60 ? "long" : "short")
+    ),
+    publishedAt: toTimestamp(payload.publishedAt),
+    durationSec,
+    views,
+    ctr,
+    retention30s,
+    note: String(payload.note || "").trim(),
+    updatedAt: now,
+    createdAt: prev.exists() ? prev.data()?.createdAt || now : now,
+  };
+
+  await setDoc(ref, data, { merge: true });
+  return { id, ...data };
+}
+
+export async function readVideoRetro(uid, taskId) {
+  const id = String(taskId || "").trim();
+  if (!uid || !id) return null;
+
+  const snap = await getDoc(doc(db, `users/${uid}/videoRetros/${id}`));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function listVideoRetrosByTaskIds(uid, taskIds = []) {
+  if (!uid) return [];
+  const ids = Array.from(
+    new Set(
+      (Array.isArray(taskIds) ? taskIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean)
+    )
+  );
+  if (!ids.length) return [];
+
+  const snapshots = await Promise.all(
+    ids.map((id) => getDoc(doc(db, `users/${uid}/videoRetros/${id}`)))
+  );
+  return snapshots
+    .filter((snap) => snap.exists())
+    .map((snap) => ({ id: snap.id, ...snap.data() }));
+}
+
+export async function listVideoRetrosByRange(uid, fromDate, toDateExclusive) {
+  if (!uid) return [];
+  const fromTs = toTimestampStrict(fromDate, "fromDate");
+  const toTs = toTimestampStrict(toDateExclusive, "toDateExclusive");
+
+  const snap = await getDocs(colVideoRetros(uid));
+  return mapDocs(snap)
+    .filter((item) => {
+      const publishedAt = toTimestamp(item?.publishedAt);
+      if (!publishedAt) return false;
+      return publishedAt.seconds >= fromTs.seconds && publishedAt.seconds < toTs.seconds;
+    })
+    .sort((a, b) => {
+      const aa = toTimestamp(a?.publishedAt)?.seconds || 0;
+      const bb = toTimestamp(b?.publishedAt)?.seconds || 0;
+      return bb - aa;
+    });
+}
+
+export async function addContentBlueprint(uid, payload = {}) {
+  if (!uid) throw new Error("Thiếu uid");
+
+  const data = {
+    name: String(payload.name || "").trim(),
+    language: normalizeVideoLanguageKey(payload.language),
+    videoType: normalizeVideoTypeKey(payload.videoType),
+    hookTemplate: String(payload.hookTemplate || "").trim(),
+    outlineTemplate: String(payload.outlineTemplate || "").trim(),
+    shotListTemplate: String(payload.shotListTemplate || "").trim(),
+    ctaTemplate: String(payload.ctaTemplate || "").trim(),
+    active: payload.active !== false,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  };
+
+  if (!data.name) throw new Error("Vui lòng nhập tên mẫu nội dung");
+  return addDoc(colContentBlueprints(uid), data);
+}
+
+export async function updateContentBlueprint(uid, blueprintId, payload = {}) {
+  const id = String(blueprintId || "").trim();
+  if (!uid || !id) throw new Error("Thiếu mã mẫu nội dung");
+
+  const data = {
+    updatedAt: Timestamp.now(),
+  };
+
+  if (payload.name != null) data.name = String(payload.name || "").trim();
+  if (payload.language != null) data.language = normalizeVideoLanguageKey(payload.language);
+  if (payload.videoType != null) data.videoType = normalizeVideoTypeKey(payload.videoType);
+  if (payload.hookTemplate != null) data.hookTemplate = String(payload.hookTemplate || "").trim();
+  if (payload.outlineTemplate != null) data.outlineTemplate = String(payload.outlineTemplate || "").trim();
+  if (payload.shotListTemplate != null) data.shotListTemplate = String(payload.shotListTemplate || "").trim();
+  if (payload.ctaTemplate != null) data.ctaTemplate = String(payload.ctaTemplate || "").trim();
+  if (payload.active != null) data.active = !!payload.active;
+
+  await updateDoc(doc(db, `users/${uid}/contentBlueprints/${id}`), data);
+  return true;
+}
+
+export async function listContentBlueprints(uid, filter = {}) {
+  if (!uid) return [];
+  const snap = await getDocs(query(colContentBlueprints(uid), orderBy("createdAt", "desc")));
+  let list = mapDocs(snap);
+
+  if (filter.language) {
+    const lang = normalizeVideoLanguageKey(filter.language);
+    list = list.filter((item) => normalizeVideoLanguageKey(item?.language) === lang);
+  }
+  if (filter.videoType) {
+    const type = normalizeVideoTypeKey(filter.videoType);
+    list = list.filter((item) => normalizeVideoTypeKey(item?.videoType) === type);
+  }
+  if (typeof filter.active === "boolean") {
+    list = list.filter((item) => !!item?.active === filter.active);
+  }
+
+  return list;
 }
 
 export async function awardXp(uid, payload) {

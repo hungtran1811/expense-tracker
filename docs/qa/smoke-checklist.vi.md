@@ -101,3 +101,46 @@
 - vào `#weekly-review` lần đầu không lỗi console.
 - bấm AI ở expenses/video/goals vẫn hoạt động đúng sau khi lazy-load module.
 - Test chuyển route liên tục (`dashboard -> video-plan -> goals -> weekly-review -> dashboard`) ít nhất 10 vòng, không duplicate event handler.
+
+## 12) Creator Ops Lite (Phase 3.0)
+- Video retro:
+- Mở panel `Kết quả xuất bản` từ card video.
+- Lưu `publishedAt`, `durationSec`, `views`, `ctr`, `retention30s`, `note` thành công.
+- Reload trang, dữ liệu retro vẫn còn.
+- Filter `Trạng thái kết quả`:
+- `Tất cả` hiển thị đầy đủ.
+- `Đã ghi kết quả` chỉ hiện task có retro.
+- `Chưa ghi kết quả` chỉ hiện task chưa retro.
+- Blueprint workflow:
+- Chọn `Ngôn ngữ` + `Loại template`, danh sách template cập nhật đúng.
+- `Áp dụng template` điền đúng `title/shotList/note/videoType`.
+- `Lưu template` từ form thành công và xuất hiện sau reload.
+- AI video copilot v3:
+- `Generate` và `Improve` trả đúng 3 phương án có `title/hook/outline/shotList/cta/videoType`.
+- `Áp dụng` điền form đúng mapping.
+- `Lưu thành template` từ option AI hoạt động.
+- Cooldown:
+- Khi request thành công, nút AI vào cooldown 8s.
+- Khi request lỗi, có thể bấm lại ngay, không bị kẹt loading.
+- Weekly review:
+- Có card `Hiệu suất video tuần`.
+- Hiển thị đúng `videosPublished/totalViews/avgCtr/avgRetention30s/avgDurationSec`.
+- Insight rule-based thay đổi theo dữ liệu (CTR thấp, retention thấp, sản lượng publish thấp).
+
+## 13) UX Polish Video Plan (Phase 3.0A)
+- Chụp baseline trước/sau ở 3 breakpoint: `<=767`, `768-991`, `>=992`.
+- Kiểm tra khu đầu trang `#video-plan`:
+- Tiêu đề + mô tả + form tạo mới đọc nhanh trong 3-5 giây.
+- Nhóm nút AI/template/thêm công việc không bị rối hoặc chồng lấn.
+- Kiểm tra card công việc ở chế độ `Bảng`:
+- Dòng 1: tiêu đề + ưu tiên.
+- Dòng 2: giai đoạn + hạn.
+- Dòng 3: badge kết quả + ghi chú + hành động.
+- Click vào thân card mở panel sửa nhanh đúng task.
+- Kiểm tra khu `Lịch`:
+- Click item trong `Lịch theo ngày` hoặc `Chưa lên lịch` mở đúng panel sửa.
+- Điều hướng tháng/ngày vẫn ổn định, không nhân đôi event.
+- Kiểm tra bộ lọc:
+- `Tìm nhanh` debounce mượt, không lag khi gõ liên tục.
+- `Đặt lại` đưa filter về mặc định và focus vào ô tìm nhanh.
+- Xác nhận không có text mới hardcode sai nguồn: các nhãn mới đi qua `copy.vi.js`.

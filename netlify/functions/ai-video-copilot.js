@@ -1,322 +1,524 @@
 ﻿const MODEL = "gemini-3-flash-latest";
-const PROMPT_VERSION = "2.8.2";
+const PROMPT_VERSION = "3.2.0";
+
 const { guardAiRequest, jsonResponse } = require("../utils/aiGuard.js");
 
-const SHOT_LIST_FALLBACK = {
-  python:
-    "- Hook 2s: vấn đề Python cần giải quyết\n- Demo kết quả 3-5s\n- Bước 1: setup dữ liệu nhanh\n- Bước 2: code logic cốt lõi\n- Bước 3: test nhanh 1-2 case\n- Chốt: bài tập tự luyện + CTA",
-  javascript:
-    "- Hook 2s: vấn đề JavaScript cần giải quyết\n- Demo kết quả 3-5s\n- Bước 1: setup state dữ liệu\n- Bước 2: xử lý sự kiện + cập nhật UI\n- Bước 3: test nhanh 1-2 case\n- Chốt: bài tập tự luyện + CTA",
+const SUPPORTED_TRACKS = new Set([
+  "python",
+  "javascript",
+  "frontend",
+  "backend",
+  "data_ai",
+  "automation",
+  "mobile",
+  "system_design",
+]);
+
+const TRACK_ALIASES = {
+  js: "javascript",
+  node: "backend",
+  nodejs: "backend",
+  "front-end": "frontend",
+  "back-end": "backend",
+  "data-ai": "data_ai",
+  data: "data_ai",
+  ai: "data_ai",
+  ml: "data_ai",
+  "system-design": "system_design",
+  architecture: "system_design",
 };
 
-const NOTE_FALLBACK = {
-  python:
-    "Bản Short 30s: 1 hook + 1 demo + 1 mẹo code + CTA.\nBản dài 5-10 phút: chia 3 phần (vấn đề, code, tổng kết).\nKhi đã quen: mở rộng 10-15+ phút với test/debug sâu hơn.\nCông nghệ/thư viện gợi ý: Python 3.12, Flask hoặc FastAPI, SQLite/Pandas.\nCách dạy: ví dụ thực tế, ngôn ngữ đơn giản cho người mới.\nKết mỗi phần bằng mini-bài tập để người xem tự làm lại.",
-  javascript:
-    "Bản Short 30s: 1 hook + 1 demo UI + 1 mẹo code + CTA.\nBản dài 5-10 phút: chia 3 phần (state, event, render).\nKhi đã quen: mở rộng 10-15+ phút với debug/refactor sâu hơn.\nCông nghệ/thư viện gợi ý: JavaScript ES2023, Vite, Chart.js hoặc React.\nCách dạy: đi từ kết quả đến code để người mới không bị ngợp.\nKết mỗi phần bằng mini-bài tập để người xem tự làm lại.",
+const TRACK_LABELS = {
+  python: "Python",
+  javascript: "JavaScript",
+  frontend: "Frontend",
+  backend: "Backend",
+  data_ai: "Data/AI",
+  automation: "Tự động hóa",
+  mobile: "Mobile",
+  system_design: "System Design",
 };
 
-const VIDEO_TEMPLATES = {
+const TRACK_FALLBACK_SEEDS = {
   python: [
     {
-      title: "Python: Expense tracker mini cho người mới",
+      title: "Python: Quản lý điểm thi bằng CSV cho lớp học",
+      hook: "Bạn có thể tự động tổng hợp điểm cả lớp chỉ bằng vài dòng Python.",
+      concept: "đọc file CSV, tính trung bình và xếp loại",
+      expansion: "thêm biểu đồ điểm theo từng học sinh",
+      resource: "https://docs.python.org/3/library/csv.html",
       priority: "high",
-      shotList:
-        "- Hook: vì sao nên học Python qua dự án thật\n- Demo output nhanh\n- Tạo model giao dịch\n- Viết hàm thêm/sửa/xóa\n- Tính tổng thu/chi\n- Chốt bài tập mở rộng",
-      note:
-        "Giải thích rất ngắn gọn từng bước để học sinh theo kịp.\nNhấn mạnh 1 lỗi thường gặp và cách sửa.\nGiữ code gọn, tránh lan man.\nCuối video chốt checklist hành động.",
-      reason: "Dự án gần gũi, tạo kết quả nhanh ngay buổi đầu.",
-      assetLinks: "https://docs.python.org/3/tutorial/\nhttps://fastapi.tiangolo.com/",
     },
     {
-      title: "Python: To-do list có deadline trong 10 phút",
+      title: "Python: Bot nhắc deadline học tập mỗi ngày",
+      hook: "Biến lịch học rối rắm thành bot nhắc việc chạy tự động.",
+      concept: "quét deadline và gửi nhắc việc đúng ngày",
+      expansion: "thêm mức ưu tiên và nhắc việc theo khung giờ",
+      resource: "https://docs.python.org/3/library/datetime.html",
       priority: "medium",
-      shotList:
-        "- Hook: vì sao to-do list là bài mở đầu tốt\n- Demo dữ liệu task\n- Tạo cấu trúc task + deadline\n- Viết logic thêm/xóa/đánh dấu\n- Lọc task quá hạn\n- Chốt bài tập nâng cấp",
-      note:
-        "Tách bài toán thành bước nhỏ để người mới đỡ ngợp.\nMỗi hàm làm 1 việc rõ ràng.\nCó phần debug nhanh khi nhập sai dữ liệu.\nKết video bằng bài tập tự luyện.",
-      reason: "Ngắn gọn, dễ làm theo và áp dụng ngay.",
-      assetLinks: "https://docs.python.org/3/tutorial/\nhttps://docs.python.org/3/library/datetime.html",
     },
     {
-      title: "Python: Quiz app chấm điểm tự động",
+      title: "Python: API TODO mini với FastAPI",
+      hook: "Tạo API chạy thật cho người mới chỉ trong 10 phút.",
+      concept: "CRUD TODO với FastAPI và validate dữ liệu",
+      expansion: "thêm auth token đơn giản",
+      resource: "https://fastapi.tiangolo.com/",
+      priority: "high",
+    },
+    {
+      title: "Python: Phân tích chi tiêu cá nhân với Pandas",
+      hook: "Từ file chi tiêu thô sang báo cáo dễ hiểu trong vài bước.",
+      concept: "lọc dữ liệu theo tháng, nhóm danh mục và đọc xu hướng",
+      expansion: "thêm cảnh báo khi chi vượt ngưỡng",
+      resource: "https://pandas.pydata.org/docs/",
       priority: "medium",
-      shotList:
-        "- Hook: học Python qua mini game\n- Demo 1 lượt chơi\n- Tạo mảng câu hỏi/đáp án\n- Xử lý chọn đáp án\n- Tính điểm\n- Chốt bài tập thêm cấp độ",
-      note:
-        "Ví dụ vui, hợp học sinh và newbie.\nGiải thích if/else + loop ngắn gọn.\nThêm phần xử lý lỗi nhập liệu.\nKết thúc bằng checklist tự luyện.",
-      reason: "Nội dung trực quan, dễ giữ chân người xem.",
-      assetLinks: "https://docs.python.org/3/tutorial/",
     },
   ],
   javascript: [
     {
-      title: "JavaScript: Expense tracker mini trên trình duyệt",
+      title: "JavaScript: Flashcard học từ vựng có localStorage",
+      hook: "Tự làm app flashcard để học đều mỗi ngày bằng JavaScript thuần.",
+      concept: "state thẻ, lật thẻ và lưu localStorage",
+      expansion: "thêm chế độ ôn tập thông minh",
+      resource: "https://developer.mozilla.org/docs/Web/API/Window/localStorage",
       priority: "high",
-      shotList:
-        "- Hook: học JS nhanh qua dự án thật\n- Demo UI cập nhật realtime\n- Tạo state giao dịch\n- Bind form + validate\n- Render danh sách\n- Chốt bài tập lọc theo tháng",
-      note:
-        "Dạy theo flow: kết quả trước, code sau.\nMỗi phần chỉ 1 mục tiêu rõ ràng.\nCó đoạn debug ngắn lỗi event listener.\nKết thúc bằng checklist thực hành.",
-      reason: "Trực quan, nhìn thấy kết quả ngay nên dễ theo.",
-      assetLinks: "https://developer.mozilla.org/docs/Web/JavaScript\nhttps://vite.dev/guide/",
     },
     {
-      title: "JavaScript: To-do Kanban mini cho người mới",
+      title: "JavaScript: Pomodoro timer cho người học code",
+      hook: "Build timer tập trung học code mà không cần thư viện nặng.",
+      concept: "start/pause/reset và xử lý setInterval ổn định",
+      expansion: "thêm thống kê số phiên học theo ngày",
+      resource: "https://developer.mozilla.org/docs/Web/API/setInterval",
       priority: "medium",
-      shotList:
-        "- Hook: từ to-do lên kanban rất nhanh\n- Demo 3 cột task\n- Tạo state task\n- Thêm/xóa/chuyển cột\n- Lưu localStorage\n- Chốt bài tập thêm deadline",
-      note:
-        "Tập trung 3 concept: state, event, render.\nVí dụ ngắn để tránh quá tải thông tin.\nHướng dẫn tách hàm nhỏ dễ đọc.\nCuối video giao bài tập nâng cấp UI.",
-      reason: "Giúp người mới hiểu cách JS vận hành trong app thực tế.",
-      assetLinks: "https://developer.mozilla.org/docs/Web/API/Window/localStorage\nhttps://developer.mozilla.org/docs/Web/JavaScript",
     },
     {
-      title: "JavaScript: Quiz app trắc nghiệm có đếm giờ",
+      title: "JavaScript: Form đăng ký với validate realtime",
+      hook: "Form đẹp chưa đủ, phải có phản hồi rõ thì người dùng mới hoàn thành.",
+      concept: "rule validate, hiển thị lỗi theo thời gian thực",
+      expansion: "thêm password strength meter",
+      resource: "https://developer.mozilla.org/docs/Learn/Forms/Form_validation",
+      priority: "high",
+    },
+    {
+      title: "JavaScript: Kanban mini kéo thả",
+      hook: "Từ TODO list lên Kanban bằng drag and drop thuần.",
+      concept: "cập nhật state khi kéo thả và lưu dữ liệu",
+      expansion: "thêm deadline badge để quản lý tiến độ",
+      resource: "https://developer.mozilla.org/docs/Web/API/HTML_Drag_and_Drop_API",
       priority: "medium",
-      shotList:
-        "- Hook: học JS qua game quiz\n- Demo 1 vòng quiz\n- Tạo bộ câu hỏi\n- Xử lý chọn đáp án\n- Tính điểm + đếm ngược\n- Chốt bài tập replay",
-      note:
-        "Giải thích quản lý state bằng object đơn giản.\nNêu mẹo tránh bug timer chạy trùng.\nMỗi bước đều có output để check.\nKết video bằng hướng mở rộng.",
-      reason: "Nội dung vui, phù hợp học sinh và người mới.",
-      assetLinks: "https://developer.mozilla.org/docs/Web/API/setInterval\nhttps://developer.mozilla.org/docs/Web/JavaScript",
+    },
+  ],
+  frontend: [
+    {
+      title: "Frontend: Redesign trang đăng nhập từ basic lên chuyên nghiệp",
+      hook: "Nâng cấp UI login trong 10 phút nhưng vẫn giữ UX dễ dùng.",
+      concept: "hierarchy, spacing và trạng thái input rõ ràng",
+      expansion: "thêm guideline responsive cho mobile",
+      resource: "https://developer.mozilla.org/docs/Web/CSS",
+      priority: "high",
+    },
+    {
+      title: "Frontend: Sửa lỗi vỡ card dashboard trên mobile",
+      hook: "3 kỹ thuật CSS giúp dashboard không vỡ layout trên màn nhỏ.",
+      concept: "grid minmax, text wrapping và action group co giãn",
+      expansion: "thêm checklist kiểm thử 3 breakpoint",
+      resource: "https://css-tricks.com/snippets/css/complete-guide-grid/",
+      priority: "medium",
+    },
+    {
+      title: "Frontend: Form UX với trạng thái lỗi-thành công chuẩn",
+      hook: "Người mới hay bỏ qua flow lỗi, và đó là chỗ UX quyết định chuyển đổi.",
+      concept: "empty/focus/error/success states và copy rõ ràng",
+      expansion: "thêm loading state chống bấm lặp",
+      resource: "https://www.nngroup.com/articles/form-design-placeholders/",
+      priority: "medium",
+    },
+    {
+      title: "Frontend: Accessibility nhanh cho web cá nhân",
+      hook: "A11y đúng cách giúp sản phẩm chuyên nghiệp hơn ngay lập tức.",
+      concept: "contrast, focus ring, keyboard navigation, aria-label",
+      expansion: "thêm checklist tự audit A11y hằng tuần",
+      resource: "https://www.w3.org/WAI/fundamentals/accessibility-intro/",
+      priority: "low",
+    },
+  ],
+  backend: [
+    {
+      title: "Backend: Auth JWT cho người mới từ A-Z",
+      hook: "Hiểu JWT theo cách thực chiến thay vì học thuộc lý thuyết.",
+      concept: "signup/login, token, middleware bảo vệ route",
+      expansion: "thêm refresh token cơ bản",
+      resource: "https://jwt.io/introduction",
+      priority: "high",
+    },
+    {
+      title: "Backend: Chuẩn hóa REST API sạch và dễ mở rộng",
+      hook: "REST API lộn xộn sẽ làm dự án khó scale hơn bạn nghĩ.",
+      concept: "endpoint naming, status code và error shape chuẩn",
+      expansion: "thêm versioning cho API",
+      resource: "https://restfulapi.net/",
+      priority: "medium",
+    },
+    {
+      title: "Backend: Caching Redis cho endpoint chậm",
+      hook: "Một lớp cache đúng chỗ có thể giảm độ trễ thấy rõ ngay.",
+      concept: "cache key, TTL, invalidation và benchmark",
+      expansion: "thêm theo dõi cache hit ratio",
+      resource: "https://redis.io/docs/latest/",
+      priority: "medium",
+    },
+    {
+      title: "Backend: Upload file an toàn trong app thực tế",
+      hook: "Upload file là chỗ dễ dính lỗi bảo mật nhất của backend newbie.",
+      concept: "validate file type/size và lưu trữ an toàn",
+      expansion: "thêm scan malware cho bản nâng cao",
+      resource: "https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload",
+      priority: "low",
+    },
+  ],
+  data_ai: [
+    {
+      title: "Data/AI: Dự đoán điểm thi bằng hồi quy tuyến tính",
+      hook: "Bắt đầu ML từ ví dụ gần gũi với học sinh để dễ nắm bản chất.",
+      concept: "chuẩn bị dữ liệu, train model và đọc sai số",
+      expansion: "thêm so sánh giữa 2 mô hình đơn giản",
+      resource: "https://scikit-learn.org/stable/supervised_learning.html",
+      priority: "high",
+    },
+    {
+      title: "Data/AI: Phân nhóm khách hàng bằng KMeans",
+      hook: "Từ dữ liệu thô đến insight thực tế chỉ qua 1 mini project.",
+      concept: "tiền xử lý dữ liệu và phân cụm cơ bản",
+      expansion: "vẽ biểu đồ giúp người mới đọc kết quả",
+      resource: "https://scikit-learn.org/stable/modules/clustering.html",
+      priority: "medium",
+    },
+    {
+      title: "Data/AI: AI tóm tắt ghi chú học tập tự động",
+      hook: "Dùng AI cho nhu cầu thật: đọc ghi chú dài trong 30 giây.",
+      concept: "prompt rõ mục tiêu và chuẩn hóa output",
+      expansion: "thêm chấm điểm chất lượng tóm tắt",
+      resource: "https://ai.google.dev/",
+      priority: "medium",
+    },
+    {
+      title: "Data/AI: Dashboard phân tích dữ liệu học tập",
+      hook: "Biến bảng số liệu khô khan thành dashboard dễ hành động.",
+      concept: "tổng hợp KPI chính và trực quan hóa đơn giản",
+      expansion: "thêm cảnh báo khi KPI giảm mạnh",
+      resource: "https://plotly.com/python/",
+      priority: "low",
+    },
+  ],
+  automation: [
+    {
+      title: "Automation: Script rename file hàng loạt có quy tắc",
+      hook: "Tiết kiệm hàng giờ thao tác tay bằng một script ngắn.",
+      concept: "đọc danh sách file và đổi tên theo pattern",
+      expansion: "thêm chế độ preview trước khi áp dụng",
+      resource: "https://docs.python.org/3/library/pathlib.html",
+      priority: "high",
+    },
+    {
+      title: "Automation: Tự động tổng hợp báo cáo tuần từ dữ liệu thô",
+      hook: "Mỗi tuần 1 file báo cáo tự động thay vì làm thủ công lặp lại.",
+      concept: "gom dữ liệu, tính KPI, xuất báo cáo",
+      expansion: "thêm gửi email sau khi tạo báo cáo",
+      resource: "https://pandas.pydata.org/docs/",
+      priority: "medium",
+    },
+    {
+      title: "Automation: Bot nhắc việc theo lịch cá nhân",
+      hook: "Không bỏ sót deadline khi có bot nhắc việc đúng lúc.",
+      concept: "đọc lịch, lọc deadline gần, gửi thông báo",
+      expansion: "thêm ưu tiên và lọc theo dự án",
+      resource: "https://docs.python.org/3/library/sched.html",
+      priority: "medium",
+    },
+    {
+      title: "Automation: Pipeline backup dữ liệu đơn giản",
+      hook: "Một pipeline backup nhỏ giúp bạn tránh mất dữ liệu quan trọng.",
+      concept: "zip, version file và dọn bản cũ",
+      expansion: "thêm restore script một chạm",
+      resource: "https://nodejs.org/api/fs.html",
+      priority: "low",
+    },
+  ],
+  mobile: [
+    {
+      title: "Mobile: Todo app 3 màn hình cho người mới",
+      hook: "Làm app mobile đầu tiên mà vẫn đủ thực tế để đem đi khoe.",
+      concept: "navigation, state cơ bản và lưu dữ liệu local",
+      expansion: "thêm filter theo trạng thái task",
+      resource: "https://reactnative.dev/docs/getting-started",
+      priority: "high",
+    },
+    {
+      title: "Mobile: Form nhập liệu chuẩn UX trên điện thoại",
+      hook: "Form mobile tốt giúp tỷ lệ hoàn thành tăng rõ rệt.",
+      concept: "keyboard handling, validate realtime, error copy",
+      expansion: "thêm auto-focus và submit nhanh",
+      resource: "https://developer.android.com/guide/topics/ui",
+      priority: "medium",
+    },
+    {
+      title: "Mobile: Danh sách card có pull-to-refresh",
+      hook: "Tạo trải nghiệm app mượt hơn với pull-to-refresh đúng chuẩn.",
+      concept: "list rendering, loading state và empty state",
+      expansion: "thêm skeleton loading",
+      resource: "https://reactnative.dev/docs/refreshcontrol",
+      priority: "medium",
+    },
+    {
+      title: "Mobile: Quản lý trạng thái màn hình đơn giản",
+      hook: "State không rõ ràng là nguyên nhân lớn nhất làm app mobile khó mở rộng.",
+      concept: "state theo module và luồng dữ liệu một chiều",
+      expansion: "thêm kiểm soát side effect cơ bản",
+      resource: "https://redux.js.org/introduction/getting-started",
+      priority: "low",
+    },
+  ],
+  system_design: [
+    {
+      title: "System Design: Thiết kế feed cơ bản cho ứng dụng nhỏ",
+      hook: "Hiểu hệ thống feed từ bản đơn giản để lên kiến trúc đúng ngay từ đầu.",
+      concept: "đọc/ghi dữ liệu, phân trang và cache cơ bản",
+      expansion: "thêm ranking tối thiểu theo thời gian",
+      resource: "https://www.educative.io/courses/grokking-the-system-design-interview",
+      priority: "high",
+    },
+    {
+      title: "System Design: Cache strategy cho website tăng traffic",
+      hook: "Không cần hệ thống lớn vẫn có thể áp dụng tư duy cache thực chiến.",
+      concept: "cache aside, TTL và invalidation",
+      expansion: "thêm theo dõi cache hit/miss",
+      resource: "https://redis.io/glossary/cache/",
+      priority: "medium",
+    },
+    {
+      title: "System Design: Queue xử lý tác vụ nền",
+      hook: "Request nào cũng xử lý đồng bộ thì app sẽ chậm và dễ lỗi.",
+      concept: "queue, worker, retry và dead-letter",
+      expansion: "thêm giám sát worker đơn giản",
+      resource: "https://aws.amazon.com/what-is/message-queue/",
+      priority: "medium",
+    },
+    {
+      title: "System Design: Logging và observability nhập môn",
+      hook: "Không có logging chuẩn thì debug production sẽ rất tốn thời gian.",
+      concept: "structured log, correlation id và metric chính",
+      expansion: "thêm alert theo ngưỡng lỗi",
+      resource: "https://opentelemetry.io/docs/",
+      priority: "low",
     },
   ],
 };
 
-const VARIANTS = [
-  { suffix: "bản 30s ngắn gọn", angle: "tập trung hook + kết quả + CTA" },
-  { suffix: "bản 5-10 phút cho người mới", angle: "đi từng bước rõ ràng" },
-  { suffix: "bản checklist thực hành", angle: "có bài tập nhỏ sau mỗi đoạn" },
-  { suffix: "bản debug lỗi thường gặp", angle: "chèn một lỗi thật và sửa ngay" },
-];
-
-function safeText(value, fallback = "") {
+function normalizeText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
 }
 
-function normalizeLanguage(value = "") {
-  const v = safeText(value, "").toLowerCase();
-  if (v === "python" || v === "javascript") return v;
-  return "python";
+function normalizeTrack(value = "", fallback = "python") {
+  const raw = normalizeText(value).toLowerCase().replace(/\s+/g, "_");
+  const mapped = TRACK_ALIASES[raw] || raw;
+  if (SUPPORTED_TRACKS.has(mapped)) return mapped;
+  return SUPPORTED_TRACKS.has(fallback) ? fallback : "python";
 }
 
 function normalizePriority(value = "") {
-  const v = safeText(value, "medium").toLowerCase();
-  return ["low", "medium", "high"].includes(v) ? v : "medium";
+  const raw = normalizeText(value, "medium").toLowerCase();
+  return ["low", "medium", "high"].includes(raw) ? raw : "medium";
+}
+
+function normalizeVideoType(value = "") {
+  const raw = normalizeText(value).toLowerCase();
+  if (raw === "short_30s") return "short_30s";
+  if (raw === "long_5_10") return "long_5_10";
+  return "long_5_10";
 }
 
 function normalizeDate(value = "") {
-  const v = safeText(value, "");
-  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
+  const text = normalizeText(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
 }
 
-function lines(value = "") {
+function toIdeaKey(value = "") {
   return String(value || "")
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function ensureBulletLines(value = "", minLines = 6, fallback = "") {
-  const normalized = lines(value).map((line) =>
-    line.startsWith("- ") ? line : `- ${line.replace(/^-+\s*/, "")}`
-  );
-  if (normalized.length >= minLines) return normalized.join("\n");
-  return lines(fallback)
-    .map((line) => (line.startsWith("- ") ? line : `- ${line.replace(/^-+\s*/, "")}`))
-    .join("\n");
-}
-
-function ensureParagraphLines(value = "", minLines = 6, fallback = "") {
-  const normalized = lines(value);
-  if (normalized.length >= minLines) return normalized.join("\n");
-  return lines(fallback).join("\n");
-}
-
-function isOptionLikeObject(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return ["title", "priority", "shotList", "assetLinks", "note", "deadlineSuggestion", "reason"].some(
-    (key) => safeText(value?.[key], "") !== ""
-  );
-}
-
-function hashToInt(value = "") {
-  const str = String(value || "");
-  let hash = 0;
-  for (let i = 0; i < str.length; i += 1) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-function rotateList(list = [], offset = 0) {
-  if (!Array.isArray(list) || !list.length) return [];
-  const n = Math.abs(Number(offset || 0)) % list.length;
-  return [...list.slice(n), ...list.slice(0, n)];
-}
-
-function detectLanguage(payload = {}) {
-  const explicit = normalizeLanguage(payload?.language || "");
-  if (payload?.language) return explicit;
-
-  const context = payload?.context || {};
-  const input = payload?.input || {};
-  const blob = [
-    safeText(context?.channelFocus, ""),
-    safeText(context?.targetAudience, ""),
-    safeText(context?.ownerTagline, ""),
-    ...(Array.isArray(context?.preferredTopics) ? context.preferredTopics : []),
-    safeText(input?.title, ""),
-    safeText(input?.note, ""),
-    safeText(input?.shotList, ""),
-  ]
-    .join(" ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
     .toLowerCase();
-
-  const py = blob.indexOf("python");
-  const js = Math.min(
-    ...[blob.indexOf("javascript"), blob.indexOf("java script")].filter((i) => i >= 0)
-  );
-
-  if (Number.isFinite(py) && !Number.isFinite(js)) return "python";
-  if (!Number.isFinite(py) && Number.isFinite(js)) return "javascript";
-  if (Number.isFinite(py) && Number.isFinite(js)) return py <= js ? "python" : "javascript";
-  return "python";
 }
 
-function applyVariant(template = {}, variant = {}) {
-  const suffix = safeText(variant?.suffix, "");
-  const angle = safeText(variant?.angle, "");
-  return {
-    ...template,
-    title: suffix ? `${safeText(template?.title, "Nội dung video")} - ${suffix}` : safeText(template?.title, "Nội dung video"),
-    note: [safeText(template?.note, ""), angle ? `Góc triển khai: ${angle}.` : ""].filter(Boolean).join("\n"),
-  };
+function hashSeed(value = "") {
+  const text = String(value || "");
+  let h = 0;
+  for (let i = 0; i < text.length; i += 1) h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  return h;
 }
 
-function normalizeOption(item = {}, payload = {}, language = "python") {
-  const input = payload?.input || {};
-  const shotFallback = SHOT_LIST_FALLBACK[language] || SHOT_LIST_FALLBACK.python;
-  const noteFallback = NOTE_FALLBACK[language] || NOTE_FALLBACK.python;
+function rotateBySeed(list = [], seedText = "") {
+  if (!Array.isArray(list) || !list.length) return [];
+  const shift = hashSeed(seedText || String(Date.now())) % list.length;
+  if (!shift) return list.slice();
+  return [...list.slice(shift), ...list.slice(0, shift)];
+}
 
-  const titleRaw = safeText(item?.title, "");
-  const inputTitle = safeText(input?.title, "");
-  const title =
-    titleRaw && inputTitle && titleRaw.toLowerCase() === inputTitle.toLowerCase()
-      ? `${titleRaw} - bản tối ưu cho người mới`
-      : titleRaw || (inputTitle ? `Nâng cấp: ${inputTitle}` : "Nội dung dự án cho người mới");
+function toMultilineText(value, fallback = "") {
+  if (Array.isArray(value)) {
+    const text = value.map((item) => normalizeText(item)).filter(Boolean).join("\n");
+    return text || fallback;
+  }
+  return normalizeText(value, fallback);
+}
+
+function normalizeOption(option = {}, fallback = {}) {
+  const merged = { ...fallback, ...option };
+  const title = normalizeText(merged.title);
+  const hook = toMultilineText(merged.hook);
+  const outline = toMultilineText(merged.outline);
+  const shotList = toMultilineText(merged.shotList);
+  const cta = toMultilineText(merged.cta);
+  const note = toMultilineText(merged.note);
+  if (!title || !hook || !outline || !shotList || !cta || !note) return null;
 
   return {
     title,
-    priority: normalizePriority(item?.priority),
-    shotList: ensureBulletLines(item?.shotList, 6, shotFallback),
-    assetLinks: safeText(item?.assetLinks, ""),
-    note: ensureParagraphLines(
-      `${safeText(item?.note, noteFallback)}\n${NOTE_FALLBACK[language] || NOTE_FALLBACK.python}`,
-      6,
-      noteFallback
-    ),
-    deadlineSuggestion: normalizeDate(item?.deadlineSuggestion || input?.deadline),
-    reason: safeText(item?.reason, "Nội dung sát mục tiêu dạy học qua dự án đơn giản."),
+    priority: normalizePriority(merged.priority),
+    hook,
+    outline,
+    shotList,
+    cta,
+    note,
+    assetLinks: normalizeText(merged.assetLinks),
+    videoType: normalizeVideoType(merged.videoType),
+    deadlineSuggestion: normalizeDate(merged.deadlineSuggestion),
+    reason: normalizeText(merged.reason),
   };
 }
 
-function buildLocalOptions(payload = {}, language = "python") {
-  const templates = VIDEO_TEMPLATES[language] || VIDEO_TEMPLATES.python;
-  const seed = hashToInt(
-    [safeText(payload?.nonce, ""), safeText(payload?.mode, "generate"), language, safeText(payload?.input?.title, "")].join("|")
-  );
-
-  const rotated = rotateList(templates, seed % Math.max(templates.length, 1));
-  const mode = safeText(payload?.mode, "generate").toLowerCase() === "improve" ? "improve" : "generate";
-  const input = payload?.input || {};
-
-  return rotated.slice(0, 3).map((template, index) => {
-    const variant = VARIANTS[(seed + index) % VARIANTS.length];
-    const flavored = applyVariant(template, variant);
-
-    if (mode === "improve" && index === 0) {
-      return normalizeOption(
-        {
-          ...flavored,
-          title: input?.title
-            ? `Nâng cấp: ${safeText(input?.title, "")} - ${safeText(variant?.suffix, "bản tối ưu")}`
-            : flavored.title,
-          shotList: `${safeText(input?.shotList, "")}\n${safeText(flavored?.shotList, "")}`,
-          note: `${safeText(input?.note, "")}\n${safeText(flavored?.note, "")}`,
-          assetLinks: safeText(input?.assetLinks, "") || flavored.assetLinks,
-          priority: safeText(input?.priority, flavored.priority),
-          deadlineSuggestion: normalizeDate(input?.deadline),
-          reason: "Đã cải thiện trực tiếp từ nội dung bạn đang nhập để dùng ngay.",
-        },
-        payload,
-        language
-      );
-    }
-
-    return normalizeOption(
-      {
-        ...flavored,
-        deadlineSuggestion: normalizeDate(input?.deadline),
-      },
-      payload,
-      language
-    );
-  });
+function buildBlockedTitleSet(payload = {}) {
+  const usedTitles = Array.isArray(payload?.context?.usedTitles) ? payload.context.usedTitles : [];
+  const recentIdeas = Array.isArray(payload?.context?.recentIdeas) ? payload.context.recentIdeas : [];
+  const inputTitle = normalizeText(payload?.input?.title);
+  const values = [...usedTitles, ...recentIdeas, inputTitle].filter(Boolean);
+  return new Set(values.map((title) => toIdeaKey(title)).filter(Boolean));
 }
 
-function buildPrompt(payload = {}, language = "python") {
-  const languageLabel = language === "python" ? "Python" : "JavaScript";
-  const forbiddenLabel = language === "python" ? "JavaScript" : "Python";
-
-  return `
-Bạn là AI Copilot cho creator nội dung lập trình.
-
-Yêu cầu bắt buộc:
-- Trả về DUY NHẤT 1 JSON object, không markdown.
-- Schema:
-{
-  "options": [
-    {
-      "title": "string",
-      "priority": "low|medium|high",
-      "shotList": "string",
-      "assetLinks": "string",
-      "note": "string",
-      "deadlineSuggestion": "YYYY-MM-DD hoặc rỗng",
-      "reason": "string ngắn"
-    }
-  ]
+function isBlockedTitle(title = "", blocked = new Set()) {
+  const key = toIdeaKey(title);
+  if (!key || !blocked?.size) return false;
+  if (blocked.has(key)) return true;
+  for (const existing of blocked) {
+    if (!existing) continue;
+    if (existing.length >= 10 && (key.includes(existing) || existing.includes(key))) return true;
+  }
+  return false;
 }
-- Trả về chính xác 3 options.
-- Chỉ dùng ${languageLabel}, không so sánh với ${forbiddenLabel}.
-- Mỗi option là 1 ý tưởng dự án thực tế cho người mới.
-- shotList tối thiểu 6 dòng bullet, mỗi dòng bắt đầu bằng "- ".
-- note tối thiểu 6 dòng, bắt buộc có:
-  1) "Bản Short 30s: ..."
-  2) "Bản dài 5-10 phút: ..."
-  3) "Khi đã quen: ..."
-  4) gợi ý stack + ít nhất 2 công nghệ/thư viện.
-- Tiếng Việt có dấu chuẩn UTF-8.
 
-Dữ liệu đầu vào:
-${JSON.stringify(payload, null, 2)}
-`.trim();
+function buildFallbackOption(seed = {}, index = 0, track = "python") {
+  const type = index % 2 === 0 ? "long_5_10" : "short_30s";
+  const typeText = type === "short_30s" ? "video ngắn 30 giây" : "video dài 5-10 phút";
+  const label = TRACK_LABELS[track] || "lập trình";
+
+  return {
+    title: normalizeText(seed.title, `${label}: Mini project cho người mới`),
+    priority: normalizePriority(seed.priority || "medium"),
+    hook: normalizeText(
+      seed.hook,
+      `Đây là ý tưởng ${label} giúp người mới có kết quả rõ ràng ngay trong video đầu tiên.`
+    ),
+    outline: [
+      "1) Mở bài 5-8 giây: nêu vấn đề thực tế người mới hay gặp.",
+      `2) Chốt mục tiêu video: ${normalizeText(seed.concept, "hoàn thành một mini project có thể chạy được")}.`,
+      "3) Triển khai từng bước ngắn, luôn giải thích vì sao làm như vậy.",
+      "4) Demo kết quả + nêu 1 lỗi thường gặp và cách sửa nhanh.",
+      `5) Bài tập mở rộng: ${normalizeText(seed.expansion, "thêm 1 tính năng nhỏ để người xem tự luyện")}.`,
+    ].join("\n"),
+    shotList: [
+      "- Cảnh 1: Hook facecam, nói rõ lợi ích người xem sẽ nhận được.",
+      "- Cảnh 2: Hiển thị kết quả cuối cùng trước để giữ người xem.",
+      "- Cảnh 3: Quay màn hình code bước 1-2 ngắn gọn.",
+      "- Cảnh 4: Nhấn mạnh lỗi phổ biến và cách xử lý nhanh.",
+      "- Cảnh 5: Chốt kết quả trước/sau khi áp dụng.",
+      "- Cảnh 6: CTA mời người xem làm lại và bình luận kết quả.",
+    ].join("\n"),
+    cta: "Bình luận \"mình làm được\" để mình gửi checklist tự luyện theo video này.",
+    note: `Giọng creator: rõ, thực chiến, không lý thuyết dài. Ưu tiên ${typeText} và dạy theo nhịp người mới.`,
+    assetLinks: normalizeText(seed.resource),
+    videoType: type,
+    deadlineSuggestion: "",
+    reason: normalizeText(
+      seed.reason,
+      `Ý tưởng bám sát hướng ${label}, dễ sản xuất, dễ hiểu cho học sinh và người mới.`
+    ),
+  };
+}
+
+function buildFallbackOptions(track = "python", payload = {}, maxItems = 3) {
+  const safeTrack = normalizeTrack(track);
+  const seeds = TRACK_FALLBACK_SEEDS[safeTrack] || TRACK_FALLBACK_SEEDS.python;
+  const blocked = buildBlockedTitleSet(payload);
+  const rotated = rotateBySeed(seeds, normalizeText(payload?.nonce) || normalizeText(payload?.input?.title));
+  const out = [];
+
+  for (let i = 0; i < rotated.length && out.length < maxItems; i += 1) {
+    const option = buildFallbackOption(rotated[i], i, safeTrack);
+    if (!option) continue;
+    if (isBlockedTitle(option.title, blocked)) continue;
+    if (out.some((item) => toIdeaKey(item.title) === toIdeaKey(option.title))) continue;
+    out.push(option);
+  }
+
+  for (let i = 0; i < rotated.length && out.length < maxItems; i += 1) {
+    const option = buildFallbackOption(rotated[i], i + 7, safeTrack);
+    if (!option) continue;
+    if (out.some((item) => toIdeaKey(item.title) === toIdeaKey(option.title))) continue;
+    out.push(option);
+  }
+
+  return out.slice(0, maxItems);
+}
+
+function normalizeOptions(rawOptions, fallbackOptions = [], payload = {}) {
+  const blocked = buildBlockedTitleSet(payload);
+  const list = Array.isArray(rawOptions) ? rawOptions : [];
+  const out = [];
+
+  for (let i = 0; i < list.length; i += 1) {
+    const normalized = normalizeOption(list[i], fallbackOptions[i] || fallbackOptions[0] || {});
+    if (!normalized) continue;
+    if (isBlockedTitle(normalized.title, blocked)) continue;
+    if (out.some((item) => toIdeaKey(item.title) === toIdeaKey(normalized.title))) continue;
+    out.push(normalized);
+    if (out.length >= 3) break;
+  }
+
+  for (const fallback of fallbackOptions) {
+    if (out.length >= 3) break;
+    const normalized = normalizeOption(fallback, fallback);
+    if (!normalized) continue;
+    if (out.some((item) => toIdeaKey(item.title) === toIdeaKey(normalized.title))) continue;
+    out.push(normalized);
+  }
+
+  return out.slice(0, 3);
 }
 
 function extractText(data = {}) {
   return (
     data?.candidates?.[0]?.content?.parts
-      ?.map((part) => part?.text || "")
-      .join(" ")
+      ?.map((part) => String(part?.text || ""))
+      .join("\n")
       .trim() || ""
   );
 }
 
 function parseJsonSafe(text = "") {
-  const raw = safeText(text, "");
+  const raw = normalizeText(text);
   if (!raw) return null;
 
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -333,26 +535,99 @@ function parseJsonSafe(text = "") {
   return null;
 }
 
-function normalizeOptions(value, fallback = [], payload = {}, language = "python") {
-  const base = Array.isArray(value) ? value.filter(isOptionLikeObject) : [];
-  const normalized = base
-    .map((item) => normalizeOption(item, payload, language))
-    .filter((item) => item.title && lines(item.shotList).length >= 6 && lines(item.note).length >= 6)
-    .slice(0, 3);
+function detectTrack(payload = {}) {
+  if (payload?.language) return normalizeTrack(payload.language, "python");
+  const text = [
+    normalizeText(payload?.input?.title),
+    normalizeText(payload?.input?.note),
+    normalizeText(payload?.context?.selectedTrack),
+    normalizeText(payload?.context?.selectedTrackLabel),
+  ]
+    .join(" ")
+    .toLowerCase();
 
-  const fallbackNorm = (Array.isArray(fallback) ? fallback : [])
-    .filter(isOptionLikeObject)
-    .map((item) => normalizeOption(item, payload, language));
+  if (/(python|fastapi|django|pandas)/.test(text)) return "python";
+  if (/(javascript|\bjs\b|react|vue|node)/.test(text)) return "javascript";
+  if (/(frontend|css|html|ux|ui)/.test(text)) return "frontend";
+  if (/(backend|api|server|database|auth)/.test(text)) return "backend";
+  if (/(data|ai|ml|machine learning|llm)/.test(text)) return "data_ai";
+  if (/(automation|workflow|script|bot|tự động)/.test(text)) return "automation";
+  if (/(mobile|android|ios|react native|flutter)/.test(text)) return "mobile";
+  if (/(system design|kiến trúc|scalability|cache|queue)/.test(text)) return "system_design";
+  return "python";
+}
 
-  const out = [...normalized];
-  for (const item of fallbackNorm) {
-    if (out.length >= 3) break;
-    if (!out.some((existing) => existing.title.toLowerCase() === item.title.toLowerCase())) {
-      out.push(item);
+function buildPrompt(payload = {}, track = "python") {
+  const safeTrack = normalizeTrack(track, "python");
+  const mode = normalizeText(payload?.mode, "generate").toLowerCase() === "improve" ? "improve" : "generate";
+  const label = TRACK_LABELS[safeTrack] || "Python";
+
+  const context = payload?.context && typeof payload.context === "object" ? payload.context : {};
+  const usedTitles = Array.isArray(context.usedTitles) ? context.usedTitles.slice(0, 80) : [];
+  const recentIdeas = Array.isArray(context.recentIdeas) ? context.recentIdeas.slice(0, 20) : [];
+
+  const promptInput = {
+    mode,
+    track: safeTrack,
+    trackLabel: label,
+    input: payload?.input && typeof payload.input === "object" ? payload.input : {},
+    creatorContext: {
+      channelFocus: normalizeText(
+        context.channelFocus,
+        "Kênh YouTube dạy lập trình qua dự án thực tế, đơn giản, dễ hiểu cho người mới."
+      ),
+      audience: normalizeText(
+        context.targetAudience,
+        "Học sinh, sinh viên và người mới bắt đầu học lập trình"
+      ),
+      goal: normalizeText(
+        context.creatorGoal,
+        "Ưu tiên ý tưởng có thể quay nhanh, nội dung rõ ràng, giữ lịch đăng đều."
+      ),
+      preferredTopics: Array.isArray(context.preferredTopics) ? context.preferredTopics.slice(0, 12) : [],
+    },
+    usedTitles,
+    recentIdeas,
+  };
+
+  return `
+Bạn là AI biên tập nội dung cho một creator dạy lập trình thực chiến.
+
+MỤC TIÊU:
+- Tạo ý tưởng MỚI, không lặp lại những gì đã làm.
+- Viết theo giọng creator: rõ ràng, hành động, dễ quay, không máy móc.
+- Chỉ tập trung vào chủ đề: ${label}. Không so sánh với ngôn ngữ/chủ đề khác.
+
+RÀNG BUỘC BẮT BUỘC:
+1) Trả về DUY NHẤT một JSON object, không markdown.
+2) Đúng schema:
+{
+  "options": [
+    {
+      "title": "string",
+      "priority": "low|medium|high",
+      "hook": "string",
+      "outline": "string",
+      "shotList": "string",
+      "cta": "string",
+      "note": "string",
+      "assetLinks": "string",
+      "videoType": "short_30s|long_5_10",
+      "deadlineSuggestion": "YYYY-MM-DD hoặc rỗng",
+      "reason": "string"
     }
-  }
+  ]
+}
+3) Chính xác 3 options.
+4) Mỗi option phải đủ title/hook/outline/shotList/cta/note và đều dùng tiếng Việt có dấu.
+5) Không trùng hoặc gần trùng với danh sách ý tưởng đã dùng.
+6) Trong 3 options phải có ít nhất 1 "short_30s" và 1 "long_5_10".
+7) Nếu mode=improve, phải dùng input hiện tại để nâng cấp ý tưởng theo hướng sắc nét hơn.
+8) shotList phải cụ thể theo cảnh quay, không ghi chung chung.
 
-  return out.slice(0, 3);
+INPUT:
+${JSON.stringify(promptInput, null, 2)}
+`.trim();
 }
 
 exports.handler = async function handler(event) {
@@ -372,21 +647,21 @@ exports.handler = async function handler(event) {
 
   const normalizedPayload = {
     ...payload,
-    mode: safeText(payload?.mode, "generate"),
-    nonce: safeText(payload?.nonce, ""),
-    language: safeText(payload?.language, ""),
+    mode: normalizeText(payload?.mode, "generate"),
+    language: normalizeText(payload?.language),
     input: payload?.input && typeof payload.input === "object" ? payload.input : {},
     context: payload?.context && typeof payload.context === "object" ? payload.context : {},
+    nonce: normalizeText(payload?.nonce),
   };
 
-  const language = detectLanguage(normalizedPayload);
-  const fallbackOptions = buildLocalOptions(normalizedPayload, language);
-  const apiKey = process.env.GEMINI_API_KEY;
+  const track = detectTrack(normalizedPayload);
+  const fallbackOptions = buildFallbackOptions(track, normalizedPayload, 3);
 
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return jsonResponse(200, {
       options: fallbackOptions,
-      language,
+      language: track,
       model: MODEL,
       promptVersion: PROMPT_VERSION,
       fallback: true,
@@ -394,50 +669,51 @@ exports.handler = async function handler(event) {
   }
 
   try {
+    const prompt = buildPrompt(normalizedPayload, track);
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
-    const prompt = buildPrompt(normalizedPayload, language);
 
-    const res = await fetch(url, {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: 0.7,
-          topP: 0.92,
-          maxOutputTokens: 1200,
+          temperature: 0.95,
+          topP: 0.95,
+          maxOutputTokens: 1800,
         },
       }),
     });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      console.error("ai-video-copilot Gemini error:", res.status, errText);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error("ai-video-copilot Gemini error:", response.status, errorText);
       return jsonResponse(200, {
         options: fallbackOptions,
-        language,
+        language: track,
         model: MODEL,
         promptVersion: PROMPT_VERSION,
         fallback: true,
       });
     }
 
-    const data = await res.json();
+    const data = await response.json();
     const text = extractText(data);
     const parsed = parseJsonSafe(text);
-    const options = normalizeOptions(parsed?.options, fallbackOptions, normalizedPayload, language);
+    const options = normalizeOptions(parsed?.options, fallbackOptions, normalizedPayload);
 
     return jsonResponse(200, {
-      options,
-      language,
+      options: options.length ? options : fallbackOptions,
+      language: track,
       model: MODEL,
       promptVersion: PROMPT_VERSION,
+      fallback: !options.length,
     });
   } catch (err) {
     console.error("ai-video-copilot error:", err);
     return jsonResponse(200, {
       options: fallbackOptions,
-      language,
+      language: track,
       model: MODEL,
       promptVersion: PROMPT_VERSION,
       fallback: true,

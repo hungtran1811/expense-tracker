@@ -31,6 +31,7 @@ import {
   updateIncome,
   deleteIncome,
   saveAppliedAiSuggestion,
+  listAppliedAiSuggestions,
 } from "../services/firebase/firestore.js";
 import { exportCsvCurrentMonth } from "../features/export/exportCsv.js";
 import { AI_BACKGROUND_ENABLED } from "../shared/constants/featureFlags.js";
@@ -63,6 +64,12 @@ import {
   removeVideoTask,
   updateVideoTaskDetails,
   buildVideoCalendarVM,
+  loadVideoRetros,
+  saveVideoRetro,
+  loadContentBlueprints,
+  saveContentBlueprint,
+  ensureDefaultContentBlueprints,
+  buildBlueprintPayloadFromSuggestion,
 } from "../features/videoPlan/videoPlan.controller.js";
 import {
   createDefaultVideoFilters,
@@ -99,7 +106,8 @@ import { loadRouteModule, preloadRouteModule, loadAiServices } from "./moduleLoa
 
 const SETTINGS_DEBOUNCE_MS = 700;
 const AI_REQUEST_TIMEOUT_MS = 15000;
-const AI_COOLDOWN_MS = 2000;
+const VIDEO_AI_COOLDOWN_MS = 2000;
+const GOAL_AI_COOLDOWN_MS = 8000;
 const AI_EXPENSE_DEBOUNCE_MS = 600;
 const AI_EXPENSE_AUTO_CONFIDENCE = 0.75;
 const DEFAULT_EXPENSE_FILTERS = { category: "all", account: "all", search: "" };
@@ -116,6 +124,8 @@ const state = {
   todayHabitLogs: [],
   habitProgress: {},
   videoTasks: [],
+  videoRetrosByTaskId: {},
+  contentBlueprints: [],
   motivation: buildDefaultMotivationSummary(),
   videoFilters: createDefaultVideoFilters(),
   videoCalendar: loadVideoCalendarState(new Date()),
@@ -144,6 +154,11 @@ const state = {
     mode: "generate",
     options: [],
     inputSnapshot: null,
+  },
+  videoAiHistory: {
+    loadedAt: 0,
+    usedTitles: [],
+    recentIdeas: [],
   },
   goalAi: {
     loading: false,
@@ -667,6 +682,34 @@ function handleSettingsPatch(partialPatch, meta = {}) {
 function localizeStaticVietnamese() {
   document.documentElement.lang = "vi";
   document.title = t("brand.name", "NEXUS OS");
+  const setText = (id, path, fallback) => {
+    const el = byId(id);
+    if (el) el.textContent = t(path, fallback);
+  };
+
+  setText("videoPlanTitle", "videoPlan.layout.pageTitle", "Kế hoạch video YouTube");
+  setText(
+    "videoPlanSubtitle",
+    "videoPlan.layout.pageSubtitle",
+    "Vận hành lịch sản xuất nội dung theo 6 giai đoạn rõ ràng và dễ theo dõi."
+  );
+  setText("videoCreateTitle", "videoPlan.layout.createTitle", "Tạo nhanh công việc video");
+  setText(
+    "videoCreateSubtitle",
+    "videoPlan.layout.createSubtitle",
+    "Điền thông tin cốt lõi, sau đó dùng AI hoặc template để hoàn thiện nội dung."
+  );
+  setText("videoFilterTitle", "videoPlan.layout.filtersTitle", "Bộ lọc và điều hướng");
+  setText(
+    "videoFilterSubtitle",
+    "videoPlan.layout.filtersSubtitle",
+    "Lọc theo giai đoạn, ưu tiên, trạng thái kết quả và từ khóa."
+  );
+  setText("videoViewModeLabel", "videoPlan.layout.viewModeLabel", "Chế độ hiển thị");
+  setText("videoCalendarAgendaTitle", "videoPlan.layout.agendaTitle", "Lịch theo ngày");
+  setText("videoCalendarUnscheduledTitle", "videoPlan.layout.unscheduledTitle", "Chưa lên lịch");
+  setText("videoCalendarOpenBoardLink", "videoPlan.layout.openBoard", "Mở bảng video");
+
   byId("btnSidebarToggle")?.setAttribute("aria-label", "Mở điều hướng");
   byId("appToast")
     ?.querySelector(".btn-close")
@@ -885,7 +928,11 @@ async function loadMotivation(uid) {
 }
 
 function getFilteredVideoTasks() {
-  return filterVideoTasks(state.videoTasks, state.videoFilters);
+  const tasksWithRetro = (Array.isArray(state.videoTasks) ? state.videoTasks : []).map((task) => ({
+    ...task,
+    hasRetro: !!state.videoRetrosByTaskId?.[task.id],
+  }));
+  return filterVideoTasks(tasksWithRetro, state.videoFilters);
 }
 
 function renderVideoCalendarWithTasks(tasks = []) {
@@ -917,6 +964,129 @@ function renderVideoBoardWithFilters() {
 
 function syncVideoFilterControls() {
   hydrateVideoFilterControls(state.videoFilters);
+}
+
+const VIDEO_TRACKS = [
+  "python",
+  "javascript",
+  "frontend",
+  "backend",
+  "data_ai",
+  "automation",
+  "mobile",
+  "system_design",
+];
+
+const VIDEO_TRACK_TO_BLUEPRINT_LANGUAGE = {
+  python: "python",
+  javascript: "javascript",
+  frontend: "javascript",
+  backend: "javascript",
+  data_ai: "python",
+  automation: "python",
+  mobile: "javascript",
+  system_design: "javascript",
+};
+
+const VIDEO_TRACK_LABEL = {
+  python: "Python",
+  javascript: "JavaScript",
+  frontend: "Frontend thực chiến",
+  backend: "Backend thực chiến",
+  data_ai: "Data/AI ứng dụng",
+  automation: "Tự động hóa thực tế",
+  mobile: "Mobile app cơ bản",
+  system_design: "System design nhập môn",
+};
+
+const VIDEO_TRACK_TOPICS = {
+  python: ["Project Python cơ bản", "Tư duy giải bài toán từng bước", "Debug cho người mới"],
+  javascript: ["Project JavaScript thuần", "DOM và event thực chiến", "Mini app chạy được ngay"],
+  frontend: ["UI/UX cho người mới", "Responsive thực tế", "Tối ưu trải nghiệm người dùng"],
+  backend: ["Xây API từ đầu", "Auth và bảo mật cơ bản", "Database cho dự án nhỏ"],
+  data_ai: ["Phân tích dữ liệu dễ hiểu", "Ứng dụng AI vào bài toán thật", "Mini project với model có sẵn"],
+  automation: ["Tự động hóa tác vụ lặp lại", "Script tiết kiệm thời gian", "Workflow cá nhân hóa"],
+  mobile: ["Mini app mobile cho người mới", "Navigation và state cơ bản", "Tối ưu trải nghiệm trên điện thoại"],
+  system_design: ["Thiết kế hệ thống nhập môn", "Scalability cơ bản", "Tư duy kiến trúc qua ví dụ đơn giản"],
+};
+
+const VIDEO_TRACK_KEYWORDS = {
+  python: ["python", "pandas", "django", "fastapi", "flask"],
+  javascript: ["javascript", "js", "node", "react", "vue"],
+  frontend: ["frontend", "ui", "ux", "css", "html"],
+  backend: ["backend", "api", "server", "database", "auth"],
+  data_ai: ["ai", "data", "machine learning", "llm", "pandas", "numpy"],
+  automation: ["automation", "tự động", "workflow", "script", "bot"],
+  mobile: ["mobile", "android", "ios", "react native", "flutter"],
+  system_design: ["system design", "kiến trúc", "scalability", "cache", "queue"],
+};
+
+function normalizeVideoTrack(value = "", fallback = "python") {
+  const selected = String(value || "").trim().toLowerCase();
+  if (VIDEO_TRACKS.includes(selected)) return selected;
+  return VIDEO_TRACKS.includes(fallback) ? fallback : "python";
+}
+
+function getSelectedVideoTrack() {
+  return normalizeVideoTrack(byId("videoAiLanguage")?.value || "", "python");
+}
+
+function getSelectedVideoLanguage() {
+  return getSelectedVideoTrack();
+}
+
+function getBlueprintLanguageByTrack(track = "python") {
+  const safeTrack = normalizeVideoTrack(track, "python");
+  return VIDEO_TRACK_TO_BLUEPRINT_LANGUAGE[safeTrack] || "python";
+}
+
+function getSelectedBlueprintLanguage() {
+  return getBlueprintLanguageByTrack(getSelectedVideoTrack());
+}
+
+function getSelectedVideoType() {
+  const selected = String(byId("videoBlueprintType")?.value || byId("videoType")?.value || "")
+    .trim()
+    .toLowerCase();
+  return selected === "long" ? "long" : "short";
+}
+
+function getFilteredBlueprints() {
+  const language = getSelectedBlueprintLanguage();
+  const videoType = getSelectedVideoType();
+  return (Array.isArray(state.contentBlueprints) ? state.contentBlueprints : []).filter(
+    (item) =>
+      String(item?.language || "").toLowerCase() === language &&
+      String(item?.videoType || "").toLowerCase() === videoType &&
+      item?.active !== false
+  );
+}
+
+function syncVideoBlueprintControls() {
+  const select = byId("videoBlueprintSelect");
+  if (!select) return;
+
+  const currentValue = String(select.value || "").trim();
+  const filtered = getFilteredBlueprints();
+  const optionsHtml = filtered.length
+    ? filtered
+        .map((item) => {
+          const id = String(item?.id || "").trim();
+          const name = escapeHtml(String(item?.name || "").trim() || t("videoPlan.blueprints.fallbackName", "Mẫu nội dung AI"));
+          return `<option value="${escapeHtml(id)}">${name}</option>`;
+        })
+        .join("")
+    : `<option value="">${escapeHtml(t("videoPlan.blueprints.noData", "Chưa có template phù hợp. Hãy tạo từ AI gợi ý đầu tiên."))}</option>`;
+
+  select.innerHTML = `<option value="">${escapeHtml(
+    t("videoPlan.blueprints.placeholder", "Chọn mẫu nội dung")
+  )}</option>${optionsHtml}`;
+
+  if (filtered.some((item) => String(item?.id || "") === currentValue)) {
+    select.value = currentValue;
+  } else {
+    select.value = "";
+  }
 }
 
 function escapeSelector(value = "") {
@@ -972,8 +1142,24 @@ async function loadVideo(uid) {
   const tasks = await loadVideoTasks(uid);
   state.videoTasks = Array.isArray(tasks) ? tasks : [];
 
+  const [retros, blueprints] = await Promise.all([
+    loadVideoRetros(
+      uid,
+      state.videoTasks.map((task) => task.id)
+    ),
+    ensureDefaultContentBlueprints(uid),
+  ]);
+
+  state.videoRetrosByTaskId = (Array.isArray(retros) ? retros : []).reduce((acc, item) => {
+    const id = String(item?.taskId || item?.id || "").trim();
+    if (id) acc[id] = item;
+    return acc;
+  }, {});
+  state.contentBlueprints = Array.isArray(blueprints) ? blueprints : [];
+
   mergeVideoCalendarState(loadVideoCalendarState(new Date()), { persist: false });
   syncVideoFilterControls();
+  syncVideoBlueprintControls();
   renderVideoBoardWithFilters();
   renderVideoSummary(byId("dashboardVideoSummary"), state.videoTasks);
   focusPendingVideoTask();
@@ -1054,6 +1240,8 @@ function resetAppView() {
   state.todayHabitLogs = [];
   state.habitProgress = {};
   state.videoTasks = [];
+  state.videoRetrosByTaskId = {};
+  state.contentBlueprints = [];
   state.weeklyReviewVm = null;
   state.expenseAiSuggestion = null;
   state.expenseAiRequestId = 0;
@@ -1064,6 +1252,11 @@ function resetAppView() {
     mode: "generate",
     options: [],
     inputSnapshot: null,
+  };
+  state.videoAiHistory = {
+    loadedAt: 0,
+    usedTitles: [],
+    recentIdeas: [],
   };
   state.goalAi = {
     loading: false,
@@ -1571,6 +1764,7 @@ function bindFilterEvents() {
     persistRememberedFilterState("incomeState", state.incomeFilters);
   });
 
+  let videoFilterTimer = null;
   const syncVideoFilters = () => {
     state.videoFilters = readVideoFiltersFromControls(state.videoFilters);
     saveVideoFilters(state.videoFilters);
@@ -1580,13 +1774,25 @@ function bindFilterEvents() {
 
   byId("videoFilterStage")?.addEventListener("change", syncVideoFilters);
   byId("videoFilterPriority")?.addEventListener("change", syncVideoFilters);
-  byId("videoFilterQuery")?.addEventListener("input", syncVideoFilters);
+  byId("videoRetroFilter")?.addEventListener("change", syncVideoFilters);
+  byId("videoFilterQuery")?.addEventListener("input", () => {
+    if (videoFilterTimer) clearTimeout(videoFilterTimer);
+    videoFilterTimer = setTimeout(() => {
+      syncVideoFilters();
+      videoFilterTimer = null;
+    }, 220);
+  });
   byId("btnVideoFilterReset")?.addEventListener("click", () => {
+    if (videoFilterTimer) {
+      clearTimeout(videoFilterTimer);
+      videoFilterTimer = null;
+    }
     state.videoFilters = createDefaultVideoFilters();
     syncVideoFilterControls();
     saveVideoFilters(state.videoFilters);
     renderVideoBoardWithFilters();
     persistRememberedFilterState("videoState", state.videoFilters);
+    byId("videoFilterQuery")?.focus();
   });
 }
 
@@ -1685,21 +1891,32 @@ function renderVideoAiSuggestions() {
     .map((item, index) => {
       const title =
         String(item?.title || "").trim() ||
-        t("ai.videoCopilot.optionUntitled", "Ph\u01b0\u01a1ng \u00e1n ch\u01b0a c\u00f3 ti\u00eau \u0111\u1ec1");
+        t("ai.videoCopilot.optionUntitled", "Phương án chưa có tiêu đề");
       const priority = String(item?.priority || "medium").trim();
       const deadline = String(item?.deadlineSuggestion || "").trim();
       const note = String(item?.note || "").trim();
       const shotList = String(item?.shotList || "").trim();
       const reason = String(item?.reason || "").trim();
-      const optionIndexLabel = formatTemplate(
-        t("ai.videoCopilot.optionIndex", "Ph\u01b0\u01a1ng \u00e1n {{index}}"),
-        { index: index + 1 }
-      );
+      const hook = String(item?.hook || "").trim();
+      const outline = String(item?.outline || "").trim();
+      const cta = String(item?.cta || "").trim();
+      const videoType = String(item?.videoType || "").trim();
+      const optionIndexLabel = formatTemplate(t("ai.videoCopilot.optionIndex", "Phương án {{index}}"), {
+        index: index + 1,
+      });
       const safeTitle = escapeHtml(title);
       const safePriority = escapeHtml(priority);
       const safeReason = multilineToHtml(reason);
       const safeShotList = multilineToHtml(shotList);
       const safeNote = multilineToHtml(note);
+      const safeHook = multilineToHtml(hook);
+      const safeOutline = multilineToHtml(outline);
+      const safeCta = multilineToHtml(cta);
+      const videoTypeLabel =
+        videoType === "short_30s"
+          ? t("videoPlan.blueprints.short", "Video ngắn 30s")
+          : t("videoPlan.blueprints.long", "Video dài 5-10 phút");
+
       return `
         <article class="ai-suggestion-card">
           <div class="ai-suggestion-card-head">
@@ -1712,37 +1929,67 @@ function renderVideoAiSuggestions() {
           <div class="ai-suggestion-meta small text-muted">
             ${
               deadline
-                ? `${t("ai.videoCopilot.deadline", "H\u1ea1n g\u1ee3i \u00fd")}: ${escapeHtml(deadline)}`
-                : t("ai.videoCopilot.noDeadline", "Kh\u00f4ng c\u00f3 h\u1ea1n g\u1ee3i \u00fd")
+                ? `${t("ai.videoCopilot.deadline", "Hạn gợi ý")}: ${escapeHtml(deadline)}`
+                : t("ai.videoCopilot.noDeadline", "Không có hạn gợi ý")
             }
+          </div>
+          <div class="ai-suggestion-meta small text-muted">
+            ${t("ai.videoCopilot.videoTypeLabel", "Định dạng video")}: ${escapeHtml(videoTypeLabel)}
           </div>
           ${
             reason
               ? `<div class="ai-suggestion-block mt-2">
-                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.reasonLabel", "L\u00fd do g\u1ee3i \u00fd")}</div>
+                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.reasonLabel", "Lý do gợi ý")}</div>
                    <div class="small">${safeReason}</div>
+                 </div>`
+              : ""
+          }
+          ${
+            hook
+              ? `<div class="ai-suggestion-block mt-2">
+                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.hookLabel", "Hook mở đầu")}</div>
+                   <div class="small text-muted ai-suggestion-content">${safeHook}</div>
+                 </div>`
+              : ""
+          }
+          ${
+            outline
+              ? `<div class="ai-suggestion-block mt-2">
+                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.outlineLabel", "Dàn ý triển khai")}</div>
+                   <div class="small text-muted ai-suggestion-content">${safeOutline}</div>
                  </div>`
               : ""
           }
           ${
             shotList
               ? `<div class="ai-suggestion-block mt-2">
-                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.shotListLabel", "Danh s\u00e1ch c\u1ea3nh quay")}</div>
+                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.shotListLabel", "Danh sách cảnh quay")}</div>
                    <div class="small text-muted ai-suggestion-content">${safeShotList}</div>
+                 </div>`
+              : ""
+          }
+          ${
+            cta
+              ? `<div class="ai-suggestion-block mt-2">
+                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.ctaLabel", "Kêu gọi hành động")}</div>
+                   <div class="small text-muted ai-suggestion-content">${safeCta}</div>
                  </div>`
               : ""
           }
           ${
             note
               ? `<div class="ai-suggestion-block mt-2">
-                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.noteLabel", "Ghi ch\u00fa tri\u1ec3n khai")}</div>
+                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.noteLabel", "Ghi chú triển khai")}</div>
                    <div class="small text-muted ai-suggestion-content">${safeNote}</div>
                  </div>`
               : ""
           }
-          <div class="mt-2">
+          <div class="mt-2 d-flex flex-wrap gap-2">
             <button class="btn btn-sm btn-outline-primary btn-video-ai-apply" data-index="${index}">
-              ${t("ai.common.apply", "\u00c1p d\u1ee5ng to\u00e0n b\u1ed9")}
+              ${t("ai.common.apply", "Áp dụng toàn bộ")}
+            </button>
+            <button class="btn btn-sm btn-outline-secondary btn-video-ai-save-blueprint" data-index="${index}">
+              ${t("ai.videoCopilot.saveTemplate", "Lưu thành template")}
             </button>
           </div>
         </article>
@@ -1782,6 +2029,7 @@ function readVideoFormInput() {
     title: (byId("videoTitle")?.value || "").trim(),
     deadline: byId("videoDeadline")?.value || "",
     priority: byId("videoPriority")?.value || "medium",
+    videoType: byId("videoType")?.value || "short",
     scriptUrl: (byId("videoScriptUrl")?.value || "").trim(),
     shotList: (byId("videoShotList")?.value || "").trim(),
     assetLinks: (byId("videoAssetLinks")?.value || "").trim(),
@@ -1789,11 +2037,116 @@ function readVideoFormInput() {
   };
 }
 
-function detectVideoLanguageHint(input = {}) {
-  const selected = String(byId("videoAiLanguage")?.value || "").trim().toLowerCase();
-  if (selected === "python" || selected === "javascript") {
-    return selected;
+function normalizeIdeaTitle(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function collectUsedVideoTitlesFromTasks() {
+  return (Array.isArray(state.videoTasks) ? state.videoTasks : [])
+    .map((item) => String(item?.title || "").trim())
+    .filter(Boolean);
+}
+
+async function loadVideoAiHistory(uid) {
+  const now = Date.now();
+  const cacheMs = 90 * 1000;
+  if (state.videoAiHistory?.loadedAt && now - state.videoAiHistory.loadedAt < cacheMs) {
+    return state.videoAiHistory;
   }
+
+  const taskTitles = collectUsedVideoTitlesFromTasks();
+  const currentOptionTitles = (Array.isArray(state.videoAi?.options) ? state.videoAi.options : [])
+    .map((item) => String(item?.title || "").trim())
+    .filter(Boolean);
+  let aiTitles = [];
+  let recentIdeas = [];
+
+  try {
+    const applied = await listAppliedAiSuggestions(uid, { type: "video-copilot", limitCount: 60 });
+    aiTitles = (Array.isArray(applied) ? applied : [])
+      .map((item) => {
+        const outputTitle = String(item?.appliedOutput?.title || "").trim();
+        const inputTitle = String(item?.inputSnapshot?.title || "").trim();
+        return outputTitle || inputTitle;
+      })
+      .filter(Boolean);
+
+    recentIdeas = (Array.isArray(applied) ? applied : [])
+      .map((item) => String(item?.appliedOutput?.title || "").trim())
+      .filter(Boolean)
+      .slice(0, 12);
+  } catch (err) {
+    console.error("loadVideoAiHistory error", err);
+  }
+
+  const uniqueMap = new Map();
+  [...taskTitles, ...aiTitles].forEach((title) => {
+    const key = normalizeIdeaTitle(title);
+    if (!key || uniqueMap.has(key)) return;
+    uniqueMap.set(key, title);
+  });
+
+  const mergedRecent = [...currentOptionTitles, ...recentIdeas];
+  const uniqueRecent = [];
+  const recentKeys = new Set();
+  for (const title of mergedRecent) {
+    const key = normalizeIdeaTitle(title);
+    if (!key || recentKeys.has(key)) continue;
+    recentKeys.add(key);
+    uniqueRecent.push(title);
+    if (uniqueRecent.length >= 20) break;
+  }
+
+  state.videoAiHistory = {
+    loadedAt: now,
+    usedTitles: Array.from(uniqueMap.values()).slice(0, 80),
+    recentIdeas: uniqueRecent,
+  };
+  return state.videoAiHistory;
+}
+
+function rememberVideoAiAppliedTitle(title = "") {
+  const safeTitle = String(title || "").trim();
+  const key = normalizeIdeaTitle(safeTitle);
+  if (!key) return;
+
+  const currentUsed = Array.isArray(state.videoAiHistory?.usedTitles) ? state.videoAiHistory.usedTitles : [];
+  const currentRecent = Array.isArray(state.videoAiHistory?.recentIdeas) ? state.videoAiHistory.recentIdeas : [];
+
+  const used = [];
+  const usedKeys = new Set();
+  [safeTitle, ...currentUsed].forEach((item) => {
+    const ideaKey = normalizeIdeaTitle(item);
+    if (!ideaKey || usedKeys.has(ideaKey)) return;
+    usedKeys.add(ideaKey);
+    used.push(String(item || "").trim());
+  });
+
+  const recent = [];
+  const recentKeys = new Set();
+  [safeTitle, ...currentRecent].forEach((item) => {
+    const ideaKey = normalizeIdeaTitle(item);
+    if (!ideaKey || recentKeys.has(ideaKey)) return;
+    recentKeys.add(ideaKey);
+    recent.push(String(item || "").trim());
+  });
+
+  state.videoAiHistory = {
+    loadedAt: Date.now(),
+    usedTitles: used.slice(0, 80),
+    recentIdeas: recent.slice(0, 20),
+  };
+}
+
+function detectVideoLanguageHint(input = {}) {
+  const selectedTrack = normalizeVideoTrack(byId("videoAiLanguage")?.value || "", "");
+  if (selectedTrack) return selectedTrack;
 
   const text = [
     String(input?.title || ""),
@@ -1803,28 +2156,31 @@ function detectVideoLanguageHint(input = {}) {
     .join(" ")
     .toLowerCase();
 
-  const hasPython = /\bpython\b/.test(text);
-  const hasJavascript = /\bjavascript\b|\bjs\b|java script/.test(text);
-
-  if (hasPython && !hasJavascript) return "python";
-  if (hasJavascript && !hasPython) return "javascript";
-  return "python";
+  const matched = VIDEO_TRACKS.find((track) =>
+    (VIDEO_TRACK_KEYWORDS[track] || []).some((kw) => text.includes(String(kw || "").toLowerCase()))
+  );
+  return matched || "python";
 }
 
-function buildVideoAiContext() {
+function buildVideoAiContext({ track = "python", usedTitles = [], recentIdeas = [] } = {}) {
+  const safeTrack = normalizeVideoTrack(track, "python");
   const profile = state?.settings?.profile || {};
   return {
     channelFocus:
       "Kênh YouTube hướng dẫn lập trình qua dự án thực tế đơn giản, dễ hiểu cho học sinh và người mới bắt đầu.",
     targetAudience: "Học sinh, sinh viên và người mới bắt đầu học lập trình",
-    preferredTopics: [
-      "Dự án Python cơ bản",
-      "Dự án JavaScript cơ bản",
-      "Ứng dụng thực tế dễ triển khai",
-    ],
-    tone: "Thực chiến, dễ hiểu, có checklist từng bước",
+    creatorGoal:
+      "Ưu tiên nội dung có thể quay nhanh, dạy rõ ràng, tạo giá trị thực tế và duy trì lịch đăng đều.",
+    selectedTrack: safeTrack,
+    selectedTrackLabel: VIDEO_TRACK_LABEL[safeTrack] || "Python",
+    preferredTopics: VIDEO_TRACK_TOPICS[safeTrack] || VIDEO_TRACK_TOPICS.python,
+    tone: "Đóng vai content creator thực chiến, giàu ý tưởng mới, không máy móc, tập trung hành động.",
     ownerName: String(profile?.displayName || "Hưng Trần").trim(),
     ownerTagline: String(profile?.tagline || "").trim(),
+    outputRule:
+      "Mỗi phương án phải có hook, dàn ý, shot list, CTA, note; luôn có videoType short_30s hoặc long_5_10.",
+    usedTitles: (Array.isArray(usedTitles) ? usedTitles : []).slice(0, 80),
+    recentIdeas: (Array.isArray(recentIdeas) ? recentIdeas : []).slice(0, 12),
   };
 }
 
@@ -1834,11 +2190,26 @@ function applyVideoSuggestion(option = {}) {
   setInputValue("videoPriority", String(option?.priority || "medium").trim() || "medium");
   setInputValue("videoShotList", String(option?.shotList || "").trim());
   setInputValue("videoAssetLinks", String(option?.assetLinks || "").trim());
-  setInputValue("videoNote", String(option?.note || "").trim());
+  const noteSections = [
+    String(option?.hook || "").trim() ? `Hook: ${String(option?.hook || "").trim()}` : "",
+    String(option?.outline || "").trim() ? `Dàn ý:\n${String(option?.outline || "").trim()}` : "",
+    String(option?.cta || "").trim() ? `CTA: ${String(option?.cta || "").trim()}` : "",
+    String(option?.note || "").trim(),
+  ].filter(Boolean);
+  setInputValue("videoNote", noteSections.join("\n\n"));
+  const videoType = String(option?.videoType || "").trim();
+  if (videoType === "short_30s") {
+    setInputValue("videoType", "short");
+    setInputValue("videoBlueprintType", "short");
+  } else if (videoType === "long_5_10") {
+    setInputValue("videoType", "long");
+    setInputValue("videoBlueprintType", "long");
+  }
   const deadline = String(option?.deadlineSuggestion || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(deadline)) {
     setInputValue("videoDeadline", deadline);
   }
+  syncVideoBlueprintControls();
 }
 
 async function handleVideoAiAction(mode = "generate") {
@@ -1859,23 +2230,31 @@ async function handleVideoAiAction(mode = "generate") {
 
   state.videoAi.loading = true;
   state.videoAi.mode = mode === "improve" ? "improve" : "generate";
+  let shouldCooldown = false;
   setVideoAiButtonsState();
   try {
     const inputSnapshot = readVideoFormInput();
+    const track = detectVideoLanguageHint(inputSnapshot);
+    const history = await loadVideoAiHistory(uid);
     state.videoAi.inputSnapshot = inputSnapshot;
     const ai = await ensureAiServicesModule();
     const res = await ai.getVideoCopilotSuggestions(
       {
         mode: state.videoAi.mode,
         input: inputSnapshot,
-        language: detectVideoLanguageHint(inputSnapshot),
-        context: buildVideoAiContext(),
+        language: track,
+        context: buildVideoAiContext({
+          track,
+          usedTitles: history?.usedTitles || [],
+          recentIdeas: history?.recentIdeas || [],
+        }),
         nonce: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       },
       { timeoutMs: AI_REQUEST_TIMEOUT_MS }
     );
 
     state.videoAi.options = Array.isArray(res?.options) ? res.options.slice(0, 3) : [];
+    shouldCooldown = true;
     renderVideoAiSuggestions();
     showToast(
       res?.fallback
@@ -1896,7 +2275,7 @@ async function handleVideoAiAction(mode = "generate") {
     );
   } finally {
     state.videoAi.loading = false;
-    state.videoAi.cooldownUntil = Date.now() + AI_COOLDOWN_MS;
+    state.videoAi.cooldownUntil = shouldCooldown ? Date.now() + VIDEO_AI_COOLDOWN_MS : 0;
     setVideoAiButtonsState();
     scheduleAiCooldownUiTick();
   }
@@ -2056,7 +2435,7 @@ async function handleGoalAiAction(mode = "generate") {
     );
   } finally {
     state.goalAi.loading = false;
-    state.goalAi.cooldownUntil = Date.now() + AI_COOLDOWN_MS;
+    state.goalAi.cooldownUntil = Date.now() + GOAL_AI_COOLDOWN_MS;
     setGoalAiButtonsState();
     scheduleAiCooldownUiTick();
   }
@@ -2361,8 +2740,10 @@ function bindVideoEvents() {
   bindState.video = true;
 
   const videoEditPanel = byId("editVideoTaskModal");
+  const videoRetroPanel = byId("videoRetroPanel");
   renderVideoAiSuggestions();
   setVideoAiButtonsState();
+  syncVideoBlueprintControls();
   setVideoPlanViewMode(state.videoCalendar?.viewMode || "board", { persist: false });
 
   const handleSelectCalendarDate = (dateKey) => {
@@ -2431,10 +2812,13 @@ function bindVideoEvents() {
     }
 
     const openBtn = e.target.closest(".btn-video-calendar-open");
-    const taskId = String(openBtn?.dataset?.id || "").trim();
+    const taskEl = e.target.closest(".calendar-agenda-item[data-task-id], .calendar-unscheduled-item[data-task-id]");
+    const taskId = String(openBtn?.dataset?.id || taskEl?.dataset?.taskId || "").trim();
     if (!taskId) return;
 
-    handleVideoFocusRequest(taskId);
+    if (!openVideoEditTask(taskId)) {
+      handleVideoFocusRequest(taskId);
+    }
   });
 
   window.addEventListener("nexus:video-focus", (event) => {
@@ -2451,23 +2835,133 @@ function bindVideoEvents() {
     void handleVideoAiAction("improve");
   });
 
+  byId("videoAiLanguage")?.addEventListener("change", () => {
+    syncVideoBlueprintControls();
+  });
+
+  byId("videoBlueprintType")?.addEventListener("change", () => {
+    const selected = byId("videoBlueprintType")?.value || "short";
+    setInputValue("videoType", selected);
+    syncVideoBlueprintControls();
+  });
+
+  byId("videoType")?.addEventListener("change", () => {
+    setInputValue("videoBlueprintType", byId("videoType")?.value || "short");
+    syncVideoBlueprintControls();
+  });
+
   byId("videoAiSuggestionList")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest(".btn-video-ai-apply");
-    if (!btn) return;
-    const index = Number(btn.dataset.index);
+    const applyBtn = e.target.closest(".btn-video-ai-apply");
+    const saveBtn = e.target.closest(".btn-video-ai-save-blueprint");
+    if (!applyBtn && !saveBtn) return;
+
+    const btn = applyBtn || saveBtn;
+    const index = Number(btn?.dataset?.index);
     if (!Number.isFinite(index)) return;
     const option = state.videoAi.options[index];
     if (!option) return;
 
-    applyVideoSuggestion(option);
-    showToast(t("toast.videoAiApplied", "Đã áp dụng phương án AI vào form video."), "success");
-    await saveAppliedAiSuggestionSafe({
-      type: "video-copilot",
-      mode: state.videoAi.mode || "generate",
-      inputSnapshot: state.videoAi.inputSnapshot || {},
-      appliedOutput: option,
-      appliedAt: new Date(),
-    });
+    if (applyBtn) {
+      applyVideoSuggestion(option);
+      rememberVideoAiAppliedTitle(option?.title || "");
+      showToast(t("toast.videoAiApplied", "Đã áp dụng phương án AI vào form video."), "success");
+      await saveAppliedAiSuggestionSafe({
+        type: "video-copilot",
+        mode: state.videoAi.mode || "generate",
+        inputSnapshot: state.videoAi.inputSnapshot || {},
+        appliedOutput: option,
+        appliedAt: new Date(),
+      });
+      return;
+    }
+
+    if (saveBtn) {
+      const uid = ensureUser();
+      if (!uid) return;
+      try {
+        const payload = buildBlueprintPayloadFromSuggestion(option, getSelectedBlueprintLanguage());
+        await saveContentBlueprint(uid, payload);
+        state.contentBlueprints = await loadContentBlueprints(uid);
+        syncVideoBlueprintControls();
+        showToast(t("toast.blueprintSaved", "Đã lưu template nội dung."), "success");
+      } catch (err) {
+        console.error("save blueprint from ai error", err);
+        showToast(
+          err?.message || t("toast.blueprintSaveFail", "Không thể lưu template nội dung."),
+          "error"
+        );
+      }
+    }
+  });
+
+  byId("btnVideoApplyBlueprint")?.addEventListener("click", () => {
+    const selectedId = String(byId("videoBlueprintSelect")?.value || "").trim();
+    if (!selectedId) {
+      showToast(t("toast.blueprintApplyFail", "Không thể áp dụng template đã chọn."), "info");
+      return;
+    }
+
+    const blueprint = (Array.isArray(state.contentBlueprints) ? state.contentBlueprints : []).find(
+      (item) => String(item?.id || "").trim() === selectedId
+    );
+    if (!blueprint) {
+      showToast(t("toast.blueprintApplyFail", "Không thể áp dụng template đã chọn."), "error");
+      return;
+    }
+
+    const title = byId("videoTitle")?.value?.trim();
+    if (!title) {
+      setInputValue("videoTitle", blueprint.name || "");
+    }
+    setInputValue("videoShotList", blueprint.shotListTemplate || "");
+
+    const note = [
+      blueprint.hookTemplate ? `Hook: ${blueprint.hookTemplate}` : "",
+      blueprint.outlineTemplate ? `Dàn ý:\n${blueprint.outlineTemplate}` : "",
+      blueprint.ctaTemplate ? `CTA: ${blueprint.ctaTemplate}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    if (note) setInputValue("videoNote", note);
+
+    setInputValue("videoType", blueprint.videoType || "short");
+    setInputValue("videoBlueprintType", blueprint.videoType || "short");
+
+    showToast(t("toast.blueprintApplied", "Đã áp dụng template vào form video."), "success");
+  });
+
+  byId("btnVideoSaveBlueprint")?.addEventListener("click", async () => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    try {
+      const payload = {
+        name: (byId("videoTitle")?.value || "").trim() || t("videoPlan.blueprints.fallbackName", "Mẫu nội dung AI"),
+        language: getSelectedBlueprintLanguage(),
+        videoType: getSelectedVideoType(),
+        hookTemplate: "",
+        outlineTemplate: "",
+        shotListTemplate: (byId("videoShotList")?.value || "").trim(),
+        ctaTemplate: "",
+        active: true,
+      };
+
+      const note = (byId("videoNote")?.value || "").trim();
+      if (note) {
+        payload.outlineTemplate = note;
+      }
+
+      await saveContentBlueprint(uid, payload);
+      state.contentBlueprints = await loadContentBlueprints(uid);
+      syncVideoBlueprintControls();
+      showToast(t("toast.blueprintSaved", "Đã lưu template nội dung."), "success");
+    } catch (err) {
+      console.error("save blueprint error", err);
+      showToast(
+        err?.message || t("toast.blueprintSaveFail", "Không thể lưu template nội dung."),
+        "error"
+      );
+    }
   });
 
   const resetVideoEditForm = () => {
@@ -2511,7 +3005,55 @@ function bindVideoEvents() {
     setValue("evNote", task.note || "");
   };
 
+  function openVideoEditTask(taskId = "") {
+    const id = String(taskId || "").trim();
+    if (!id) return false;
+    const task = state.videoTasks.find((item) => item.id === id);
+    if (!task) {
+      showToast(t("toast.videoNotFound", "Không tìm thấy công việc video"), "error");
+      return false;
+    }
+    if (!videoEditPanel) {
+      showToast(t("toast.videoUpdateFail", "Không thể cập nhật công việc video"), "error");
+      return false;
+    }
+
+    fillVideoEditForm(task);
+    bootstrap.Offcanvas.getOrCreateInstance(videoEditPanel)?.show();
+    return true;
+  }
+
+  const resetVideoRetroForm = () => {
+    ["vrTaskId", "vrPublishedAt", "vrDurationSec", "vrViews", "vrCtr", "vrRetention30s", "vrNote"].forEach(
+      (id) => {
+        const el = byId(id);
+        if (el) el.value = "";
+      }
+    );
+    const titleEl = byId("vrTaskTitle");
+    if (titleEl) titleEl.textContent = "";
+  };
+
+  const fillVideoRetroForm = (task) => {
+    if (!task) return;
+    const retro = state.videoRetrosByTaskId?.[task.id] || null;
+
+    setInputValue("vrTaskId", task.id || "");
+    setInputValue("vrPublishedAt", toInputDate(retro?.publishedAt || task?.deadline));
+    setInputValue("vrDurationSec", retro?.durationSec ?? "");
+    setInputValue("vrViews", retro?.views ?? "");
+    setInputValue("vrCtr", retro?.ctr ?? "");
+    setInputValue("vrRetention30s", retro?.retention30s ?? "");
+    setInputValue("vrNote", retro?.note || "");
+
+    const titleEl = byId("vrTaskTitle");
+    if (titleEl) {
+      titleEl.textContent = String(task?.title || "").trim();
+    }
+  };
+
   videoEditPanel?.addEventListener("hidden.bs.offcanvas", resetVideoEditForm);
+  videoRetroPanel?.addEventListener("hidden.bs.offcanvas", resetVideoRetroForm);
 
   byId("btnAddVideoTask")?.addEventListener("click", async () => {
     const uid = ensureUser();
@@ -2543,6 +3085,9 @@ function bindVideoEvents() {
         if (el) el.value = "";
       });
       setInputValue("videoPriority", "medium");
+      setInputValue("videoType", "short");
+      setInputValue("videoBlueprintType", "short");
+      syncVideoBlueprintControls();
 
       showToast(t("toast.videoAdded", "Đã thêm công việc video mới."), "success");
       await refreshVideoAndMotivation(uid);
@@ -2576,26 +3121,35 @@ function bindVideoEvents() {
     if (!card?.dataset?.id) return;
 
     const taskId = card.dataset.id;
+    const retroBtn = e.target.closest(".btn-video-retro-open");
     const editBtn = e.target.closest(".btn-video-edit");
     const deleteBtn = e.target.closest(".btn-video-del");
 
-    if (editBtn) {
+    if (retroBtn) {
       const task = state.videoTasks.find((item) => item.id === taskId);
       if (!task) {
         showToast(t("toast.videoNotFound", "Không tìm thấy công việc video"), "error");
         return;
       }
-      if (!videoEditPanel) {
-        showToast(t("toast.videoUpdateFail", "Không thể cập nhật công việc video"), "error");
+      if (!videoRetroPanel) {
+        showToast(t("toast.videoRetroOpenFail", "Không thể mở dữ liệu kết quả xuất bản."), "error");
         return;
       }
 
-      fillVideoEditForm(task);
-      bootstrap.Offcanvas.getOrCreateInstance(videoEditPanel)?.show();
+      fillVideoRetroForm(task);
+      bootstrap.Offcanvas.getOrCreateInstance(videoRetroPanel)?.show();
       return;
     }
 
-    if (!deleteBtn) return;
+    if (editBtn) {
+      openVideoEditTask(taskId);
+      return;
+    }
+
+    if (!deleteBtn) {
+      openVideoEditTask(taskId);
+      return;
+    }
 
     const uid = ensureUser();
     if (!uid) return;
@@ -2607,6 +3161,52 @@ function bindVideoEvents() {
     } catch (err) {
       console.error("removeVideoTask error", err);
       showToast(err?.message || t("toast.videoDeleteFail", "Không thể xóa công việc video"), "error");
+    }
+  });
+
+  byId("btnVideoRetroSave")?.addEventListener("click", async () => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    const taskId = String(byId("vrTaskId")?.value || "").trim();
+    if (!taskId) {
+      showToast(t("toast.videoRetroOpenFail", "Không thể mở dữ liệu kết quả xuất bản."), "error");
+      return;
+    }
+    const task = state.videoTasks.find((item) => item.id === taskId);
+    if (!task) {
+      showToast(t("toast.videoNotFound", "Không tìm thấy công việc video"), "error");
+      return;
+    }
+
+    const payload = {
+      taskId,
+      titleSnapshot: task.title || "",
+      language: getSelectedBlueprintLanguage(),
+      videoType: byId("videoType")?.value || "short",
+      publishedAt: byId("vrPublishedAt")?.value || null,
+      durationSec: Number(byId("vrDurationSec")?.value || 0),
+      views: Number(byId("vrViews")?.value || 0),
+      ctr: Number(byId("vrCtr")?.value || 0),
+      retention30s: Number(byId("vrRetention30s")?.value || 0),
+      note: (byId("vrNote")?.value || "").trim(),
+    };
+
+    try {
+      const saved = await saveVideoRetro(uid, taskId, payload);
+      state.videoRetrosByTaskId[taskId] = saved;
+      renderVideoBoardWithFilters();
+      if (videoRetroPanel) {
+        bootstrap.Offcanvas.getOrCreateInstance(videoRetroPanel)?.hide();
+      }
+      showToast(t("toast.videoRetroSaved", "Đã lưu kết quả xuất bản."), "success");
+      await refreshWeeklyReviewIfVisible(uid);
+    } catch (err) {
+      console.error("saveVideoRetro error", err);
+      showToast(
+        err?.message || t("toast.videoRetroSaveFail", "Không thể lưu kết quả xuất bản."),
+        "error"
+      );
     }
   });
 
