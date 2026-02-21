@@ -91,3 +91,13 @@
 - thao tác lặp trong cùng phiên không gây full refresh nặng bất thường.
 - i18n gate mở rộng:
 - `npm run check:i18n` phải quét cả `src`, `netlify/functions`, `docs/releases`, `docs/qa`, `index.html`.
+
+## 11) Performance Gate (Phase 2.9)
+- Chạy `npm run build` và ghi lại size chunk JS chính từ output.
+- Xác nhận KPI pass: chunk JS chính `<= 400KB`.
+- Nếu chưa đạt, ghi rõ mức hiện tại và tạo backlog patch `2.9.x-p1`.
+- Test lazy-load:
+- vào `#dashboard` lần đầu không lỗi console.
+- vào `#weekly-review` lần đầu không lỗi console.
+- bấm AI ở expenses/video/goals vẫn hoạt động đúng sau khi lazy-load module.
+- Test chuyển route liên tục (`dashboard -> video-plan -> goals -> weekly-review -> dashboard`) ít nhất 10 vòng, không duplicate event handler.

@@ -51,6 +51,12 @@ function renderRoute(routeId) {
 
   updateTopbar(id);
 
+  window.dispatchEvent(
+    new CustomEvent("nexus:route-changed", {
+      detail: { routeId: id },
+    })
+  );
+
   try {
     localStorage.setItem(LAST_ROUTE_KEY, id);
   } catch (err) {

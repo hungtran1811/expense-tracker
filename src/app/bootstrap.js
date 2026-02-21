@@ -33,9 +33,6 @@ import {
   saveAppliedAiSuggestion,
 } from "../services/firebase/firestore.js";
 import { exportCsvCurrentMonth } from "../features/export/exportCsv.js";
-import { suggestCategory } from "../services/api/aiCategorize.js";
-import { getVideoCopilotSuggestions } from "../services/api/aiVideoCopilot.js";
-import { getGoalSuggestions } from "../services/api/aiGoalSuggest.js";
 import { AI_BACKGROUND_ENABLED } from "../shared/constants/featureFlags.js";
 import {
   loadGoalsData,
@@ -86,14 +83,6 @@ import {
   VIDEO_STAGES,
 } from "../features/videoPlan/videoPlan.ui.js";
 import {
-  buildDashboardCommandCenterVM,
-} from "../features/dashboard/dashboard.controller.js";
-import {
-  renderDashboardCommandCenter,
-  renderDashboardActionBoard,
-} from "../features/dashboard/dashboard.ui.js";
-import { initDashboardEvents } from "../features/dashboard/dashboard.events.js";
-import {
   createDefaultSettings,
   loadSettings,
   applySettingsToApp,
@@ -105,17 +94,8 @@ import {
   renderSettingsSaveState,
   bindSettingsEvents,
 } from "../features/settings/settings.ui.js";
-import {
-  buildWeeklyReviewVM,
-  saveWeeklyReviewPlan,
-  parseWeeklyPlanInput,
-} from "../features/weeklyReview/weeklyReview.controller.js";
-import {
-  bindWeeklyReviewEvents,
-  renderWeeklyReviewPage,
-  renderWeeklyReviewSaveState,
-} from "../features/weeklyReview/weeklyReview.ui.js";
 import { t, formatTemplate } from "../shared/constants/copy.vi.js";
+import { loadRouteModule, preloadRouteModule, loadAiServices } from "./moduleLoader.js";
 
 const SETTINGS_DEBOUNCE_MS = 700;
 const AI_REQUEST_TIMEOUT_MS = 15000;
@@ -186,6 +166,41 @@ const bindState = {
   weeklyReview: false,
   routeSync: false,
 };
+
+let dashboardModule = null;
+let weeklyReviewModule = null;
+let aiServicesModule = null;
+let dashboardModulePromise = null;
+let weeklyReviewModulePromise = null;
+
+async function ensureDashboardModule() {
+  if (dashboardModule) return dashboardModule;
+  if (!dashboardModulePromise) {
+    dashboardModulePromise = loadRouteModule("dashboard").then((mod) => {
+      dashboardModule = mod || {};
+      return dashboardModule;
+    });
+  }
+  return dashboardModulePromise;
+}
+
+async function ensureWeeklyReviewModule() {
+  if (weeklyReviewModule) return weeklyReviewModule;
+  if (!weeklyReviewModulePromise) {
+    weeklyReviewModulePromise = loadRouteModule("weekly-review").then((mod) => {
+      weeklyReviewModule = mod || {};
+      return weeklyReviewModule;
+    });
+  }
+  return weeklyReviewModulePromise;
+}
+
+async function ensureAiServicesModule() {
+  if (!aiServicesModule) {
+    aiServicesModule = await loadAiServices();
+  }
+  return aiServicesModule;
+}
 
 function byId(id) {
   return document.getElementById(id);
@@ -416,7 +431,9 @@ function resetWeeklyReviewSaveState() {
     status: "idle",
     savedAt: null,
   };
-  renderWeeklyReviewSaveState(state.weeklyReviewSaveState);
+  if (weeklyReviewModule?.renderWeeklyReviewSaveState) {
+    weeklyReviewModule.renderWeeklyReviewSaveState(state.weeklyReviewSaveState);
+  }
 }
 
 function setSettingsSaveState(next = {}) {
@@ -432,7 +449,9 @@ function setWeeklyReviewSaveState(next = {}) {
     ...state.weeklyReviewSaveState,
     ...next,
   };
-  renderWeeklyReviewSaveState(state.weeklyReviewSaveState);
+  if (weeklyReviewModule?.renderWeeklyReviewSaveState) {
+    weeklyReviewModule.renderWeeklyReviewSaveState(state.weeklyReviewSaveState);
+  }
 }
 
 async function flushSettingsSave() {
@@ -804,9 +823,16 @@ function updateMonthBadge() {
 }
 
 function renderDashboardCenter() {
-  const vm = buildDashboardCommandCenterVM(state, new Date());
-  renderDashboardCommandCenter(vm);
-  renderDashboardActionBoard(vm?.actionBoard || {});
+  if (!dashboardModule) {
+    void ensureDashboardModule().then(() => {
+      renderDashboardCenter();
+    });
+    return;
+  }
+
+  const vm = dashboardModule.buildDashboardCommandCenterVM(state, new Date());
+  dashboardModule.renderDashboardCommandCenter(vm);
+  dashboardModule.renderDashboardActionBoard(vm?.actionBoard || {});
 }
 
 function updateDashboardFinance({ expTotal, incTotal }) {
@@ -965,10 +991,11 @@ function weeklyReviewOptions() {
 async function loadWeeklyReview(uid, weekKey = "") {
   if (!uid) return;
 
+  const module = await ensureWeeklyReviewModule();
   const targetWeekKey = String(weekKey || state.weeklyReviewVm?.weekKey || "").trim();
-  const vm = await buildWeeklyReviewVM(uid, targetWeekKey, weeklyReviewOptions());
+  const vm = await module.buildWeeklyReviewVM(uid, targetWeekKey, weeklyReviewOptions());
   state.weeklyReviewVm = vm;
-  renderWeeklyReviewPage(vm, state.weeklyReviewSaveState);
+  module.renderWeeklyReviewPage(vm, state.weeklyReviewSaveState);
 }
 
 async function refreshWeeklyReviewIfVisible(uid) {
@@ -1079,7 +1106,9 @@ function resetAppView() {
   resetExpenseAiHint();
   renderMotivationDashboard(byId("dashboardMotivation"), state.motivation);
   renderMotivationDetails(state.motivation);
-  renderWeeklyReviewPage(null, state.weeklyReviewSaveState);
+  if (weeklyReviewModule?.renderWeeklyReviewPage) {
+    weeklyReviewModule.renderWeeklyReviewPage(null, state.weeklyReviewSaveState);
+  }
 
   const balance = byId("balanceList");
   if (balance) balance.innerHTML = '<div class="text-muted">Chưa có dữ liệu</div>';
@@ -1192,7 +1221,8 @@ async function suggestCategoryIfNeeded() {
   const requestId = ++state.expenseAiRequestId;
 
   try {
-    const data = await suggestCategory({ name, note, categories, history });
+    const ai = await ensureAiServicesModule();
+    const data = await ai.suggestCategory({ name, note, categories, history });
     if (requestId !== state.expenseAiRequestId) return;
 
     const category = String(data?.category || "").trim();
@@ -1833,7 +1863,8 @@ async function handleVideoAiAction(mode = "generate") {
   try {
     const inputSnapshot = readVideoFormInput();
     state.videoAi.inputSnapshot = inputSnapshot;
-    const res = await getVideoCopilotSuggestions(
+    const ai = await ensureAiServicesModule();
+    const res = await ai.getVideoCopilotSuggestions(
       {
         mode: state.videoAi.mode,
         input: inputSnapshot,
@@ -2003,7 +2034,8 @@ async function handleGoalAiAction(mode = "generate") {
   try {
     const inputSnapshot = readGoalContextInput();
     state.goalAi.inputSnapshot = inputSnapshot;
-    const res = await getGoalSuggestions(
+    const ai = await ensureAiServicesModule();
+    const res = await ai.getGoalSuggestions(
       {
         mode: state.goalAi.mode,
         input: inputSnapshot,
@@ -2030,11 +2062,12 @@ async function handleGoalAiAction(mode = "generate") {
   }
 }
 
-function bindDashboardEvents() {
+async function bindDashboardEvents() {
   if (bindState.dashboard) return;
+  const module = await ensureDashboardModule();
   bindState.dashboard = true;
 
-  initDashboardEvents({
+  module.initDashboardEvents({
     onHabitCheckIn: async (habitId) => {
       try {
         await handleHabitCheckInAction(habitId);
@@ -2065,12 +2098,13 @@ async function handleWeeklyReviewSaveAction(planInput = {}) {
   if (!uid) return;
 
   try {
-    const normalizedPlan = parseWeeklyPlanInput(planInput);
-    const baseVm = state.weeklyReviewVm || (await buildWeeklyReviewVM(uid, "", weeklyReviewOptions()));
+    const module = await ensureWeeklyReviewModule();
+    const normalizedPlan = module.parseWeeklyPlanInput(planInput);
+    const baseVm = state.weeklyReviewVm || (await module.buildWeeklyReviewVM(uid, "", weeklyReviewOptions()));
     state.weeklyReviewVm = baseVm;
 
     setWeeklyReviewSaveState({ status: "saving" });
-    const savedPlan = await saveWeeklyReviewPlan(uid, baseVm, normalizedPlan);
+    const savedPlan = await module.saveWeeklyReviewPlan(uid, baseVm, normalizedPlan);
 
     state.weeklyReviewVm = {
       ...baseVm,
@@ -2094,11 +2128,12 @@ async function handleWeeklyReviewSaveAction(planInput = {}) {
   }
 }
 
-function bindWeeklyReviewModule() {
+async function bindWeeklyReviewModule() {
   if (bindState.weeklyReview) return;
+  const module = await ensureWeeklyReviewModule();
   bindState.weeklyReview = true;
 
-  bindWeeklyReviewEvents({
+  module.bindWeeklyReviewEvents({
     onSave: (planInput) => {
       void handleWeeklyReviewSaveAction(planInput);
     },
@@ -2114,8 +2149,11 @@ function bindRouteSyncEvents() {
   if (bindState.routeSync) return;
   bindState.routeSync = true;
 
-  window.addEventListener("hashchange", () => {
-    if (isVideoPlanRouteActive()) {
+  const handleRouteChange = (forcedRouteId = "") => {
+    const routeId = String(forcedRouteId || currentRouteId()).trim() || "dashboard";
+    void preloadRouteModule(routeId);
+
+    if (routeId === "video-plan") {
       setVideoPlanViewMode(state.videoCalendar?.viewMode || "board", { persist: false });
       if (state.pendingVideoFocusTaskId) {
         requestAnimationFrame(() => {
@@ -2127,10 +2165,24 @@ function bindRouteSyncEvents() {
     const uid = state.currentUser?.uid;
     if (!uid) return;
 
+    if (routeId === "dashboard") {
+      void bindDashboardEvents().then(() => {
+        renderDashboardCenter();
+      });
+    }
+
     if (isWeeklyReviewRouteActive()) {
       resetWeeklyReviewSaveState();
-      void loadWeeklyReview(uid, "");
+      void bindWeeklyReviewModule().then(() => loadWeeklyReview(uid, ""));
     }
+  };
+
+  window.addEventListener("hashchange", () => {
+    handleRouteChange(currentRouteId());
+  });
+
+  window.addEventListener("nexus:route-changed", (event) => {
+    handleRouteChange(event?.detail?.routeId);
   });
 }
 
@@ -2670,14 +2722,15 @@ bindExpenseEvents();
 bindIncomeEvents();
 bindFilterEvents();
 bindMonthEvents();
-bindDashboardEvents();
-bindWeeklyReviewModule();
 bindRouteSyncEvents();
 bindGoalEvents();
 bindVideoEvents();
 bindExportEvent();
 initSettingsModule();
-renderWeeklyReviewPage(null, state.weeklyReviewSaveState);
+void preloadRouteModule(currentRouteId());
+if (isWeeklyReviewRouteActive()) {
+  void bindWeeklyReviewModule();
+}
 
 byId("btnConfirmDelete")?.addEventListener("click", handleConfirmDelete);
 
@@ -2703,5 +2756,12 @@ watchAuth(async (user) => {
 
   const nextRoute = resolvePostLoginRoute();
   setActiveRoute(nextRoute);
+  await preloadRouteModule(nextRoute);
+  if (nextRoute === "dashboard") {
+    await bindDashboardEvents();
+  }
+  if (nextRoute === "weekly-review") {
+    await bindWeeklyReviewModule();
+  }
   await refreshAll(user.uid);
 });
