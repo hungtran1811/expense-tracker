@@ -1,5 +1,14 @@
 # NEXUS OS - Smoke Checklist Phase 2.8 (Video Plan Calendar RC)
 
+## 0) Vận hành nhanh hằng ngày (10-15 phút)
+- Mở production, đăng nhập và đi qua nhanh:
+- `#dashboard` (quick action + badge nhắc việc)
+- `#video-plan` (đổi `Bảng/Lịch`, mở 1 công việc từ agenda)
+- `#settings` (xác nhận autosave không lỗi)
+- Kiểm tra console không có lỗi đỏ mới.
+- Nếu fail ở bất kỳ bước nào:
+- Ghi issue vào backlog `2.8.x` với ảnh + bước tái hiện.
+
 ## 1) Gate bắt buộc
 - Chạy `npm run check:i18n`.
 - Chạy `npm run build`.

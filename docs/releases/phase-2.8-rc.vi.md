@@ -66,3 +66,22 @@ Nếu cần rollback nhanh phase 2.8:
 
 ## 9) Đề xuất mốc tag RC
 `nexus-os-phase-2.8-rc1`
+
+## 10) Nhịp vận hành sau release
+### Hằng ngày (10-15 phút)
+1. Mở production và chạy quick smoke:
+- đăng nhập
+- `#dashboard` + quick action
+- `#video-plan` đổi `Bảng/Lịch`
+- `#settings` autosave
+2. Kiểm tra console/browser không có lỗi mới.
+3. Nếu lỗi nhẹ: ghi backlog patch `2.8.x`.
+4. Nếu lỗi nặng: rollback theo mục 8.
+
+### Hằng tuần
+1. Chạy full checklist `docs/qa/smoke-checklist.vi.md`.
+2. Chạy lại gate local:
+- `npm run check:i18n`
+- `npm run build`
+- `npm run check:baseline`
+3. Tổng hợp issue để lên patch release `2.8.x`.
