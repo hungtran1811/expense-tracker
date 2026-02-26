@@ -120,6 +120,26 @@ function renderAccountBalances(items = []) {
   );
 }
 
+function renderUpcomingClass(moduleData = {}) {
+  const summaryEl = document.getElementById("dashUpcomingClassSummary");
+  if (!summaryEl) return;
+
+  const hasUpcoming = !!moduleData?.hasUpcoming;
+  if (!hasUpcoming) {
+    summaryEl.innerHTML = `<span class="text-muted">${escapeHtml(
+      safeText(moduleData?.empty, t("dashboard.classes.empty", "Chưa có buổi học nào sắp tới."))
+    )}</span>`;
+    return;
+  }
+
+  const title = escapeHtml(safeText(moduleData?.summary, "(Chưa có tên lớp)"));
+  const detail = escapeHtml(safeText(moduleData?.detail, ""));
+  summaryEl.innerHTML = `
+    <div class="dash-class-summary">${title}</div>
+    <div class="dash-class-detail text-muted">${detail}</div>
+  `;
+}
+
 function renderReminderBadges(reminders = {}, windowHours = 72) {
   const overdue = Number(reminders?.overdue || 0);
   const dueToday = Number(reminders?.dueToday || 0);
@@ -275,6 +295,9 @@ export function renderDashboardCommandCenter(vm) {
   setText("dashHeroMeta", vm?.hero?.meta || "");
   setText("dashPriorityTitle", t("dashboard.priority.title", "Ưu tiên hôm nay"));
   setText("dashBalancesTitle", t("dashboard.modules.accounts.title", "Số dư tài khoản"));
+  setText("dashClassTitle", t("dashboard.classes.title", "Buổi học sắp tới"));
+  const classLink = document.querySelector("[data-dash-open-classes]");
+  if (classLink) classLink.textContent = t("dashboard.classes.open", "Mở lớp học");
 
   setText("dashHeroVideoCount", String(vm?.hero?.kpis?.openVideoTasks ?? 0));
   setText("dashHeroHabitCount", String(vm?.hero?.kpis?.remainingHabitTurns ?? 0));
@@ -288,4 +311,5 @@ export function renderDashboardCommandCenter(vm) {
 
   renderPriorityList(vm?.priorityItems || []);
   renderAccountBalances(vm?.modules?.accounts?.items || []);
+  renderUpcomingClass(vm?.modules?.classes || {});
 }

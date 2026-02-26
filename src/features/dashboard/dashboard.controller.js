@@ -75,6 +75,66 @@ function normalizeAccountBalanceItem(item = {}) {
   };
 }
 
+function parseClassNextDate(value) {
+  if (!value) return null;
+  if (value?.seconds) {
+    const dt = new Date(Number(value.seconds) * 1000);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function buildUpcomingClassModule(classes = [], now = new Date()) {
+  const safeNow = now instanceof Date ? now : new Date();
+  const nowMs = safeNow.getTime();
+  const list = (Array.isArray(classes) ? classes : [])
+    .map((item) => {
+      const nextDate = parseClassNextDate(item?.nextScheduledAt);
+      const totalSessions = Math.max(1, Number(item?.totalSessions || 14));
+      const remainingSessions = Math.max(
+        0,
+        Number(item?.remainingSessions ?? totalSessions - Number(item?.doneSessions || 0))
+      );
+      return {
+        ...item,
+        totalSessions,
+        remainingSessions,
+        nextDate,
+      };
+    })
+    .filter((item) => String(item?.status || "active") === "active" && item.remainingSessions > 0)
+    .filter((item) => item.nextDate instanceof Date && !Number.isNaN(item.nextDate.getTime()))
+    .sort((a, b) => a.nextDate.getTime() - b.nextDate.getTime());
+
+  const picked = list.find((item) => item.nextDate.getTime() >= nowMs) || list[0] || null;
+  if (!picked) {
+    return {
+      hasUpcoming: false,
+      title: t("dashboard.classes.title", "Buổi học sắp tới"),
+      empty: t("dashboard.classes.empty", "Chưa có buổi học nào sắp tới."),
+      open: t("dashboard.classes.open", "Mở lớp học"),
+      classId: "",
+      summary: "",
+      detail: "",
+    };
+  }
+
+  const dateLabel = toDateLabel(picked.nextDate);
+  const timeLabel = picked.nextDate.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  const sessionNo = Math.max(1, Number(picked?.nextSessionNo || 1));
+
+  return {
+    hasUpcoming: true,
+    title: t("dashboard.classes.title", "Buổi học sắp tới"),
+    empty: "",
+    open: t("dashboard.classes.open", "Mở lớp học"),
+    classId: String(picked?.id || ""),
+    summary: `${picked?.code || ""} • ${picked?.title || ""}`.trim().replace(/^•\s*/, ""),
+    detail: `${dateLabel} ${timeLabel} • Buổi ${sessionNo}/${picked.totalSessions} • Còn ${picked.remainingSessions} buổi`,
+  };
+}
+
 function getHabitCandidates(state = {}) {
   const habits = Array.isArray(state.habits) ? state.habits : [];
   const habitProgress = state.habitProgress && typeof state.habitProgress === "object" ? state.habitProgress : {};
@@ -358,7 +418,7 @@ export function buildDashboardHeroVM(state = {}, now = new Date()) {
   };
 }
 
-export function buildDashboardModulesVM(state = {}) {
+export function buildDashboardModulesVM(state = {}, now = new Date()) {
   const goals = normalizeGoals(state.goals);
   const openVideoTasks = calcOpenVideoTasks(state.videoTasks);
   const accountBalances = (Array.isArray(state.accountBalances) ? state.accountBalances : [])
@@ -380,6 +440,7 @@ export function buildDashboardModulesVM(state = {}) {
       empty: t("dashboard.modules.accounts.empty", "Chưa có dữ liệu số dư tài khoản."),
       items: accountBalances,
     },
+    classes: buildUpcomingClassModule(state.classes, now),
   };
 }
 
@@ -393,7 +454,7 @@ export function buildDashboardCommandCenterVM(state = {}, now = new Date()) {
   });
   return {
     hero: buildDashboardHeroVM(state, now),
-    modules: buildDashboardModulesVM(state),
+    modules: buildDashboardModulesVM(state, now),
     priorityItems: priority.items,
     actionBoard: buildDashboardActionBoardVM(state, now, {
       maxItems,

@@ -219,18 +219,30 @@ export function normalizeVideoCalendarState(value = {}, now = new Date()) {
 }
 
 export function loadVideoCalendarState(now = new Date()) {
+  const fresh = createDefaultVideoCalendarState(now);
   try {
     const raw = localStorage.getItem(VIDEO_CALENDAR_STORAGE_KEY);
-    if (!raw) return createDefaultVideoCalendarState(now);
-    return normalizeVideoCalendarState(JSON.parse(raw), now);
+    if (!raw) return fresh;
+    const parsed = normalizeVideoCalendarState(JSON.parse(raw), now);
+    return {
+      viewMode: parsed.viewMode,
+      selectedDate: fresh.selectedDate,
+      monthAnchor: fresh.monthAnchor,
+    };
   } catch {
-    return createDefaultVideoCalendarState(now);
+    return fresh;
   }
 }
 
 export function saveVideoCalendarState(state = {}) {
   try {
-    localStorage.setItem(VIDEO_CALENDAR_STORAGE_KEY, JSON.stringify(normalizeVideoCalendarState(state)));
+    const safe = normalizeVideoCalendarState(state);
+    localStorage.setItem(
+      VIDEO_CALENDAR_STORAGE_KEY,
+      JSON.stringify({
+        viewMode: safe.viewMode,
+      })
+    );
   } catch {
     // ignore storage errors
   }

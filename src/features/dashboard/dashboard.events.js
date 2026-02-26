@@ -58,6 +58,12 @@ export function initDashboardEvents(handlers = {}) {
     if (openVideoBtn) {
       const taskId = pickTaskIdFromTarget(openVideoBtn);
       runHandler(handlers.onOpenVideoPlan, taskId);
+      return;
+    }
+
+    const openClassesBtn = target.closest("[data-dash-open-classes]");
+    if (openClassesBtn) {
+      runHandler(handlers.onOpenClasses);
     }
   });
 }

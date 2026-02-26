@@ -3,7 +3,7 @@ import { PROFILE_VI } from "../../shared/constants/profile.vi.js";
 
 const MONTH_MODE = new Set(["current", "lastUsed"]);
 const UI_DENSITY = new Set(["comfortable", "compact"]);
-const START_ROUTE = new Set(["dashboard", "goals", "video-plan"]);
+const START_ROUTE = new Set(["dashboard", "goals", "video-plan", "classes"]);
 
 const DEFAULT_PROFILE = {
   displayName: PROFILE_VI.displayName || "Hưng Trần",
@@ -123,11 +123,11 @@ function normalizeFilterState(raw = {}, fallback = {}) {
 }
 
 function normalizeFilterPrefs(prefs = {}) {
-  const monthMode = MONTH_MODE.has(String(prefs.monthMode || "")) ? String(prefs.monthMode) : "current";
+  const monthMode = "current";
 
   return {
     monthMode,
-    lastMonth: normalizeMonth(prefs.lastMonth),
+    lastMonth: "",
     rememberExpenseFilters: toBool(prefs.rememberExpenseFilters, false),
     rememberIncomeFilters: toBool(prefs.rememberIncomeFilters, false),
     rememberVideoFilters: toBool(prefs.rememberVideoFilters, false),

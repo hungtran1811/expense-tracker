@@ -29,6 +29,15 @@ const routeLoaders = {
       ...ui,
     })),
 
+  classes: () =>
+    Promise.all([
+      import("../features/classes/classes.controller.js"),
+      import("../features/classes/classes.ui.js"),
+    ]).then(([controller, ui]) => ({
+      ...controller,
+      ...ui,
+    })),
+
   // Các route còn lại hiện vẫn dùng import tĩnh trong bootstrap.
   expenses: () => Promise.resolve({}),
   incomes: () => Promise.resolve({}),

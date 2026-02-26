@@ -154,6 +154,7 @@ export function renderSettingsForm(settings, saveState = {}) {
   setText("stOptStartDashboard", t("settings.preferences.dashboard.startRouteOptions.dashboard", "Trung tâm"));
   setText("stOptStartGoals", t("settings.preferences.dashboard.startRouteOptions.goals", "Mục tiêu"));
   setText("stOptStartVideoPlan", t("settings.preferences.dashboard.startRouteOptions.videoPlan", "Kế hoạch video"));
+  setText("stOptStartClasses", t("settings.preferences.dashboard.startRouteOptions.classes", "Lớp học"));
 
   setText("stFiltersTitle", t("settings.preferences.filters.title", "Bộ lọc & Hiển thị"));
   setText("stLabelMonthMode", t("settings.preferences.filters.monthMode", "Chế độ tháng mặc định"));

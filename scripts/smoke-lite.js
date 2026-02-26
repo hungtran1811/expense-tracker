@@ -25,6 +25,11 @@ const requiredIds = [
   "videoCalendarAgenda",
   "videoUnscheduledList",
   "dashboardAccountBalances",
+  "classesList",
+  "classDetail",
+  "classStudentsList",
+  "classSessionsList",
+  "sessionReviewTable",
 ];
 requiredIds.forEach((id) => {
   assert(indexHtml.includes(`id=\"${id}\"`), `Thiếu id bắt buộc trong index.html: ${id}`, failures);
@@ -44,6 +49,7 @@ guardTargets.forEach((file) => {
 const requiredDocs = [
   "docs/qa/smoke-checklist.vi.md",
   "docs/releases/phase-2.8-rc.vi.md",
+  "docs/releases/phase-3.2-classes-rc.vi.md",
   "README.md",
   ".env.example",
 ];

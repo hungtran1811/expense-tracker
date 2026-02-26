@@ -1,7 +1,10 @@
 import { formatVND } from "../../shared/ui/core.js";
-import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
+import { t } from "../../shared/constants/copy.vi.js";
 
 let _eventsBound = false;
+let _handlers = {
+  onFilterChange: null,
+};
 
 function byId(id) {
   return document.getElementById(id);
@@ -26,15 +29,42 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function formatDateTime(value) {
-  const date = value instanceof Date ? value : value?.seconds ? new Date(value.seconds * 1000) : null;
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function normalizePeriodMode(value = "") {
+  return String(value || "").trim() === "month" ? "month" : "week";
+}
+
+function normalizeWeekInput(value = "") {
+  const raw = String(value || "").trim();
+  return /^\d{4}-W\d{2}$/.test(raw) ? raw : "";
+}
+
+function normalizeMonthInput(value = "") {
+  const raw = String(value || "").trim();
+  return /^\d{4}-\d{2}$/.test(raw) ? raw : "";
+}
+
+function togglePeriodControls(mode = "week") {
+  const weekInput = byId("wrWeekPicker");
+  const monthInput = byId("wrMonthPicker");
+  if (weekInput) weekInput.classList.toggle("d-none", mode !== "week");
+  if (monthInput) monthInput.classList.toggle("d-none", mode !== "month");
+}
+
+function syncPeriodControls(vm = {}) {
+  const mode = normalizePeriodMode(vm?.period?.mode || "week");
+  const weekKey = normalizeWeekInput(vm?.period?.weekKey || vm?.weekKey || "");
+  const monthKey = normalizeMonthInput(vm?.period?.monthKey || "");
+
+  const modeEl = byId("wrPeriodMode");
+  if (modeEl) modeEl.value = mode;
+
+  const weekInput = byId("wrWeekPicker");
+  if (weekInput) weekInput.value = weekKey;
+
+  const monthInput = byId("wrMonthPicker");
+  if (monthInput) monthInput.value = monthKey;
+
+  togglePeriodControls(mode);
 }
 
 function row(label, value, valueClass = "") {
@@ -52,11 +82,6 @@ function renderFinanceSnapshot(snapshot = {}) {
       ${row(t("weeklyReview.finance.income"), formatVND(snapshot?.totalIncome || 0))}
       ${row(t("weeklyReview.finance.expense"), formatVND(snapshot?.totalExpense || 0))}
       ${row(t("weeklyReview.finance.net"), formatVND(net), netClass)}
-      ${row(t("weeklyReview.finance.transfer"), formatVND(snapshot?.totalTransfer || 0))}
-      ${row(
-        t("weeklyReview.finance.transactions"),
-        `${Number(snapshot?.expenseCount || 0) + Number(snapshot?.incomeCount || 0)}`
-      )}
     </div>
   `;
 }
@@ -66,241 +91,98 @@ function renderGoalsSnapshot(snapshot = {}) {
     <div class="wr-metric-list">
       ${row(t("weeklyReview.goals.active"), `${Number(snapshot?.activeGoals || 0)}`)}
       ${row(t("weeklyReview.goals.done"), `${Number(snapshot?.doneGoals || 0)}`)}
-      ${row(t("weeklyReview.goals.habitsTotal"), `${Number(snapshot?.habitsTotal || 0)}`)}
-      ${row(t("weeklyReview.goals.habitsReached"), `${Number(snapshot?.habitsReached || 0)}`)}
-      ${row(t("weeklyReview.goals.checkins"), `${Number(snapshot?.checkins || 0)}`)}
+      ${row(
+        t("weeklyReview.goals.habitsReached"),
+        `${Number(snapshot?.habitsReached || 0)}/${Number(snapshot?.habitsTotal || 0)}`
+      )}
     </div>
   `;
 }
 
 function renderVideoSnapshot(snapshot = {}) {
-  const deadlineWindowHours = Number(snapshot?.deadlineWindowHours || 72);
+  const periodMode = normalizePeriodMode(snapshot?.periodMode || "week");
+  const dueLabel =
+    periodMode === "month"
+      ? t("weeklyReview.video.dueMonth", "Công việc có hạn trong tháng")
+      : t("weeklyReview.video.dueWeek");
+
   return `
     <div class="wr-metric-list">
       ${row(t("weeklyReview.video.open"), `${Number(snapshot?.open || 0)}`)}
-      ${row(t("weeklyReview.video.done"), `${Number(snapshot?.done || 0)}`)}
-      ${row(t("weeklyReview.video.dueWeek"), `${Number(snapshot?.dueInWeek || 0)}`)}
-      ${row(
-        formatTemplate(t("weeklyReview.video.dueWindow"), {
-          hours: deadlineWindowHours,
-        }),
-        `${Number(snapshot?.dueInWindow || 0)}`
-      )}
+      ${row(dueLabel, `${Number(snapshot?.dueInWeek || 0)}`)}
       ${row(t("weeklyReview.video.overdue"), `${Number(snapshot?.overdue || 0)}`)}
     </div>
   `;
 }
 
-function renderDetailTable(snapshot = {}, releasePlan = {}) {
-  const finance = snapshot?.finance || {};
-  const goals = snapshot?.goals || {};
-  const video = snapshot?.video || {};
-  const deadlineWindowHours = Number(video?.deadlineWindowHours || 72);
-  const stageRows = Array.isArray(releasePlan?.stageRows) ? releasePlan.stageRows : [];
-  const actionRows = Array.isArray(releasePlan?.actions) ? releasePlan.actions : [];
-
-  const rows = [
-    {
-      group: t("weeklyReview.detail.groups.finance", "Tài chính"),
-      metric: t("weeklyReview.finance.income", "Tổng thu"),
-      value: formatVND(finance?.totalIncome || 0),
-      note: "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.finance", "Tài chính"),
-      metric: t("weeklyReview.finance.expense", "Tổng chi"),
-      value: formatVND(finance?.totalExpense || 0),
-      note: "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.finance", "Tài chính"),
-      metric: t("weeklyReview.finance.net", "Dòng tiền ròng"),
-      value: formatVND(finance?.net || 0),
-      note:
-        Number(finance?.net || 0) < 0
-          ? t("weeklyReview.detail.notes.netNegative", "Dòng tiền âm, cần rà soát chi phí tuần tới.")
-          : "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.goals", "Mục tiêu"),
-      metric: t("weeklyReview.goals.active", "Mục tiêu đang chạy"),
-      value: String(Number(goals?.activeGoals || 0)),
-      note: "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.goals", "Mục tiêu"),
-      metric: t("weeklyReview.goals.done", "Mục tiêu đã hoàn thành"),
-      value: String(Number(goals?.doneGoals || 0)),
-      note: "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.goals", "Mục tiêu"),
-      metric: t("weeklyReview.goals.habitsReached", "Thói quen đạt quota"),
-      value: `${Number(goals?.habitsReached || 0)}/${Number(goals?.habitsTotal || 0)}`,
-      note: "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.video", "Video"),
-      metric: t("weeklyReview.video.open", "Công việc đang mở"),
-      value: String(Number(video?.open || 0)),
-      note: "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.video", "Video"),
-      metric: formatTemplate(t("weeklyReview.video.dueWindow", "Công việc cận hạn {{hours}}h"), {
-        hours: deadlineWindowHours,
-      }),
-      value: String(Number(video?.dueInWindow || 0)),
-      note: "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.video", "Video"),
-      metric: t("weeklyReview.video.overdue", "Công việc quá hạn"),
-      value: String(Number(video?.overdue || 0)),
-      note:
-        Number(video?.overdue || 0) > 0
-          ? t("weeklyReview.detail.notes.overdue", "Ưu tiên xử lý các việc quá hạn trước.")
-          : "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.release", "Release"),
-      metric: t("weeklyReview.detail.stage", "Tiến độ pipeline"),
-      value: stageRows.length
-        ? stageRows.map((item) => `${item?.label || "-"}: ${Number(item?.count || 0)}`).join(" • ")
-        : t("weeklyReview.release.emptyStage", "Chưa có dữ liệu pipeline video tuần này."),
-      note: "",
-    },
-    {
-      group: t("weeklyReview.detail.groups.release", "Release"),
-      metric: t("weeklyReview.detail.actions", "Checklist ưu tiên"),
-      value: actionRows.length
-        ? actionRows.slice(0, 2).join(" | ")
-        : t("weeklyReview.release.emptyAction", "Tuần này chưa có hạng mục ưu tiên."),
-      note: "",
-    },
-  ];
-
-  return `
-    <div class="table-responsive">
-      <table class="table table-sm align-middle mb-0 wr-detail-table">
-        <thead>
-          <tr>
-            <th>${escapeHtml(t("weeklyReview.detail.columns.group", "Nhóm"))}</th>
-            <th>${escapeHtml(t("weeklyReview.detail.columns.metric", "Chỉ số"))}</th>
-            <th class="text-end">${escapeHtml(t("weeklyReview.detail.columns.value", "Giá trị"))}</th>
-            <th>${escapeHtml(t("weeklyReview.detail.columns.note", "Ghi chú hành động"))}</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows
-            .map(
-              (item) => `
-            <tr>
-              <td class="wr-detail-group">${escapeHtml(item.group)}</td>
-              <td>${escapeHtml(item.metric)}</td>
-              <td class="text-end fw-semibold">${escapeHtml(item.value)}</td>
-              <td class="text-muted">${escapeHtml(item.note || "-")}</td>
-            </tr>
-          `
-            )
-            .join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
 function renderReleaseStage(releasePlan = {}) {
-  const rows = Array.isArray(releasePlan?.stageRows) ? releasePlan.stageRows : [];
-  if (!rows.length) {
+  const actions = Array.isArray(releasePlan?.actions) ? releasePlan.actions : [];
+  if (!actions.length) {
     return `<div class="text-muted small">${escapeHtml(
-      t("weeklyReview.release.emptyStage", "Chưa có dữ liệu pipeline video tuần này.")
+      t("weeklyReview.release.emptyAction", "Tuần này chưa có hạng mục ưu tiên.")
     )}</div>`;
   }
 
   return `
-    <div class="wr-metric-list">
-      ${rows
-        .map((item) =>
-          row(
-            String(item?.label || "").trim() || t("weeklyReview.release.stageFallback", "Giai đoạn"),
-            `${Number(item?.count || 0)}`
-          )
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function renderHistoryList(history = [], currentWeekKey = "") {
-  if (!Array.isArray(history) || !history.length) {
-    return `<div class="text-muted small">${escapeHtml(
-      t("weeklyReview.history.empty")
-    )}</div>`;
-  }
-
-  return `
-    <div class="wr-history-list">
-      ${history
-        .map((item) => {
-          const weekKey = String(item?.weekKey || "").trim();
-          if (!weekKey) return "";
-
-          const activeClass = weekKey === currentWeekKey ? "active" : "";
-          const updatedAt = formatDateTime(item?.updatedAt);
-          const note = updatedAt
-            ? t("weeklyReview.history.savedReview")
-            : t("weeklyReview.history.pendingReview");
-
-          return `
-            <button type="button" class="wr-history-item ${activeClass}" data-week-key="${escapeHtml(weekKey)}">
-              <div class="wr-history-top">
-                <strong>${escapeHtml(weekKey)}</strong>
-                ${updatedAt ? `<span>${escapeHtml(updatedAt)}</span>` : ""}
-              </div>
-              <div class="wr-history-note">${escapeHtml(note)}</div>
-            </button>
-          `;
-        })
-        .join("")}
-    </div>
+    <ul class="wr-action-list mb-0">
+      ${actions.map((item) => `<li>${escapeHtml(String(item || "").trim())}</li>`).join("")}
+    </ul>
   `;
 }
 
 export function renderWeeklyReviewPage(vm) {
+  const safeVm = vm || {};
+
   setText("wrHeaderTitle", t("weeklyReview.header.title"));
   setText("wrHeaderSubtitle", t("weeklyReview.header.subtitle"));
+  setText("wrPeriodModeLabel", t("weeklyReview.filters.modeLabel", "Bộ lọc"));
+  setText("wrWeekInputLabel", t("weeklyReview.filters.weekLabel", "Tuần"));
+  setText("wrMonthInputLabel", t("weeklyReview.filters.monthLabel", "Tháng"));
   setText("wrFinanceTitle", t("weeklyReview.cards.finance"));
   setText("wrGoalsTitle", t("weeklyReview.cards.goals"));
   setText("wrVideoTitle", t("weeklyReview.cards.video"));
-  setText("wrDetailTitle", t("weeklyReview.cards.detail", "Bảng tổng kết chi tiết"));
-  setText("wrReleaseStageTitle", t("weeklyReview.cards.releaseStage"));
-  setText("wrHistoryTitle", t("weeklyReview.history.title"));
+  setText("wrActionsTitle", t("weeklyReview.cards.actions", "Hành động ưu tiên"));
 
-  setText("wrWeekLabel", vm?.weekLabel || t("weeklyReview.header.fallbackWeek"));
+  const periodModeEl = byId("wrPeriodMode");
+  if (periodModeEl && !periodModeEl.dataset.i18nApplied) {
+    periodModeEl.innerHTML = `
+      <option value="week">${escapeHtml(t("weeklyReview.filters.byWeek", "Theo tuần"))}</option>
+      <option value="month">${escapeHtml(t("weeklyReview.filters.byMonth", "Theo tháng"))}</option>
+    `;
+    periodModeEl.dataset.i18nApplied = "1";
+  }
 
-  setHtml("wrFinanceSnapshot", renderFinanceSnapshot(vm?.snapshot?.finance || {}));
-  setHtml("wrGoalsSnapshot", renderGoalsSnapshot(vm?.snapshot?.goals || {}));
-  setHtml("wrVideoSnapshot", renderVideoSnapshot(vm?.snapshot?.video || {}));
-  setHtml("wrDetailTable", renderDetailTable(vm?.snapshot || {}, vm?.releasePlan || {}));
-  setHtml("wrReleaseStage", renderReleaseStage(vm?.releasePlan || {}));
-  setHtml("wrHistoryList", renderHistoryList(vm?.history || [], vm?.weekKey || ""));
+  setText("wrWeekLabel", safeVm?.weekLabel || t("weeklyReview.header.fallbackWeek"));
+  setHtml("wrFinanceSnapshot", renderFinanceSnapshot(safeVm?.snapshot?.finance || {}));
+  setHtml("wrGoalsSnapshot", renderGoalsSnapshot(safeVm?.snapshot?.goals || {}));
+  setHtml("wrVideoSnapshot", renderVideoSnapshot(safeVm?.snapshot?.video || {}));
+  setHtml("wrReleaseStage", renderReleaseStage(safeVm?.releasePlan || {}));
+  syncPeriodControls(safeVm);
 }
 
-export function bindWeeklyReviewEvents({ onOpenHistory } = {}) {
+export function bindWeeklyReviewEvents({ onFilterChange } = {}) {
+  _handlers = {
+    onFilterChange: typeof onFilterChange === "function" ? onFilterChange : null,
+  };
+
   if (_eventsBound) return;
 
   const root = byId("weekly-review");
   if (!root) return;
   _eventsBound = true;
 
-  byId("wrHistoryList")?.addEventListener("click", (e) => {
-    if (typeof onOpenHistory !== "function") return;
-    const button = e.target.closest("[data-week-key]");
-    if (!button) return;
-    const weekKey = String(button.dataset.weekKey || "").trim();
-    if (!weekKey) return;
-    onOpenHistory(weekKey);
-  });
-}
+  const emitFilterChange = () => {
+    if (typeof _handlers.onFilterChange !== "function") return;
+    const mode = normalizePeriodMode(byId("wrPeriodMode")?.value || "week");
+    const weekKey = normalizeWeekInput(byId("wrWeekPicker")?.value || "");
+    const monthKey = normalizeMonthInput(byId("wrMonthPicker")?.value || "");
+    togglePeriodControls(mode);
+    _handlers.onFilterChange({ mode, weekKey, monthKey });
+  };
 
+  byId("wrPeriodMode")?.addEventListener("change", emitFilterChange);
+  byId("wrWeekPicker")?.addEventListener("change", emitFilterChange);
+  byId("wrMonthPicker")?.addEventListener("change", emitFilterChange);
+
+  togglePeriodControls(normalizePeriodMode(byId("wrPeriodMode")?.value || "week"));
+}

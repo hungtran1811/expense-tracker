@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="vi" data-i18n-ready="false">
   <head>
     <meta charset="utf-8" />
@@ -41,9 +41,9 @@
             <i class="bi bi-grid-1x2"></i>
             <span class="rail-label">Trung tâm</span>
           </a>
-          <a href="#expenses" class="rail-link" data-nav="expenses" aria-label="Chi tiêu">
-            <i class="bi bi-receipt-cutoff"></i>
-            <span class="rail-label">Chi tiêu</span>
+          <a href="#expenses" class="rail-link" data-nav="expenses" aria-label="Tài chính">
+            <i class="bi bi-cash-stack"></i>
+            <span class="rail-label">Tài chính</span>
           </a>
           <a href="#goals" class="rail-link" data-nav="goals" aria-label="Mục tiêu">
             <i class="bi bi-bullseye"></i>
@@ -53,13 +53,13 @@
             <i class="bi bi-camera-video"></i>
             <span class="rail-label">Video</span>
           </a>
+          <a href="#classes" class="rail-link" data-nav="classes" aria-label="Lớp học">
+            <i class="bi bi-mortarboard"></i>
+            <span class="rail-label">Lớp học</span>
+          </a>
           <a href="#weekly-review" class="rail-link" data-nav="weekly-review" aria-label="Tổng kết tuần">
             <i class="bi bi-calendar-week"></i>
             <span class="rail-label">Tổng kết</span>
-          </a>
-          <a href="#accounts" class="rail-link" data-nav="accounts" aria-label="Tài khoản">
-            <i class="bi bi-wallet2"></i>
-            <span class="rail-label">Tài khoản</span>
           </a>
           <a href="#settings" class="rail-link" data-nav="settings" aria-label="Cài đặt">
             <i class="bi bi-gear"></i>
@@ -200,6 +200,14 @@
                     <div id="dashboardAccountBalances" class="small"></div>
                   </div>
 
+                  <div class="dash-hero-class mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2 gap-2">
+                      <div class="small text-uppercase text-muted" id="dashClassTitle">Buổi học sắp tới</div>
+                      <a href="#classes" class="small text-decoration-none" data-dash-open-classes>Vào lớp học</a>
+                    </div>
+                    <div id="dashUpcomingClassSummary" class="small text-muted">Chưa có buổi học nào sắp tới.</div>
+                  </div>
+
                   <div class="d-none">
                     <div id="dashPriorityList"></div>
                     <strong id="dashHeroVideoCount">0</strong>
@@ -291,6 +299,23 @@
 
               <div class="weekly-review-meta d-flex flex-wrap align-items-center gap-2 mb-3">
                 <div class="small fw-semibold" id="wrWeekLabel">Tuần hiện tại</div>
+                <div class="wr-filter-controls d-flex flex-wrap align-items-end gap-2 ms-auto">
+                  <div>
+                    <label for="wrPeriodMode" class="form-label form-label-sm mb-1" id="wrPeriodModeLabel">Bộ lọc</label>
+                    <select id="wrPeriodMode" class="form-select form-select-sm">
+                      <option value="week">Theo tuần</option>
+                      <option value="month">Theo tháng</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="wrWeekPicker" class="form-label form-label-sm mb-1" id="wrWeekInputLabel">Tuần</label>
+                    <input id="wrWeekPicker" type="week" class="form-control form-control-sm" />
+                  </div>
+                  <div>
+                    <label for="wrMonthPicker" class="form-label form-label-sm mb-1" id="wrMonthInputLabel">Tháng</label>
+                    <input id="wrMonthPicker" type="month" class="form-control form-control-sm d-none" />
+                  </div>
+                </div>
               </div>
 
               <div class="row g-3 weekly-review-grid">
@@ -317,26 +342,12 @@
               <div class="row g-3 mt-1">
                 <div class="col-12">
                   <div class="card p-3 h-100">
-                    <h6 class="mb-2" id="wrDetailTitle">Bảng tổng kết chi tiết</h6>
-                    <div id="wrDetailTable"></div>
-                  </div>
-                </div>
-                <div class="col-12">
-                  <div class="card p-3 h-100">
-                    <h6 class="mb-2" id="wrReleaseStageTitle">Tiến độ pipeline video</h6>
+                    <h6 class="mb-2" id="wrActionsTitle">Hành động ưu tiên</h6>
                     <div id="wrReleaseStage" class="small"></div>
                   </div>
                 </div>
               </div>
 
-              <div class="row g-3 mt-1">
-                <div class="col-12">
-                  <div class="card p-3">
-                    <h6 class="mb-2" id="wrHistoryTitle">Lịch sử review gần đây</h6>
-                    <div id="wrHistoryList"></div>
-                  </div>
-                </div>
-              </div>
             </section>
 
             <section id="expenses" class="route">
@@ -352,6 +363,11 @@
                     + Thêm khoản chi
                   </button>
                 </div>
+              </div>
+
+              <div class="finance-nav-switch mb-3" role="tablist" aria-label="Điều hướng tài chính">
+                <a href="#expenses" class="btn btn-primary btn-sm" aria-current="page">Chi tiêu</a>
+                <a href="#accounts" class="btn btn-outline-primary btn-sm">Tài khoản &amp; Thu nhập</a>
               </div>
 
               <div class="filters-row" id="expenseFilters">
@@ -393,15 +409,36 @@
                 <div>
                   <h4 class="mb-1">Mục tiêu cá nhân</h4>
                   <p class="text-muted small mb-0">
-                    Tập trung theo dõi mục tiêu, thói quen và kế hoạch tuần trong một nơi.
+                    Luồng làm việc rõ ràng: chốt mục tiêu tuần, thực hiện thói quen hằng ngày, theo dõi tiến độ.
                   </p>
+                </div>
+              </div>
+
+              <div class="goals-flow-card card p-3">
+                <div class="small text-uppercase text-muted mb-2">Cách hoạt động</div>
+                <div class="goals-flow-steps">
+                  <div class="goals-flow-step">
+                    <span class="goals-flow-step-no">Bước 1</span>
+                    <strong>Chốt mục tiêu tuần</strong>
+                    <p class="small text-muted mb-0">Điền 3 mục tiêu ưu tiên và cam kết hành động trong tuần.</p>
+                  </div>
+                  <div class="goals-flow-step">
+                    <span class="goals-flow-step-no">Bước 2</span>
+                    <strong>Làm việc cần làm hôm nay</strong>
+                    <p class="small text-muted mb-0">Điểm danh thói quen còn thiếu quota để giữ tiến độ tuần.</p>
+                  </div>
+                  <div class="goals-flow-step">
+                    <span class="goals-flow-step-no">Bước 3</span>
+                    <strong>Theo dõi và khóa hoàn thành</strong>
+                    <p class="small text-muted mb-0">Khi đạt đủ mục tiêu kỳ, hệ thống tự khóa thao tác để tránh cập nhật thừa.</p>
+                  </div>
                 </div>
               </div>
 
               <div class="goals-tier goals-tier-kpi">
                 <div class="card p-3 goals-kpi-card">
                   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                    <h6 class="mb-0">Tiến độ thực hiện theo kỳ</h6>
+                    <h6 class="mb-0">Bảng tiến độ theo kỳ</h6>
                     <span class="badge text-bg-light">Cập nhật theo dữ liệu hiện tại</span>
                   </div>
                   <div class="motivation-inline goals-kpi-progress">
@@ -426,7 +463,7 @@
                   <div class="card p-3 h-100 goals-weekly-card">
                     <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
                       <div>
-                        <h6 class="mb-1">Mục tiêu tuần</h6>
+                        <h6 class="mb-1">Bước 1: Chốt mục tiêu tuần</h6>
                         <p class="small text-muted mb-0" id="goalsWeekLabel">Kế hoạch tuần hiện tại</p>
                       </div>
                       <span class="small text-muted" id="goalsWeeklyStatus">Sẵn sàng cập nhật mục tiêu tuần</span>
@@ -466,7 +503,7 @@
                   <div class="card p-3 h-100">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                       <div>
-                        <h6 class="mb-1">Hôm nay cần làm gì</h6>
+                        <h6 class="mb-1">Bước 2: Việc cần làm ngay hôm nay</h6>
                         <p class="small text-muted mb-0" id="goalsChallengeLabel">
                           Ưu tiên các thói quen còn thiếu quota để giữ tiến độ tuần.
                         </p>
@@ -481,7 +518,7 @@
                 <div class="col-12 col-xl-6">
                   <div class="card p-3 h-100">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-                      <h6 class="mb-0">Tạo mục tiêu cá nhân</h6>
+                      <h6 class="mb-0">Bước 3A: Tạo mục tiêu theo chu kỳ</h6>
                     </div>
                     <div class="row g-2">
                       <div class="col-12 col-md-6">
@@ -538,7 +575,7 @@
 
                 <div class="col-12 col-xl-6">
                   <div class="card p-3 h-100">
-                    <h6 class="mb-3">Tạo thói quen hỗ trợ</h6>
+                    <h6 class="mb-3">Bước 3B: Tạo thói quen hỗ trợ</h6>
                     <div class="row g-2">
                       <div class="col-12">
                         <label class="form-label">Tên thói quen</label>
@@ -568,7 +605,7 @@
                 <div class="col-12">
                   <div class="card p-3">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                      <h6 class="mb-0">Theo dõi mục tiêu</h6>
+                      <h6 class="mb-0">Theo dõi mục tiêu đã tạo</h6>
                       <span class="small text-muted">Mục tiêu đạt đủ sẽ tự động khóa thao tác cập nhật</span>
                     </div>
                     <div class="table-responsive">
@@ -593,7 +630,7 @@
                 <div class="col-12">
                   <div class="card p-3">
                     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                      <h6 class="mb-0">Theo dõi thói quen</h6>
+                      <h6 class="mb-0">Theo dõi thói quen theo kỳ</h6>
                       <span class="small text-muted">Điểm danh sẽ khóa khi đạt quota của kỳ hiện tại</span>
                     </div>
                     <div class="table-responsive">
@@ -614,6 +651,188 @@
                   </div>
                 </div>
               </div>
+              </div>
+
+            </section>
+
+            <section id="classes" class="route">
+              <div class="page-header">
+                <div>
+                  <h4 class="mb-1" id="classesPageTitle">Lớp học</h4>
+                  <p class="text-muted small mb-0" id="classesPageSubtitle">
+                    Quản lý lớp, học sinh và lịch 14 buổi theo cách gọn, dễ thao tác.
+                  </p>
+                </div>
+                <div class="page-actions d-flex align-items-center gap-2">
+                  <span class="badge text-bg-light" id="classesCountBadge">0</span>
+                </div>
+              </div>
+
+              <div class="classes-mode-switch mb-3" role="group" aria-label="Chế độ lớp học">
+                <button type="button" class="btn btn-outline-primary btn-sm active" id="classesModeAdmin" data-classes-mode="admin">
+                  Quản trị
+                </button>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="classesModePresentation" data-classes-mode="presentation">
+                  Trình chiếu
+                </button>
+              </div>
+
+              <div id="classesAdminPane" class="classes-admin-pane">
+                <div class="classes-admin-grid">
+                  <div class="classes-admin-col classes-admin-col-left">
+                    <div class="card p-3 classes-list-card">
+                      <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                        <h6 class="mb-0" id="classesListTitle">Danh sách lớp</h6>
+                      </div>
+                      <div class="classes-list-tabs mb-2" role="group" aria-label="Lọc danh sách lớp">
+                        <button type="button" class="btn btn-outline-primary btn-sm active" id="classesListTabActive" data-class-tab="active">
+                          Đang dạy
+                        </button>
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="classesListTabCompleted" data-class-tab="completed">
+                          Đã hoàn thành
+                        </button>
+                      </div>
+                      <div id="classesList"></div>
+                    </div>
+
+                    <div class="card p-3 classes-form-card">
+                      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                        <h6 class="mb-0" id="classesFormTitle">Thông tin lớp</h6>
+                        <span class="small text-muted" id="classesFormMode">Tạo lớp mới</span>
+                      </div>
+                      <input type="hidden" id="classId" />
+                      <div class="row g-2">
+                        <div class="col-12 col-md-5">
+                          <label class="form-label">Mã lớp</label>
+                          <input id="classCode" class="form-control" placeholder="Ví dụ: PY-01" />
+                        </div>
+                        <div class="col-12 col-md-7">
+                          <label class="form-label">Tên lớp</label>
+                          <input id="classTitle" class="form-control" placeholder="Ví dụ: Python cho người mới" />
+                        </div>
+                        <div class="col-12 col-md-6">
+                          <label class="form-label">Ngày bắt đầu</label>
+                          <input id="classStartDate" type="date" class="form-control" />
+                        </div>
+                        <div class="col-12 col-md-6">
+                          <label class="form-label">Trạng thái</label>
+                          <select id="classStatus" class="form-select">
+                            <option value="active">Đang dạy</option>
+                            <option value="completed">Hoàn thành</option>
+                            <option value="archived">Lưu trữ</option>
+                          </select>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label">Lịch học (mỗi dòng: thứ giờ)</label>
+                          <textarea id="classSlots" class="form-control" rows="3" placeholder="Ví dụ:&#10;2 19:30&#10;6 08:30"></textarea>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label">Ghi chú lớp</label>
+                          <textarea id="classDescription" class="form-control" rows="2" placeholder="Mục tiêu hoặc lưu ý của lớp"></textarea>
+                        </div>
+                      </div>
+                      <div class="d-flex flex-wrap gap-2 justify-content-end mt-3">
+                        <button class="btn btn-outline-secondary btn-sm" id="btnClassReset">Tạo mới</button>
+                        <button class="btn btn-outline-primary btn-sm" id="btnAddClass">Tạo lớp</button>
+                        <button class="btn btn-primary btn-sm" id="btnSaveClass" disabled>Lưu lớp</button>
+                        <button class="btn btn-outline-danger btn-sm" id="btnDeleteClass" disabled>Xóa lớp</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="classes-admin-col classes-admin-col-center">
+                    <div class="card p-3">
+                      <h6 class="mb-2" id="classesDetailTitle">Chi tiết lớp</h6>
+                      <div id="classDetail"></div>
+                    </div>
+
+                    <div class="card p-3">
+                      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                        <h6 class="mb-0" id="classesStudentsTitle">Học sinh</h6>
+                      </div>
+                      <div class="d-flex gap-2 mb-2">
+                        <input id="classStudentName" class="form-control form-control-sm" placeholder="Nhập tên học sinh" />
+                        <button class="btn btn-outline-primary btn-sm" id="btnAddStudent">Thêm</button>
+                      </div>
+                      <div id="classStudentsList"></div>
+                    </div>
+                  </div>
+
+                  <div class="classes-admin-col classes-admin-col-right">
+                    <div class="card p-3">
+                      <h6 class="mb-2" id="classesSessionsTitle">Lịch 14 buổi</h6>
+                      <div id="classSessionsList"></div>
+                    </div>
+
+                    <div class="card p-3">
+                      <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                        <h6 class="mb-0" id="classesSessionEditorTitle">Ghi chú buổi học</h6>
+                      </div>
+                      <input type="hidden" id="sessionId" />
+                      <div class="row g-2">
+                        <div class="col-12">
+                          <label class="form-label">Trạng thái buổi</label>
+                          <select id="sessionStatus" class="form-select">
+                            <option value="planned">Kế hoạch</option>
+                            <option value="done">Đã dạy</option>
+                            <option value="cancelled">Hoãn</option>
+                          </select>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label">Nội dung dự kiến dạy</label>
+                          <textarea id="sessionTeachingPlan" class="form-control" rows="2"></textarea>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label">Nội dung đã dạy / kết quả</label>
+                          <textarea id="sessionTeachingResult" class="form-control" rows="2"></textarea>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label mb-1" id="classesReviewTableTitle">Nhận xét từng học sinh</label>
+                          <div id="sessionReviewTable"></div>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label">Lý do dời buổi (tùy chọn)</label>
+                          <input id="sessionRescheduleReason" class="form-control" placeholder="Ví dụ: nghỉ lễ, học sinh bận thi..." />
+                        </div>
+                      </div>
+                      <div class="d-flex flex-wrap justify-content-end gap-2 mt-3">
+                        <button class="btn btn-outline-secondary btn-sm" id="btnShiftSessionNextWeek" disabled>Dời sang tuần kế</button>
+                        <button class="btn btn-primary btn-sm" id="btnSaveSessionReview" disabled>Lưu ghi chú buổi</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div id="classesPresentationPane" class="d-none">
+                <div class="card p-3 mb-3 classes-present-head">
+                  <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                    <h6 class="mb-0" id="classesPresentationTitle">Trình chiếu theo lớp</h6>
+                    <span class="badge text-bg-light">+⭐ và Random</span>
+                  </div>
+                  <p class="small text-muted mb-2" id="classesPresentationSubtitle">
+                    Chỉ hiển thị lớp đang dạy để thao tác nhanh khi đứng lớp.
+                  </p>
+                  <div class="classes-presentation-tabs" id="classesPresentationClassTabs"></div>
+                </div>
+
+                <div class="classes-present-grid">
+                  <div class="card p-3">
+                    <h6 class="mb-2">Danh sách học sinh</h6>
+                    <div id="classPresentationStudents"></div>
+                  </div>
+                  <div class="classes-present-side">
+                    <div class="card p-3">
+                      <h6 class="mb-2">Random học sinh</h6>
+                      <div id="classRandomPanel"></div>
+                    </div>
+                    <div class="card p-3">
+                      <h6 class="mb-2">Bảng điểm lớp</h6>
+                      <div id="classLeaderboard"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </section>
 
             <section id="video-plan" class="route">
@@ -630,7 +849,7 @@
                 <div class="video-block-head mb-3">
                   <h6 class="mb-1" id="videoCreateTitle">Tạo nhanh công việc video</h6>
                   <p class="small text-muted mb-0" id="videoCreateSubtitle">
-                    Điền thông tin cốt lõi, sau đó dùng AI hoặc template để hoàn thiện nội dung.
+                    Điền thông tin cốt lõi, sau đó dùng AI để hoàn thiện nội dung.
                   </p>
                 </div>
                 <div class="row g-3 video-plan-form-grid">
@@ -693,27 +912,6 @@
                   </div>
                 </div>
                 <div id="videoAiSuggestionList" class="ai-suggestion-list mt-3"></div>
-                <div class="card p-2 mt-3 border-0 bg-light-subtle video-blueprint-card">
-                  <div class="row g-2 align-items-end">
-                    <div class="col-12 col-md-4">
-                      <label class="form-label mb-1" for="videoBlueprintType">Loại template</label>
-                      <select id="videoBlueprintType" class="form-select form-select-sm">
-                        <option value="short" selected>Video ngắn 30s</option>
-                        <option value="long">Video dài 5-10 phút</option>
-                      </select>
-                    </div>
-                    <div class="col-12 col-md-5">
-                      <label class="form-label mb-1" for="videoBlueprintSelect">Template nội dung</label>
-                      <select id="videoBlueprintSelect" class="form-select form-select-sm">
-                        <option value="">Chọn mẫu nội dung</option>
-                      </select>
-                    </div>
-                    <div class="col-12 col-md-3 d-grid d-md-flex gap-2">
-                      <button class="btn btn-outline-primary btn-sm w-100" id="btnVideoApplyBlueprint" type="button">Áp dụng template</button>
-                      <button class="btn btn-outline-secondary btn-sm w-100" id="btnVideoSaveBlueprint" type="button">Lưu template</button>
-                    </div>
-                  </div>
-                </div>
               </div>
 
               <div class="card p-3 mb-3 video-plan-filter-card">
@@ -862,6 +1060,11 @@
                     + Thêm tài khoản
                   </button>
                 </div>
+              </div>
+
+              <div class="finance-nav-switch mb-3" role="tablist" aria-label="Điều hướng tài chính">
+                <a href="#expenses" class="btn btn-outline-primary btn-sm">Chi tiêu</a>
+                <a href="#accounts" class="btn btn-primary btn-sm" aria-current="page">Tài khoản &amp; Thu nhập</a>
               </div>
 
               <div class="row g-3">
@@ -1046,6 +1249,7 @@
                           <option value="dashboard" id="stOptStartDashboard">Trung tâm</option>
                           <option value="goals" id="stOptStartGoals">Mục tiêu</option>
                           <option value="video-plan" id="stOptStartVideoPlan">Kế hoạch video</option>
+                          <option value="classes" id="stOptStartClasses">Lớp học</option>
                         </select>
                       </div>
                     </div>

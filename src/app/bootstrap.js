@@ -1,4 +1,4 @@
-import { applyExpenseFiltersAndRender } from "../features/expenses/expenses.filters.js";
+﻿import { applyExpenseFiltersAndRender } from "../features/expenses/expenses.filters.js";
 import { refreshExpensesFeature } from "../features/expenses/expenses.controller.js";
 import { applyIncomeFiltersAndRender } from "../features/incomes/incomes.filters.js";
 import { refreshIncomesFeature } from "../features/incomes/incomes.controller.js";
@@ -104,6 +104,11 @@ import {
   bindSettingsEvents,
 } from "../features/settings/settings.ui.js";
 import { t, formatTemplate } from "../shared/constants/copy.vi.js";
+import {
+  AUTH_BOOTSTRAP_TIMEOUT_MS,
+  AUTH_WARM_HINT_KEY,
+  LAST_ROUTE_KEY,
+} from "../shared/constants/keys.js";
 import { loadRouteModule, preloadRouteModule, loadAiServices } from "./moduleLoader.js";
 
 const SETTINGS_DEBOUNCE_MS = 700;
@@ -114,6 +119,88 @@ const AI_EXPENSE_DEBOUNCE_MS = 600;
 const AI_EXPENSE_AUTO_CONFIDENCE = 0.75;
 const DEFAULT_EXPENSE_FILTERS = { category: "all", account: "all", search: "" };
 const DEFAULT_INCOME_FILTERS = { account: "all", search: "" };
+const CLASSES_LIST_TAB_KEY = "nexus_classes_list_tab_v1";
+const CLASSES_MODE_KEY = "nexus_classes_mode_v1";
+const CLASSES_PRESENTATION_CLASS_KEY = "nexus_classes_presentation_class_v1";
+const APP_ROUTES = new Set([
+  "dashboard",
+  "expenses",
+  "goals",
+  "video-plan",
+  "weekly-review",
+  "accounts",
+  "settings",
+  "classes",
+]);
+
+function normalizeClassesListTab(value = "") {
+  return String(value || "").trim() === "completed" ? "completed" : "active";
+}
+
+function loadClassesListTabState() {
+  try {
+    return normalizeClassesListTab(localStorage.getItem(CLASSES_LIST_TAB_KEY));
+  } catch (err) {
+    console.warn("Không thá»’ ?á»c tab l:p há»c", err);
+    return "active";
+  }
+}
+
+function persistClassesListTab(value = "") {
+  const tab = normalizeClassesListTab(value);
+  try {
+    localStorage.setItem(CLASSES_LIST_TAB_KEY, tab);
+  } catch (err) {
+    console.warn("Không thá»’ lÆ°u tab l:p há»c", err);
+  }
+  return tab;
+}
+
+function normalizeClassesMode(value = "") {
+  return String(value || "").trim() === "presentation" ? "presentation" : "admin";
+}
+
+function loadClassesModeState() {
+  try {
+    return normalizeClassesMode(localStorage.getItem(CLASSES_MODE_KEY));
+  } catch (err) {
+    console.warn("Không thể đọc chế độ lớp học", err);
+    return "admin";
+  }
+}
+
+function persistClassesMode(value = "") {
+  const mode = normalizeClassesMode(value);
+  try {
+    localStorage.setItem(CLASSES_MODE_KEY, mode);
+  } catch (err) {
+    console.warn("Không thể lưu chế độ lớp học", err);
+  }
+  return mode;
+}
+
+function loadPresentationClassState() {
+  try {
+    return String(localStorage.getItem(CLASSES_PRESENTATION_CLASS_KEY) || "").trim();
+  } catch (err) {
+    console.warn("Không thể đọc lớp trình chiếu", err);
+    return "";
+  }
+}
+
+function persistPresentationClass(value = "") {
+  const classId = String(value || "").trim();
+  try {
+    if (classId) {
+      localStorage.setItem(CLASSES_PRESENTATION_CLASS_KEY, classId);
+    } else {
+      localStorage.removeItem(CLASSES_PRESENTATION_CLASS_KEY);
+    }
+  } catch (err) {
+    console.warn("Không thể lưu lớp trình chiếu", err);
+  }
+  return classId;
+}
 
 const state = {
   currentUser: null,
@@ -144,6 +231,21 @@ const state = {
   settingsSavePendingPatch: null,
   settingsSaveVersion: 0,
   weeklyReviewVm: null,
+  weeklyReviewFilter: {
+    mode: "week",
+    weekKey: "",
+    monthKey: getCurrentYm(),
+  },
+  classes: [],
+  classesMode: loadClassesModeState(),
+  classesListTab: loadClassesListTabState(),
+  classSelectedId: "",
+  classPresentationId: loadPresentationClassState(),
+  classStudents: [],
+  classSessions: [],
+  classSelectedSessionId: "",
+  classRandomResult: null,
+  classRandomHistory: [],
   weeklyGoals: {
     weekKey: "",
     plan: {
@@ -182,6 +284,7 @@ const state = {
   incTotal: 0,
   pendingDeleteExpenseId: null,
   pendingDeleteIncomeId: null,
+  pendingDeleteClassId: null,
   aiTimer: null,
   aiCooldownUiTimer: null,
 };
@@ -190,14 +293,17 @@ const bindState = {
   dashboard: false,
   video: false,
   weeklyReview: false,
+  classes: false,
   routeSync: false,
 };
 
 let dashboardModule = null;
 let weeklyReviewModule = null;
+let classesModule = null;
 let aiServicesModule = null;
 let dashboardModulePromise = null;
 let weeklyReviewModulePromise = null;
+let classesModulePromise = null;
 
 async function ensureDashboardModule() {
   if (dashboardModule) return dashboardModule;
@@ -219,6 +325,17 @@ async function ensureWeeklyReviewModule() {
     });
   }
   return weeklyReviewModulePromise;
+}
+
+async function ensureClassesModule() {
+  if (classesModule) return classesModule;
+  if (!classesModulePromise) {
+    classesModulePromise = loadRouteModule("classes").then((mod) => {
+      classesModule = mod || {};
+      return classesModule;
+    });
+  }
+  return classesModulePromise;
 }
 
 async function ensureAiServicesModule() {
@@ -258,6 +375,29 @@ function currentHashRouteId() {
   return String(location.hash || "").replace("#", "").trim();
 }
 
+function normalizeAppRoute(routeId = "", { allowAuth = false } = {}) {
+  const route = String(routeId || "").trim();
+  if (!route) return "";
+  if (route === "auth") return allowAuth ? "auth" : "";
+  return APP_ROUTES.has(route) ? route : "";
+}
+
+function readStorageSafe(key = "") {
+  try {
+    return String(localStorage.getItem(String(key || "")) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function getStoredLastRoute() {
+  return normalizeAppRoute(readStorageSafe(LAST_ROUTE_KEY));
+}
+
+function hasAuthWarmHint() {
+  return readStorageSafe(AUTH_WARM_HINT_KEY) === "1";
+}
+
 function isRouteActive(routeId) {
   return currentRouteId() === String(routeId || "").trim();
 }
@@ -268,6 +408,10 @@ function isWeeklyReviewRouteActive() {
 
 function isVideoPlanRouteActive() {
   return isRouteActive("video-plan");
+}
+
+function isClassesRouteActive() {
+  return isRouteActive("classes");
 }
 
 function isObject(value) {
@@ -297,6 +441,30 @@ function isValidYm(value) {
 function getCurrentYm() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function normalizeWeeklyReviewMode(value = "") {
+  return String(value || "").trim() === "month" ? "month" : "week";
+}
+
+function isValidWeekKey(value = "") {
+  return /^\d{4}-W\d{2}$/.test(String(value || "").trim());
+}
+
+function getCurrentWeekKeyForReview() {
+  if (typeof weeklyReviewModule?.getCurrentWeekKey === "function") {
+    return String(weeklyReviewModule.getCurrentWeekKey(new Date()) || "").trim();
+  }
+  const now = new Date();
+  const temp = new Date(now);
+  temp.setHours(0, 0, 0, 0);
+  const day = (temp.getDay() + 6) % 7;
+  temp.setDate(temp.getDate() - day + 3);
+  const firstThursday = new Date(temp.getFullYear(), 0, 4);
+  const firstThursdayDay = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstThursdayDay + 3);
+  const weekNo = 1 + Math.round((temp.getTime() - firstThursday.getTime()) / 604800000);
+  return `${temp.getFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
 function ymToDate(value) {
@@ -386,9 +554,26 @@ function getDashboardPrefs() {
 }
 
 function resolvePostLoginRoute() {
-  const hashRoute = currentHashRouteId();
-  if (hashRoute && hashRoute !== "auth") return hashRoute;
-  return getDashboardPrefs().startRoute || "dashboard";
+  const hashRoute = normalizeAppRoute(currentHashRouteId());
+  if (hashRoute) return hashRoute;
+
+  const lastRoute = getStoredLastRoute();
+  if (lastRoute) return lastRoute;
+
+  const settingsRoute = normalizeAppRoute(getDashboardPrefs().startRoute);
+  if (settingsRoute) return settingsRoute;
+
+  return "dashboard";
+}
+
+function resolveWarmStartRoute() {
+  const hashRoute = normalizeAppRoute(currentHashRouteId());
+  if (hashRoute) return hashRoute;
+
+  const lastRoute = getStoredLastRoute();
+  if (lastRoute) return lastRoute;
+
+  return "dashboard";
 }
 
 function getFilterPrefs() {
@@ -407,9 +592,7 @@ function applyUiDensityPreference() {
 }
 
 function applyMonthPreferenceFromSettings() {
-  const filters = getFilterPrefs();
-  const nextMonth =
-    filters.monthMode === "lastUsed" && isValidYm(filters.lastMonth) ? filters.lastMonth : getCurrentYm();
+  const nextMonth = getCurrentYm();
   setMonthSelectors(nextMonth);
   updateMonthBadge();
   return nextMonth;
@@ -597,19 +780,9 @@ function queueSettingsPatch(partialPatch, { immediate = false, silent = false } 
 }
 
 function persistLastMonthFromUi({ immediate = false, silent = true } = {}) {
-  const ym = byId("monthFilter")?.value || "";
-  if (!isValidYm(ym)) return;
-
-  queueSettingsPatch(
-    {
-      preferences: {
-        filters: {
-          lastMonth: ym,
-        },
-      },
-    },
-    { immediate, silent }
-  );
+  // Không lưu lại tháng cũ theo yêu cầu: luôn ưu tiên tháng hiện tại.
+  void immediate;
+  void silent;
 }
 
 function persistRememberedFilterState(filterKey, payload, { immediate = false } = {}) {
@@ -735,7 +908,12 @@ function handleSettingsPatch(partialPatch, meta = {}) {
     }
     renderDashboardCenter();
     if (state.currentUser?.uid && isWeeklyReviewRouteActive()) {
-      void loadWeeklyReview(state.currentUser.uid, state.weeklyReviewVm?.weekKey || "");
+      const mode = normalizeWeeklyReviewMode(state.weeklyReviewFilter?.mode || "week");
+      const periodKey =
+        mode === "month"
+          ? String(state.weeklyReviewFilter?.monthKey || getCurrentYm()).trim()
+          : String(state.weeklyReviewFilter?.weekKey || "").trim();
+      void loadWeeklyReview(state.currentUser.uid, periodKey, { mode });
     }
   }
 }
@@ -748,24 +926,12 @@ function localizeStaticVietnamese() {
     if (el) el.textContent = t(path, fallback);
   };
 
-  setText("videoPlanTitle", "videoPlan.layout.pageTitle", "Kế hoạch video YouTube");
-  setText(
-    "videoPlanSubtitle",
-    "videoPlan.layout.pageSubtitle",
-    "Vận hành lịch sản xuất nội dung theo 6 giai đoạn rõ ràng và dễ theo dõi."
-  );
+  setText("videoPlanTitle", "videoPlan.layout.pageTitle", "Kế hoạch video");
+  setText("videoPlanSubtitle", "videoPlan.layout.pageSubtitle", "Quản lý kế hoạch video theo giai đoạn.");
   setText("videoCreateTitle", "videoPlan.layout.createTitle", "Tạo nhanh công việc video");
-  setText(
-    "videoCreateSubtitle",
-    "videoPlan.layout.createSubtitle",
-    "Điền thông tin cốt lõi, sau đó dùng AI hoặc template để hoàn thiện nội dung."
-  );
+  setText("videoCreateSubtitle", "videoPlan.layout.createSubtitle", "Điền thông tin cốt lõi và hoàn thiện nội dung.");
   setText("videoFilterTitle", "videoPlan.layout.filtersTitle", "Bộ lọc và điều hướng");
-  setText(
-    "videoFilterSubtitle",
-    "videoPlan.layout.filtersSubtitle",
-    "Lọc theo giai đoạn, ưu tiên, trạng thái kết quả và từ khóa."
-  );
+  setText("videoFilterSubtitle", "videoPlan.layout.filtersSubtitle", "Lọc theo giai đoạn, ưu tiên, trạng thái và từ khóa.");
   setText("videoViewModeLabel", "videoPlan.layout.viewModeLabel", "Chế độ hiển thị");
   setText("videoCalendarAgendaTitle", "videoPlan.layout.agendaTitle", "Lịch theo ngày");
   setText("videoCalendarUnscheduledTitle", "videoPlan.layout.unscheduledTitle", "Chưa lên lịch");
@@ -783,6 +949,19 @@ function localizeStaticVietnamese() {
   if (quickWeeklyReview) {
     quickWeeklyReview.textContent = t("cta.weeklyReview", "Tổng kết tuần");
   }
+  setText("classesPageTitle", "classes.title", "Quản lý lớp học");
+  setText(
+    "classesPageSubtitle",
+    "classes.subtitle",
+    "Theo dõi lịch 14 buổi, học sinh và ghi chú từng buổi trong một màn hình."
+  );
+  setText("classesListTitle", "classes.listTitle", "Danh sách lớp");
+  setText("classesDetailTitle", "classes.detailTitle", "Chi tiết lớp");
+  setText("classesStudentsTitle", "classes.studentsTitle", "Học sinh");
+  setText("classesSessionsTitle", "classes.sessionsTitle", "Lịch 14 buổi");
+  setText("classesSessionEditorTitle", "classes.sessionEditorTitle", "Ghi chú buổi học");
+  setText("classesReviewTableTitle", "classes.reviewTableTitle", "Nhận xét từng học sinh");
+  setText("dashClassTitle", "dashboard.classes.title", "Buổi học sắp tới");
 
   updateNavbarStats(state.expTotal, state.incTotal);
   document.documentElement.setAttribute("data-i18n-ready", "true");
@@ -791,7 +970,7 @@ function localizeStaticVietnamese() {
 function ensureUser() {
   const uid = auth.currentUser?.uid;
   if (!uid) {
-    showToast(t("toast.signInRequired", "Vui lòng đăng nhập trước"), "error");
+    showToast(t("toast.signInRequired", "Vui lòng ?Ä’ng nháº­p trÆ°:c"), "error");
     return null;
   }
   return uid;
@@ -837,7 +1016,7 @@ function renderExpenseAiHint(suggestion = {}, mode = "suggest") {
 
   const confidenceText = `${Math.round(Math.max(0, Math.min(1, confidence)) * 100)}%`;
   let text = formatTemplate(
-    t("ai.expenseLabel.suggested", "AI đề xuất danh mục {{category}} (độ tin cậy {{confidence}})."),
+    t("ai.expenseLabel.suggested", "AI ?á» xuáº¥t danh má»¥c {{category}} (? tin cáº­y {{confidence}})."),
     {
       category,
       confidence: confidenceText,
@@ -850,7 +1029,7 @@ function renderExpenseAiHint(suggestion = {}, mode = "suggest") {
 
   if (mode === "auto") {
     text = formatTemplate(
-      t("ai.expenseLabel.autoApplied", "AI đã tự gán danh mục {{category}} ({{confidence}})."),
+      t("ai.expenseLabel.autoApplied", "AI ?ã tá»± gán danh má»¥c {{category}} ({{confidence}})."),
       {
         category,
         confidence: confidenceText,
@@ -861,7 +1040,7 @@ function renderExpenseAiHint(suggestion = {}, mode = "suggest") {
     applyBtn.disabled = true;
   } else if (mode === "manual") {
     text = formatTemplate(
-      t("ai.expenseLabel.manualApplied", "Đã áp dụng danh mục {{category}} từ gợi ý AI."),
+      t("ai.expenseLabel.manualApplied", "Äã áp dá»¥ng danh má»¥c {{category}} tá»« gá»£i ý AI."),
       {
         category,
       }
@@ -870,7 +1049,7 @@ function renderExpenseAiHint(suggestion = {}, mode = "suggest") {
     applyBtn.classList.add("d-none");
     applyBtn.disabled = true;
   } else if (mode === "error") {
-    text = t("ai.expenseLabel.errorHint", "Chưa thể gợi ý danh mục lúc này. Bạn vẫn có thể chọn thủ công.");
+    text = t("ai.expenseLabel.errorHint", "ChÆ°a thá»’ gá»£i ý danh má»¥c lúc này. Báº¡n váº«n có thá»’ chá»n thá»§ công.");
     hint.classList.add("ai-inline-hint-info");
     applyBtn.classList.add("d-none");
     applyBtn.disabled = true;
@@ -1003,6 +1182,136 @@ async function loadMotivation(uid) {
   renderDashboardCenter();
 }
 
+async function renderClassesPage() {
+  const module = await ensureClassesModule();
+  if (!module?.buildClassesPageVM || !module?.renderClassesPage) return;
+
+  const vm = module.buildClassesPageVM({
+    classes: state.classes,
+    mode: state.classesMode,
+    listTab: state.classesListTab,
+    selectedClassId: state.classSelectedId,
+    presentationClassId: state.classPresentationId,
+    students: state.classStudents,
+    sessions: state.classSessions,
+    selectedSessionId: state.classSelectedSessionId,
+    classRandomResult: state.classRandomResult,
+    classRandomHistory: state.classRandomHistory,
+  });
+
+  state.classesMode = normalizeClassesMode(vm?.mode || state.classesMode);
+  state.classesListTab = normalizeClassesListTab(vm?.listTab || state.classesListTab);
+  state.classSelectedId = String(vm?.selectedClass?.id || "").trim();
+  state.classPresentationId = persistPresentationClass(String(vm?.presentation?.selectedClass?.id || ""));
+  state.classSelectedSessionId = String(vm?.selectedSessionId || "").trim();
+  module.renderClassesPage(vm);
+}
+
+function classesInCurrentTab(classes = state.classes, listTab = state.classesListTab) {
+  const tab = normalizeClassesListTab(listTab);
+  if (tab === "completed") {
+    return (Array.isArray(classes) ? classes : []).filter(
+      (item) => String(item?.status || "").trim() === "completed"
+    );
+  }
+  return (Array.isArray(classes) ? classes : []).filter(
+    (item) => String(item?.status || "active").trim() === "active"
+  );
+}
+
+function classesInCurrentMode(classes = state.classes) {
+  if (state.classesMode === "presentation") {
+    return (Array.isArray(classes) ? classes : []).filter(
+      (item) => String(item?.status || "active").trim() === "active"
+    );
+  }
+  return classesInCurrentTab(classes, state.classesListTab);
+}
+
+function classExists(classId = "", classes = state.classes) {
+  const id = String(classId || "").trim();
+  return !!id && (Array.isArray(classes) ? classes : []).some((item) => String(item?.id || "") === id);
+}
+
+function resolveNextSessionNoForStudent() {
+  const selectedClass = state.classes.find((item) => String(item?.id || "") === String(state.classSelectedId || ""));
+  const classNext = Math.max(1, Number(selectedClass?.nextSessionNo || 1));
+  const firstPlanned = state.classSessions.find((item) => String(item?.status || "planned") === "planned");
+  const plannedNext = Math.max(1, Number(firstPlanned?.sessionNo || classNext || 1));
+  return Math.max(classNext, plannedNext);
+}
+
+function normalizePickPercentInput(value = 0) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(100, num));
+}
+
+async function loadClasses(uid, options = {}) {
+  if (!uid) return;
+
+  const module = await ensureClassesModule();
+  if (!module?.loadClassesOverview || !module?.loadClassDetail) return;
+
+  if (options?.listTab) {
+    state.classesListTab = persistClassesListTab(options.listTab);
+  }
+
+  const classes = await module.loadClassesOverview(uid, {});
+  state.classes = Array.isArray(classes) ? classes : [];
+  const scopedClasses = classesInCurrentMode(state.classes);
+
+  const forceClassId = String(options?.forceClassId || "").trim();
+  const preserveSelection = options?.preserveSelection !== false;
+  const previousSessionId = preserveSelection ? String(state.classSelectedSessionId || "").trim() : "";
+  const previousClassId = String(state.classSelectedId || "").trim();
+
+  let selectedClassId = "";
+  if (forceClassId) {
+    selectedClassId = forceClassId;
+  } else if (state.classesMode === "presentation") {
+    selectedClassId = preserveSelection
+      ? String(state.classPresentationId || state.classSelectedId || "").trim()
+      : String(state.classPresentationId || "").trim();
+  } else {
+    selectedClassId = preserveSelection ? String(state.classSelectedId || "").trim() : "";
+  }
+
+  if (!selectedClassId && scopedClasses.length) {
+    selectedClassId = String(scopedClasses[0]?.id || "").trim();
+  }
+  if (selectedClassId && !classExists(selectedClassId, scopedClasses)) {
+    selectedClassId = String(scopedClasses[0]?.id || "").trim();
+  }
+
+  state.classSelectedId = selectedClassId;
+  if (state.classesMode === "presentation") {
+    state.classPresentationId = persistPresentationClass(selectedClassId);
+  }
+  state.classStudents = [];
+  state.classSessions = [];
+  state.classSelectedSessionId = "";
+  if (!preserveSelection || selectedClassId !== previousClassId) {
+    state.classRandomResult = null;
+    state.classRandomHistory = [];
+  }
+
+  if (selectedClassId) {
+    const detail = await module.loadClassDetail(uid, selectedClassId, { ensureSessions: true });
+    if (detail?.classItem?.id) {
+      state.classes = state.classes.map((item) =>
+        String(item?.id || "") === String(detail.classItem.id) ? detail.classItem : item
+      );
+    }
+    state.classStudents = Array.isArray(detail?.students) ? detail.students : [];
+    state.classSessions = Array.isArray(detail?.sessions) ? detail.sessions : [];
+    state.classSelectedSessionId = previousSessionId;
+  }
+
+  await renderClassesPage();
+  renderDashboardCenter();
+}
+
 function getFilteredVideoTasks() {
   const tasksWithRetro = (Array.isArray(state.videoTasks) ? state.videoTasks : []).map((task) => ({
     ...task,
@@ -1067,23 +1376,23 @@ const VIDEO_TRACK_TO_BLUEPRINT_LANGUAGE = {
 const VIDEO_TRACK_LABEL = {
   python: "Python",
   javascript: "JavaScript",
-  frontend: "Frontend thực chiến",
-  backend: "Backend thực chiến",
-  data_ai: "Data/AI ứng dụng",
-  automation: "Tự động hóa thực tế",
-  mobile: "Mobile app cơ bản",
-  system_design: "System design nhập môn",
+  frontend: "Frontend thá»±c chiáº¿n",
+  backend: "Backend thá»±c chiáº¿n",
+  data_ai: "Data/AI á»©ng dá»¥ng",
+  automation: "Tá»± ?ng hóa thá»±c táº¿",
+  mobile: "Mobile app cÆ¡ báº£n",
+  system_design: "System design nháº­p môn",
 };
 
 const VIDEO_TRACK_TOPICS = {
-  python: ["Project Python cơ bản", "Tư duy giải bài toán từng bước", "Debug cho người mới"],
-  javascript: ["Project JavaScript thuần", "DOM và event thực chiến", "Mini app chạy được ngay"],
-  frontend: ["UI/UX cho người mới", "Responsive thực tế", "Tối ưu trải nghiệm người dùng"],
-  backend: ["Xây API từ đầu", "Auth và bảo mật cơ bản", "Database cho dự án nhỏ"],
-  data_ai: ["Phân tích dữ liệu dễ hiểu", "Ứng dụng AI vào bài toán thật", "Mini project với model có sẵn"],
-  automation: ["Tự động hóa tác vụ lặp lại", "Script tiết kiệm thời gian", "Workflow cá nhân hóa"],
-  mobile: ["Mini app mobile cho người mới", "Navigation và state cơ bản", "Tối ưu trải nghiệm trên điện thoại"],
-  system_design: ["Thiết kế hệ thống nhập môn", "Scalability cơ bản", "Tư duy kiến trúc qua ví dụ đơn giản"],
+  python: ["Project Python cÆ¡ báº£n", "TÆ° duy giáº£i bài toán tá»«ng bÆ°:c", "Debug cho ngÆ°á»i m:i"],
+  javascript: ["Project JavaScript thuáº§n", "DOM và event thá»±c chiáº¿n", "Mini app cháº¡y ?Æ°á»£c ngay"],
+  frontend: ["UI/UX cho ngÆ°á»i m:i", "Responsive thá»±c táº¿", "T?i Æ°u tráº£i nghi!m ngÆ°á»i dùng"],
+  backend: ["Xây API tá»« ?áº§u", "Auth và báº£o máº­t cÆ¡ báº£n", "Database cho dá»± án nhá»"],
+  data_ai: ["Phân tích dá»¯ li!u d& hiá»’u", "á»¨ng dá»¥ng AI vào bài toán tháº­t", "Mini project v:i model có sáºµn"],
+  automation: ["Tá»± ?ng hóa tác vá»¥ láº·p láº¡i", "Script tiáº¿t ki!m thá»i gian", "Workflow cá nhân hóa"],
+  mobile: ["Mini app mobile cho ngÆ°á»i m:i", "Navigation và state cÆ¡ báº£n", "T?i Æ°u tráº£i nghi!m trên ?i!n thoáº¡i"],
+  system_design: ["Thiáº¿t káº¿ h! th?ng nháº­p môn", "Scalability cÆ¡ báº£n", "TÆ° duy kiáº¿n trúc qua ví dá»¥ ?Æ¡n giáº£n"],
 };
 
 const VIDEO_TRACK_KEYWORDS = {
@@ -1092,9 +1401,9 @@ const VIDEO_TRACK_KEYWORDS = {
   frontend: ["frontend", "ui", "ux", "css", "html"],
   backend: ["backend", "api", "server", "database", "auth"],
   data_ai: ["ai", "data", "machine learning", "llm", "pandas", "numpy"],
-  automation: ["automation", "tự động", "workflow", "script", "bot"],
+  automation: ["automation", "tá»± ?ng", "workflow", "script", "bot"],
   mobile: ["mobile", "android", "ios", "react native", "flutter"],
-  system_design: ["system design", "kiến trúc", "scalability", "cache", "queue"],
+  system_design: ["system design", "kiáº¿n trúc", "scalability", "cache", "queue"],
 };
 
 function normalizeVideoTrack(value = "", fallback = "python") {
@@ -1148,14 +1457,14 @@ function syncVideoBlueprintControls() {
     ? filtered
         .map((item) => {
           const id = String(item?.id || "").trim();
-          const name = escapeHtml(String(item?.name || "").trim() || t("videoPlan.blueprints.fallbackName", "Mẫu nội dung AI"));
+          const name = escapeHtml(String(item?.name || "").trim() || t("videoPlan.blueprints.fallbackName", "Máº«u ni dung AI"));
           return `<option value="${escapeHtml(id)}">${name}</option>`;
         })
         .join("")
-    : `<option value="">${escapeHtml(t("videoPlan.blueprints.noData", "Chưa có template phù hợp. Hãy tạo từ AI gợi ý đầu tiên."))}</option>`;
+    : `<option value="">${escapeHtml(t("videoPlan.blueprints.noData", "ChÆ°a có template phù há»£p. Hãy táº¡o tá»« AI gá»£i ý ?áº§u tiên."))}</option>`;
 
   select.innerHTML = `<option value="">${escapeHtml(
-    t("videoPlan.blueprints.placeholder", "Chọn mẫu nội dung")
+    t("videoPlan.blueprints.placeholder", "Chá»n máº«u ni dung")
   )}</option>${optionsHtml}`;
 
   if (filtered.some((item) => String(item?.id || "") === currentValue)) {
@@ -1250,19 +1559,44 @@ function weeklyReviewOptions() {
   };
 }
 
-async function loadWeeklyReview(uid, weekKey = "") {
+async function loadWeeklyReview(uid, periodKey = "", { mode = "" } = {}) {
   if (!uid) return;
 
   const module = await ensureWeeklyReviewModule();
-  const targetWeekKey = String(weekKey || state.weeklyReviewVm?.weekKey || "").trim();
-  const vm = await module.buildWeeklyReviewVM(uid, targetWeekKey, weeklyReviewOptions());
+  const safeMode = normalizeWeeklyReviewMode(mode || state.weeklyReviewFilter?.mode || "week");
+  const fallbackWeek = getCurrentWeekKeyForReview();
+  const fallbackMonth = getCurrentYm();
+  const targetKey = String(periodKey || "").trim();
+  const resolvedKey =
+    safeMode === "month"
+      ? (isValidYm(targetKey)
+          ? targetKey
+          : String(state.weeklyReviewFilter?.monthKey || fallbackMonth).trim())
+      : (isValidWeekKey(targetKey)
+          ? targetKey
+          : String(state.weeklyReviewFilter?.weekKey || state.weeklyReviewVm?.weekKey || fallbackWeek).trim());
+
+  const vm = await module.buildWeeklyReviewVM(uid, resolvedKey, {
+    ...weeklyReviewOptions(),
+    periodMode: safeMode,
+  });
   state.weeklyReviewVm = vm;
+  state.weeklyReviewFilter = {
+    mode: normalizeWeeklyReviewMode(vm?.period?.mode || safeMode),
+    weekKey: String(vm?.period?.weekKey || fallbackWeek).trim(),
+    monthKey: String(vm?.period?.monthKey || fallbackMonth).trim(),
+  };
   module.renderWeeklyReviewPage(vm);
 }
 
 async function refreshWeeklyReviewIfVisible(uid) {
   if (!uid || !isWeeklyReviewRouteActive()) return;
-  await loadWeeklyReview(uid, state.weeklyReviewVm?.weekKey || "");
+  const mode = normalizeWeeklyReviewMode(state.weeklyReviewFilter?.mode || "week");
+  const periodKey =
+    mode === "month"
+      ? String(state.weeklyReviewFilter?.monthKey || getCurrentYm()).trim()
+      : String(state.weeklyReviewFilter?.weekKey || state.weeklyReviewVm?.weekKey || "").trim();
+  await loadWeeklyReview(uid, periodKey, { mode });
 }
 
 async function refreshAll(uid) {
@@ -1276,12 +1610,13 @@ async function refreshAll(uid) {
       loadGoals(uid),
       loadVideo(uid),
       loadMotivation(uid),
+      loadClasses(uid, { preserveSelection: true }),
       loadBalancesRuntime(uid, state, renderDashboardCenter),
     ]);
     await refreshWeeklyReviewIfVisible(uid);
   } catch (err) {
     console.error("refreshAll error", err);
-    showToast(t("toast.loadFail", "Không thể tải dữ liệu. Vui lòng thử lại."), "error");
+    showToast(t("toast.loadFail", "Không thá»’ táº£i dá»¯ li!u. Vui lòng thá»­ láº¡i."), "error");
   } finally {
     setGlobalLoading(false);
   }
@@ -1319,6 +1654,20 @@ function resetAppView() {
   state.videoRetrosByTaskId = {};
   state.contentBlueprints = [];
   state.weeklyReviewVm = null;
+  state.weeklyReviewFilter = {
+    mode: "week",
+    weekKey: "",
+    monthKey: getCurrentYm(),
+  };
+  state.classes = [];
+  state.classesMode = loadClassesModeState();
+  state.classSelectedId = "";
+  state.classPresentationId = loadPresentationClassState();
+  state.classStudents = [];
+  state.classSessions = [];
+  state.classSelectedSessionId = "";
+  state.classRandomResult = null;
+  state.classRandomHistory = [];
   state.weeklyGoals = {
     weekKey: "",
     plan: {
@@ -1368,6 +1717,7 @@ function resetAppView() {
   state.incTotal = 0;
   state.pendingDeleteExpenseId = null;
   state.pendingDeleteIncomeId = null;
+  state.pendingDeleteClassId = null;
 
   updateNavbarStats(0, 0);
   updateDashboardFinance({ expTotal: 0, incTotal: 0 });
@@ -1391,12 +1741,27 @@ function resetAppView() {
   if (weeklyReviewModule?.renderWeeklyReviewPage) {
     weeklyReviewModule.renderWeeklyReviewPage(null);
   }
+  if (classesModule?.renderClassesPage && classesModule?.buildClassesPageVM) {
+    const emptyVm = classesModule.buildClassesPageVM({
+      classes: [],
+      mode: state.classesMode,
+      listTab: state.classesListTab,
+      selectedClassId: "",
+      presentationClassId: state.classPresentationId,
+      students: [],
+      sessions: [],
+      selectedSessionId: "",
+      classRandomResult: null,
+      classRandomHistory: [],
+    });
+    classesModule.renderClassesPage(emptyVm);
+  }
 
   const balance = byId("balanceList");
-  if (balance) balance.innerHTML = '<div class="text-muted">Chưa có dữ liệu</div>';
+  if (balance) balance.innerHTML = '<div class="text-muted">ChÆ°a có dá»¯ li!u</div>';
 
   const dashboardBalance = byId("dashboardAccountBalances");
-  if (dashboardBalance) dashboardBalance.innerHTML = '<div class="text-muted small">Chưa có dữ liệu</div>';
+  if (dashboardBalance) dashboardBalance.innerHTML = '<div class="text-muted small">ChÆ°a có dá»¯ li!u</div>';
 
   resetSettingsSave();
   renderSettingsForm(state.settings, state.settingsSaveState);
@@ -1423,21 +1788,54 @@ function initSidebarToggle() {
 }
 
 function openConfirmDelete(type, id) {
-  state.pendingDeleteExpenseId = type === "expense" ? id : null;
-  state.pendingDeleteIncomeId = type === "income" ? id : null;
+  clearPendingDeleteState();
+  if (type === "expense") state.pendingDeleteExpenseId = id;
+  if (type === "income") state.pendingDeleteIncomeId = id;
+  if (type === "class") state.pendingDeleteClassId = id;
 
   const title = byId("confirmDeleteTitle");
   const text = byId("confirmDeleteText");
 
   if (title) {
-    title.textContent = type === "expense" ? "Xóa khoản chi?" : "Xóa khoản thu?";
+    if (type === "expense") {
+      title.textContent = t("expenses.deleteTitle", "Xóa khoản chi?");
+    } else if (type === "income") {
+      title.textContent = t("incomes.deleteTitle", "Xóa khoản thu?");
+    } else if (type === "class") {
+      title.textContent = t("classes.confirmDeleteTitle", "Xóa lớp học?");
+    } else {
+      title.textContent = t("common.delete", "Xóa");
+    }
   }
 
   if (text) {
-    text.textContent = "Hành động này không thể hoàn tác.";
+    if (type === "class") {
+      text.textContent = t("classes.confirmDelete", "Bạn chắc chắn muốn xóa lớp học này?");
+    } else {
+      text.textContent = t("common.deleteConfirmText", "Hành động này không thể hoàn tác.");
+    }
   }
 
   bootstrap.Offcanvas.getOrCreateInstance(byId("confirmDeleteModal"))?.show();
+}
+
+function clearPendingDeleteState() {
+  state.pendingDeleteExpenseId = null;
+  state.pendingDeleteIncomeId = null;
+  state.pendingDeleteClassId = null;
+}
+
+async function handleConfirmDeleteClass(uid, classId) {
+  const module = await ensureClassesModule();
+  if (!module?.deleteClassById) {
+    throw new Error(t("toast.classDeleteFail", "Không thể xóa lớp học"));
+  }
+
+  await module.deleteClassById(uid, classId);
+  showToast(t("toast.classDeleted", "Đã xóa lớp học."), "success");
+  state.classSelectedId = "";
+  state.classSelectedSessionId = "";
+  await loadClasses(uid, { preserveSelection: false });
 }
 
 async function handleConfirmDelete() {
@@ -1445,22 +1843,28 @@ async function handleConfirmDelete() {
   if (!uid) return;
 
   try {
+    let needRefreshTransactions = false;
     if (state.pendingDeleteExpenseId) {
       await deleteExpense(uid, state.pendingDeleteExpenseId);
-      showToast(t("toast.expenseDeleted", "Đã xóa khoản chi."), "success");
+      showToast(t("toast.expenseDeleted", "Äã xóa khoáº£n chi."), "success");
+      needRefreshTransactions = true;
     } else if (state.pendingDeleteIncomeId) {
       await deleteIncome(uid, state.pendingDeleteIncomeId);
-      showToast(t("toast.incomeDeleted", "Đã xóa khoản thu."), "success");
+      showToast(t("toast.incomeDeleted", "Äã xóa khoáº£n thu."), "success");
+      needRefreshTransactions = true;
+    } else if (state.pendingDeleteClassId) {
+      await handleConfirmDeleteClass(uid, state.pendingDeleteClassId);
     }
 
     bootstrap.Offcanvas.getOrCreateInstance(byId("confirmDeleteModal"))?.hide();
-    state.pendingDeleteExpenseId = null;
-    state.pendingDeleteIncomeId = null;
+    clearPendingDeleteState();
 
-    await refreshAfterTransaction(uid);
+    if (needRefreshTransactions) {
+      await refreshAfterTransaction(uid);
+    }
   } catch (err) {
     console.error("handleConfirmDelete error", err);
-    showToast(err?.message || t("toast.deleteDataFail", "Không thể xóa dữ liệu"), "error");
+    showToast(err?.message || t("toast.deleteDataFail", "Không thá»’ xóa dá»¯ li!u"), "error");
   }
 }
 
@@ -1621,16 +2025,16 @@ function bindExpenseEvents() {
     try {
       await addExpense(uid, payload);
       bootstrap.Offcanvas.getOrCreateInstance(byId("addExpenseModal"))?.hide();
-      showToast(t("toast.expenseAdded", "Đã thêm khoản chi."), "success");
+      showToast(t("toast.expenseAdded", "Äã thêm khoáº£n chi."), "success");
       await refreshAfterTransaction(uid);
     } catch (err) {
       console.error("addExpense error", err);
       const errorBox = byId("aeError");
       if (errorBox) {
-        errorBox.textContent = err?.message || "Không thể thêm khoản chi";
+        errorBox.textContent = err?.message || "Không thá»’ thêm khoáº£n chi";
         errorBox.classList.remove("d-none");
       } else {
-        showToast(err?.message || t("toast.expenseCreateFail", "Không thể thêm khoản chi"), "error");
+        showToast(err?.message || t("toast.expenseCreateFail", "Không thá»’ thêm khoáº£n chi"), "error");
       }
     }
   });
@@ -1654,11 +2058,11 @@ function bindExpenseEvents() {
     try {
       await updateExpense(uid, id, payload);
       bootstrap.Offcanvas.getOrCreateInstance(byId("editExpenseModal"))?.hide();
-      showToast(t("toast.expenseUpdated", "Đã cập nhật khoản chi."), "success");
+      showToast(t("toast.expenseUpdated", "Äã cáº­p nháº­t khoáº£n chi."), "success");
       await refreshAfterTransaction(uid);
     } catch (err) {
       console.error("updateExpense error", err);
-      showToast(err?.message || t("toast.expenseUpdateFail", "Không thể cập nhật khoản chi"), "error");
+      showToast(err?.message || t("toast.expenseUpdateFail", "Không thá»’ cáº­p nháº­t khoáº£n chi"), "error");
     }
   });
 
@@ -1682,7 +2086,7 @@ function bindExpenseEvents() {
     try {
       const expense = await getExpense(uid, id);
       if (!expense) {
-        showToast(t("toast.expenseNotFound", "Không tìm thấy khoản chi"), "error");
+        showToast(t("toast.expenseNotFound", "Không tìm tháº¥y khoáº£n chi"), "error");
         return;
       }
 
@@ -1707,7 +2111,7 @@ function bindExpenseEvents() {
       bootstrap.Offcanvas.getOrCreateInstance(byId("editExpenseModal"))?.show();
     } catch (err) {
       console.error("open edit expense error", err);
-      showToast(err?.message || t("toast.expenseOpenFail", "Không thể mở khoản chi"), "error");
+      showToast(err?.message || t("toast.expenseOpenFail", "Không thá»’ mx khoáº£n chi"), "error");
     }
   });
 }
@@ -1743,11 +2147,11 @@ function bindIncomeEvents() {
         if (el) el.value = "";
       });
 
-      showToast(t("toast.incomeAdded", "Đã thêm khoản thu."), "success");
+      showToast(t("toast.incomeAdded", "Äã thêm khoáº£n thu."), "success");
       await refreshAfterTransaction(uid);
     } catch (err) {
       console.error("addIncome error", err);
-      showToast(err?.message || t("toast.incomeCreateFail", "Không thể thêm khoản thu"), "error");
+      showToast(err?.message || t("toast.incomeCreateFail", "Không thá»’ thêm khoáº£n thu"), "error");
     }
   });
 
@@ -1769,11 +2173,11 @@ function bindIncomeEvents() {
     try {
       await updateIncome(uid, id, payload);
       bootstrap.Offcanvas.getOrCreateInstance(byId("editIncomeModal"))?.hide();
-      showToast(t("toast.incomeUpdated", "Đã cập nhật khoản thu."), "success");
+      showToast(t("toast.incomeUpdated", "Äã cáº­p nháº­t khoáº£n thu."), "success");
       await refreshAfterTransaction(uid);
     } catch (err) {
       console.error("updateIncome error", err);
-      showToast(err?.message || t("toast.incomeUpdateFail", "Không thể cập nhật khoản thu"), "error");
+      showToast(err?.message || t("toast.incomeUpdateFail", "Không thá»’ cáº­p nháº­t khoáº£n thu"), "error");
     }
   });
 
@@ -1797,7 +2201,7 @@ function bindIncomeEvents() {
     try {
       const income = await getIncome(uid, id);
       if (!income) {
-        showToast(t("toast.incomeNotFound", "Không tìm thấy khoản thu"), "error");
+        showToast(t("toast.incomeNotFound", "Không tìm tháº¥y khoáº£n thu"), "error");
         return;
       }
 
@@ -1821,7 +2225,7 @@ function bindIncomeEvents() {
       bootstrap.Offcanvas.getOrCreateInstance(byId("editIncomeModal"))?.show();
     } catch (err) {
       console.error("open edit income error", err);
-      showToast(err?.message || t("toast.incomeOpenFail", "Không thể mở khoản thu"), "error");
+      showToast(err?.message || t("toast.incomeOpenFail", "Không thá»’ mx khoáº£n thu"), "error");
     }
   });
 }
@@ -1920,15 +2324,15 @@ async function handleHabitCheckInAction(habitId) {
 
   const habit = state.habits.find((item) => item.id === habitId);
   if (!habit) {
-    showToast(t("toast.habitNotFound", "Không tìm thấy thói quen"), "error");
+    showToast(t("toast.habitNotFound", "Không tìm tháº¥y thói quen"), "error");
     return;
   }
 
   const result = await checkInHabit(uid, habit);
   if (result?.status === "locked") {
-    showToast(t("toast.habitLocked", "Bạn đã đạt mục tiêu kỳ này"), "info");
+    showToast(t("toast.habitLocked", "Báº¡n ?ã ?áº¡t má»¥c tiêu ká»³ này"), "info");
   } else {
-    showToast(t("toast.habitChecked", "Điểm danh thành công."), "success");
+    showToast(t("toast.habitChecked", "Äiá»’m danh thành công."), "success");
   }
 
   await refreshGoalsAndMotivation(uid);
@@ -1965,114 +2369,76 @@ function renderVideoAiSuggestions() {
   if (!options.length) {
     root.innerHTML = `<div class="ai-suggestion-empty">${t(
       "ai.videoCopilot.empty",
-      "B\u1ea5m AI g\u1ee3i \u00fd \u0111\u1ec3 nh\u1eadn ph\u01b0\u01a1ng \u00e1n video theo ng\u1eef c\u1ea3nh hi\u1ec7n t\u1ea1i."
+      "Bấm AI gợi ý để nhận phương án video có thể áp dụng ngay."
     )}</div>`;
     return;
   }
 
   root.innerHTML = options
     .map((item, index) => {
-      const title =
-        String(item?.title || "").trim() ||
-        t("ai.videoCopilot.optionUntitled", "Phương án chưa có tiêu đề");
-      const priority = String(item?.priority || "medium").trim();
-      const deadline = String(item?.deadlineSuggestion || "").trim();
-      const note = String(item?.note || "").trim();
-      const shotList = String(item?.shotList || "").trim();
-      const reason = String(item?.reason || "").trim();
+      const title = String(item?.title || "").trim() || t("ai.videoCopilot.optionUntitled", "Phương án chưa có tiêu đề");
       const hook = String(item?.hook || "").trim();
       const outline = String(item?.outline || "").trim();
+      const shotList = String(item?.shotList || "").trim();
       const cta = String(item?.cta || "").trim();
-      const videoType = String(item?.videoType || "").trim();
-      const optionIndexLabel = formatTemplate(t("ai.videoCopilot.optionIndex", "Phương án {{index}}"), {
-        index: index + 1,
-      });
-      const safeTitle = escapeHtml(title);
-      const safePriority = escapeHtml(priority);
-      const safeReason = multilineToHtml(reason);
-      const safeShotList = multilineToHtml(shotList);
-      const safeNote = multilineToHtml(note);
-      const safeHook = multilineToHtml(hook);
-      const safeOutline = multilineToHtml(outline);
-      const safeCta = multilineToHtml(cta);
+      const note = String(item?.note || "").trim();
+      const reason = String(item?.reason || "").trim();
+      const priority = String(item?.priority || "medium").trim().toLowerCase();
+      const priorityLabel = t(`videoPlan.priority.${priority}`, priority);
+      const rawVideoType = String(item?.videoType || "long_5_10").trim().toLowerCase();
       const videoTypeLabel =
-        videoType === "short_30s"
+        rawVideoType === "short_30s"
           ? t("videoPlan.blueprints.short", "Video ngắn 30s")
           : t("videoPlan.blueprints.long", "Video dài 5-10 phút");
+      const deadlineSuggestion = String(item?.deadlineSuggestion || "").trim();
+
+      const safeTitle = escapeHtml(title);
+      const safeReason = multilineToHtml(reason);
+      const safeHook = multilineToHtml(hook);
+      const safeOutline = multilineToHtml(outline);
+      const safeShotList = multilineToHtml(shotList);
+      const safeNote = multilineToHtml(note);
+      const safeCta = multilineToHtml(cta);
+      const safePriority = escapeHtml(priorityLabel);
+      const safeVideoType = escapeHtml(videoTypeLabel);
+      const safeDeadline = escapeHtml(deadlineSuggestion || t("ai.videoCopilot.noDeadline", "Không có hạn gợi ý"));
 
       return `
         <article class="ai-suggestion-card">
+          <div class="ai-suggestion-index">${t("ai.videoCopilot.optionIndex", "Phương án {{index}}").replace(
+            "{{index}}",
+            String(index + 1)
+          )}</div>
           <div class="ai-suggestion-card-head">
-            <div class="d-flex flex-column gap-1">
-              <span class="ai-suggestion-index">${escapeHtml(optionIndexLabel)}</span>
-              <strong>${safeTitle}</strong>
-            </div>
+            <strong>${safeTitle}</strong>
             <span class="badge text-bg-light">${safePriority}</span>
           </div>
-          <div class="ai-suggestion-meta small text-muted">
-            ${
-              deadline
-                ? `${t("ai.videoCopilot.deadline", "Hạn gợi ý")}: ${escapeHtml(deadline)}`
-                : t("ai.videoCopilot.noDeadline", "Không có hạn gợi ý")
-            }
+          <div class="small mt-1">${t("ai.videoCopilot.videoTypeLabel", "Định dạng video")}: ${safeVideoType}</div>
+          <div class="small text-muted">${t("ai.videoCopilot.deadline", "Hạn gợi ý")}: ${safeDeadline}</div>
+          <div class="mt-2">
+            <div class="ai-suggestion-block-title">${t("ai.videoCopilot.hookLabel", "Hook mở đầu")}</div>
+            <div class="ai-suggestion-content">${safeHook}</div>
           </div>
-          <div class="ai-suggestion-meta small text-muted">
-            ${t("ai.videoCopilot.videoTypeLabel", "Định dạng video")}: ${escapeHtml(videoTypeLabel)}
+          <div class="mt-2">
+            <div class="ai-suggestion-block-title">${t("ai.videoCopilot.outlineLabel", "Dàn ý triển khai")}</div>
+            <div class="ai-suggestion-content">${safeOutline}</div>
           </div>
-          ${
-            reason
-              ? `<div class="ai-suggestion-block mt-2">
-                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.reasonLabel", "Lý do gợi ý")}</div>
-                   <div class="small">${safeReason}</div>
-                 </div>`
-              : ""
-          }
-          ${
-            hook
-              ? `<div class="ai-suggestion-block mt-2">
-                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.hookLabel", "Hook mở đầu")}</div>
-                   <div class="small text-muted ai-suggestion-content">${safeHook}</div>
-                 </div>`
-              : ""
-          }
-          ${
-            outline
-              ? `<div class="ai-suggestion-block mt-2">
-                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.outlineLabel", "Dàn ý triển khai")}</div>
-                   <div class="small text-muted ai-suggestion-content">${safeOutline}</div>
-                 </div>`
-              : ""
-          }
-          ${
-            shotList
-              ? `<div class="ai-suggestion-block mt-2">
-                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.shotListLabel", "Danh sách cảnh quay")}</div>
-                   <div class="small text-muted ai-suggestion-content">${safeShotList}</div>
-                 </div>`
-              : ""
-          }
-          ${
-            cta
-              ? `<div class="ai-suggestion-block mt-2">
-                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.ctaLabel", "Kêu gọi hành động")}</div>
-                   <div class="small text-muted ai-suggestion-content">${safeCta}</div>
-                 </div>`
-              : ""
-          }
-          ${
-            note
-              ? `<div class="ai-suggestion-block mt-2">
-                   <div class="ai-suggestion-block-title">${t("ai.videoCopilot.noteLabel", "Ghi chú triển khai")}</div>
-                   <div class="small text-muted ai-suggestion-content">${safeNote}</div>
-                 </div>`
-              : ""
-          }
-          <div class="mt-2 d-flex flex-wrap gap-2">
+          <div class="mt-2">
+            <div class="ai-suggestion-block-title">${t("ai.videoCopilot.shotListLabel", "Danh sách cảnh quay")}</div>
+            <div class="ai-suggestion-content">${safeShotList}</div>
+          </div>
+          <div class="mt-2">
+            <div class="ai-suggestion-block-title">${t("ai.videoCopilot.ctaLabel", "Kêu gọi hành động")}</div>
+            <div class="ai-suggestion-content">${safeCta}</div>
+          </div>
+          <div class="mt-2">
+            <div class="ai-suggestion-block-title">${t("ai.videoCopilot.noteLabel", "Ghi chú triển khai")}</div>
+            <div class="ai-suggestion-content">${safeNote}</div>
+          </div>
+          ${reason ? `<div class="small mt-1 text-muted">${safeReason}</div>` : ""}
+          <div class="d-flex flex-wrap gap-2 mt-2">
             <button class="btn btn-sm btn-outline-primary btn-video-ai-apply" data-index="${index}">
               ${t("ai.common.apply", "Áp dụng toàn bộ")}
-            </button>
-            <button class="btn btn-sm btn-outline-secondary btn-video-ai-save-blueprint" data-index="${index}">
-              ${t("ai.videoCopilot.saveTemplate", "Lưu thành template")}
             </button>
           </div>
         </article>
@@ -2107,192 +2473,82 @@ function setVideoAiButtonsState() {
   }
 }
 
-function readVideoFormInput() {
+function readVideoContextInput() {
   return {
     title: (byId("videoTitle")?.value || "").trim(),
-    deadline: byId("videoDeadline")?.value || "",
-    priority: byId("videoPriority")?.value || "medium",
-    videoType: byId("videoType")?.value || "short",
-    scriptUrl: (byId("videoScriptUrl")?.value || "").trim(),
+    note: (byId("videoNote")?.value || "").trim(),
     shotList: (byId("videoShotList")?.value || "").trim(),
     assetLinks: (byId("videoAssetLinks")?.value || "").trim(),
-    note: (byId("videoNote")?.value || "").trim(),
+    scriptUrl: (byId("videoScriptUrl")?.value || "").trim(),
+    priority: byId("videoPriority")?.value || "medium",
+    videoType: byId("videoType")?.value || "short",
+    language: getSelectedVideoLanguage(),
   };
-}
-
-function normalizeIdeaTitle(value = "") {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function collectUsedVideoTitlesFromTasks() {
-  return (Array.isArray(state.videoTasks) ? state.videoTasks : [])
-    .map((item) => String(item?.title || "").trim())
-    .filter(Boolean);
-}
-
-async function loadVideoAiHistory(uid) {
-  const now = Date.now();
-  const cacheMs = 90 * 1000;
-  if (state.videoAiHistory?.loadedAt && now - state.videoAiHistory.loadedAt < cacheMs) {
-    return state.videoAiHistory;
-  }
-
-  const taskTitles = collectUsedVideoTitlesFromTasks();
-  const currentOptionTitles = (Array.isArray(state.videoAi?.options) ? state.videoAi.options : [])
-    .map((item) => String(item?.title || "").trim())
-    .filter(Boolean);
-  let aiTitles = [];
-  let recentIdeas = [];
-
-  try {
-    const applied = await listAppliedAiSuggestions(uid, { type: "video-copilot", limitCount: 60 });
-    aiTitles = (Array.isArray(applied) ? applied : [])
-      .map((item) => {
-        const outputTitle = String(item?.appliedOutput?.title || "").trim();
-        const inputTitle = String(item?.inputSnapshot?.title || "").trim();
-        return outputTitle || inputTitle;
-      })
-      .filter(Boolean);
-
-    recentIdeas = (Array.isArray(applied) ? applied : [])
-      .map((item) => String(item?.appliedOutput?.title || "").trim())
-      .filter(Boolean)
-      .slice(0, 12);
-  } catch (err) {
-    console.error("loadVideoAiHistory error", err);
-  }
-
-  const uniqueMap = new Map();
-  [...taskTitles, ...aiTitles].forEach((title) => {
-    const key = normalizeIdeaTitle(title);
-    if (!key || uniqueMap.has(key)) return;
-    uniqueMap.set(key, title);
-  });
-
-  const mergedRecent = [...currentOptionTitles, ...recentIdeas];
-  const uniqueRecent = [];
-  const recentKeys = new Set();
-  for (const title of mergedRecent) {
-    const key = normalizeIdeaTitle(title);
-    if (!key || recentKeys.has(key)) continue;
-    recentKeys.add(key);
-    uniqueRecent.push(title);
-    if (uniqueRecent.length >= 20) break;
-  }
-
-  state.videoAiHistory = {
-    loadedAt: now,
-    usedTitles: Array.from(uniqueMap.values()).slice(0, 80),
-    recentIdeas: uniqueRecent,
-  };
-  return state.videoAiHistory;
 }
 
 function rememberVideoAiAppliedTitle(title = "") {
-  const safeTitle = String(title || "").trim();
-  const key = normalizeIdeaTitle(safeTitle);
-  if (!key) return;
-
-  const currentUsed = Array.isArray(state.videoAiHistory?.usedTitles) ? state.videoAiHistory.usedTitles : [];
-  const currentRecent = Array.isArray(state.videoAiHistory?.recentIdeas) ? state.videoAiHistory.recentIdeas : [];
-
-  const used = [];
-  const usedKeys = new Set();
-  [safeTitle, ...currentUsed].forEach((item) => {
-    const ideaKey = normalizeIdeaTitle(item);
-    if (!ideaKey || usedKeys.has(ideaKey)) return;
-    usedKeys.add(ideaKey);
-    used.push(String(item || "").trim());
-  });
-
-  const recent = [];
-  const recentKeys = new Set();
-  [safeTitle, ...currentRecent].forEach((item) => {
-    const ideaKey = normalizeIdeaTitle(item);
-    if (!ideaKey || recentKeys.has(ideaKey)) return;
-    recentKeys.add(ideaKey);
-    recent.push(String(item || "").trim());
-  });
-
-  state.videoAiHistory = {
-    loadedAt: Date.now(),
-    usedTitles: used.slice(0, 80),
-    recentIdeas: recent.slice(0, 20),
-  };
+  const value = String(title || "").trim();
+  if (!value) return;
+  const current = Array.isArray(state.videoAiHistory?.usedTitles) ? state.videoAiHistory.usedTitles : [];
+  if (current.includes(value)) return;
+  state.videoAiHistory.usedTitles = [value, ...current].slice(0, 60);
 }
 
-function detectVideoLanguageHint(input = {}) {
-  const selectedTrack = normalizeVideoTrack(byId("videoAiLanguage")?.value || "", "");
-  if (selectedTrack) return selectedTrack;
+async function ensureVideoAiHistoryLoaded(uid) {
+  const now = Date.now();
+  if (now - Number(state.videoAiHistory?.loadedAt || 0) < 30000) return;
 
-  const text = [
-    String(input?.title || ""),
-    String(input?.note || ""),
-    String(input?.shotList || ""),
-  ]
-    .join(" ")
-    .toLowerCase();
+  try {
+    const list = await listAppliedAiSuggestions(uid, { type: "video-copilot", limitCount: 40 });
+    const titles = [];
+    const recentIdeas = [];
+    for (const item of Array.isArray(list) ? list : []) {
+      const outputTitle = String(item?.appliedOutput?.title || "").trim();
+      const inputTitle = String(item?.inputSnapshot?.title || "").trim();
+      if (outputTitle) titles.push(outputTitle);
+      if (inputTitle) recentIdeas.push(inputTitle);
+    }
 
-  const matched = VIDEO_TRACKS.find((track) =>
-    (VIDEO_TRACK_KEYWORDS[track] || []).some((kw) => text.includes(String(kw || "").toLowerCase()))
-  );
-  return matched || "python";
-}
-
-function buildVideoAiContext({ track = "python", usedTitles = [], recentIdeas = [] } = {}) {
-  const safeTrack = normalizeVideoTrack(track, "python");
-  const profile = state?.settings?.profile || {};
-  return {
-    channelFocus:
-      "Kênh YouTube hướng dẫn lập trình qua dự án thực tế đơn giản, dễ hiểu cho học sinh và người mới bắt đầu.",
-    targetAudience: "Học sinh, sinh viên và người mới bắt đầu học lập trình",
-    creatorGoal:
-      "Ưu tiên nội dung có thể quay nhanh, dạy rõ ràng, tạo giá trị thực tế và duy trì lịch đăng đều.",
-    selectedTrack: safeTrack,
-    selectedTrackLabel: VIDEO_TRACK_LABEL[safeTrack] || "Python",
-    preferredTopics: VIDEO_TRACK_TOPICS[safeTrack] || VIDEO_TRACK_TOPICS.python,
-    tone: "Đóng vai content creator thực chiến, giàu ý tưởng mới, không máy móc, tập trung hành động.",
-    ownerName: String(profile?.displayName || "Hưng Trần").trim(),
-    ownerTagline: String(profile?.tagline || "").trim(),
-    outputRule:
-      "Mỗi phương án phải có hook, dàn ý, shot list, CTA, note; luôn có videoType short_30s hoặc long_5_10.",
-    usedTitles: (Array.isArray(usedTitles) ? usedTitles : []).slice(0, 80),
-    recentIdeas: (Array.isArray(recentIdeas) ? recentIdeas : []).slice(0, 12),
-  };
+    const unique = (arr) => [...new Set(arr.filter(Boolean))];
+    state.videoAiHistory = {
+      loadedAt: now,
+      usedTitles: unique([...(state.videoAiHistory?.usedTitles || []), ...titles]).slice(0, 60),
+      recentIdeas: unique([...(state.videoAiHistory?.recentIdeas || []), ...recentIdeas]).slice(0, 60),
+    };
+  } catch (err) {
+    console.warn("load video ai history fail", err);
+    state.videoAiHistory.loadedAt = now;
+  }
 }
 
 function applyVideoSuggestion(option = {}) {
-  if (!option || typeof option !== "object") return;
-  setInputValue("videoTitle", String(option?.title || "").trim());
-  setInputValue("videoPriority", String(option?.priority || "medium").trim() || "medium");
-  setInputValue("videoShotList", String(option?.shotList || "").trim());
-  setInputValue("videoAssetLinks", String(option?.assetLinks || "").trim());
-  const noteSections = [
-    String(option?.hook || "").trim() ? `Hook: ${String(option?.hook || "").trim()}` : "",
-    String(option?.outline || "").trim() ? `Dàn ý:\n${String(option?.outline || "").trim()}` : "",
-    String(option?.cta || "").trim() ? `CTA: ${String(option?.cta || "").trim()}` : "",
+  const title = String(option?.title || "").trim();
+  const shotList = String(option?.shotList || "").trim();
+  const assetLinks = String(option?.assetLinks || "").trim();
+  const priority = String(option?.priority || "medium").trim().toLowerCase();
+  const deadlineSuggestion = String(option?.deadlineSuggestion || "").trim();
+  const rawType = String(option?.videoType || "").trim().toLowerCase();
+  const mappedType = rawType === "short_30s" || rawType === "short" ? "short" : "long";
+
+  const noteParts = [
+    String(option?.hook || "").trim() ? `Hook:\n${String(option.hook).trim()}` : "",
+    String(option?.outline || "").trim() ? `Dàn ý:\n${String(option.outline).trim()}` : "",
+    String(option?.cta || "").trim() ? `CTA:\n${String(option.cta).trim()}` : "",
     String(option?.note || "").trim(),
   ].filter(Boolean);
-  setInputValue("videoNote", noteSections.join("\n\n"));
-  const videoType = String(option?.videoType || "").trim();
-  if (videoType === "short_30s") {
-    setInputValue("videoType", "short");
-    setInputValue("videoBlueprintType", "short");
-  } else if (videoType === "long_5_10") {
-    setInputValue("videoType", "long");
-    setInputValue("videoBlueprintType", "long");
+
+  if (title) setInputValue("videoTitle", title);
+  if (shotList) setInputValue("videoShotList", shotList);
+  setInputValue("videoAssetLinks", assetLinks);
+  setInputValue("videoPriority", ["low", "medium", "high"].includes(priority) ? priority : "medium");
+  setInputValue("videoType", mappedType);
+  setInputValue("videoBlueprintType", mappedType);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(deadlineSuggestion)) {
+    setInputValue("videoDeadline", deadlineSuggestion);
   }
-  const deadline = String(option?.deadlineSuggestion || "").trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(deadline)) {
-    setInputValue("videoDeadline", deadline);
+  if (noteParts.length) {
+    setInputValue("videoNote", noteParts.join("\n\n"));
   }
-  syncVideoBlueprintControls();
 }
 
 async function handleVideoAiAction(mode = "generate") {
@@ -2313,52 +2569,49 @@ async function handleVideoAiAction(mode = "generate") {
 
   state.videoAi.loading = true;
   state.videoAi.mode = mode === "improve" ? "improve" : "generate";
-  let shouldCooldown = false;
   setVideoAiButtonsState();
   try {
-    const inputSnapshot = readVideoFormInput();
-    const track = detectVideoLanguageHint(inputSnapshot);
-    const history = await loadVideoAiHistory(uid);
+    await ensureVideoAiHistoryLoaded(uid);
+    const inputSnapshot = readVideoContextInput();
     state.videoAi.inputSnapshot = inputSnapshot;
+
     const ai = await ensureAiServicesModule();
     const res = await ai.getVideoCopilotSuggestions(
       {
         mode: state.videoAi.mode,
+        language: getSelectedVideoLanguage(),
         input: inputSnapshot,
-        language: track,
-        context: buildVideoAiContext({
-          track,
-          usedTitles: history?.usedTitles || [],
-          recentIdeas: history?.recentIdeas || [],
-        }),
-        nonce: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        context: {
+          usedTitles: Array.isArray(state.videoAiHistory?.usedTitles) ? state.videoAiHistory.usedTitles.slice(0, 40) : [],
+          recentIdeas: Array.isArray(state.videoAiHistory?.recentIdeas) ? state.videoAiHistory.recentIdeas.slice(0, 40) : [],
+        },
+        nonce: String(Date.now()),
       },
       { timeoutMs: AI_REQUEST_TIMEOUT_MS }
     );
 
     state.videoAi.options = Array.isArray(res?.options) ? res.options.slice(0, 3) : [];
-    shouldCooldown = true;
+    const optionTitles = state.videoAi.options
+      .map((item) => String(item?.title || "").trim())
+      .filter(Boolean);
+    if (optionTitles.length) {
+      state.videoAiHistory.recentIdeas = [...new Set([...optionTitles, ...(state.videoAiHistory?.recentIdeas || [])])].slice(0, 60);
+    }
     renderVideoAiSuggestions();
-    showToast(
-      res?.fallback
-        ? t(
-            "toast.videoAiFallback",
-            "AI đang dùng mẫu gợi ý cục bộ. Bạn vẫn có thể bấm tạo lại để lấy phương án mới."
-          )
-        : t("toast.videoAiReady", "AI đã tạo 3 phương án video."),
-      res?.fallback ? "info" : "success"
-    );
+
+    if (res?.fallback) {
+      showToast(t("toast.videoAiFallback", "AI đang dùng mẫu gợi ý cục bộ. Bạn vẫn có thể bấm tạo lại."), "info");
+    } else {
+      showToast(t("toast.videoAiReady", "AI đã tạo 3 phương án video."), "success");
+    }
   } catch (err) {
     console.error("handleVideoAiAction error", err);
     state.videoAi.options = [];
     renderVideoAiSuggestions();
-    showToast(
-      err?.message || t("toast.videoAiFail", "Không thể tạo gợi ý video lúc này."),
-      "error"
-    );
+    showToast(err?.message || t("toast.videoAiFail", "Không thể tạo gợi ý video lúc này."), "error");
   } finally {
     state.videoAi.loading = false;
-    state.videoAi.cooldownUntil = shouldCooldown ? Date.now() + VIDEO_AI_COOLDOWN_MS : 0;
+    state.videoAi.cooldownUntil = VIDEO_AI_COOLDOWN_MS > 0 ? Date.now() + VIDEO_AI_COOLDOWN_MS : 0;
     setVideoAiButtonsState();
     scheduleAiCooldownUiTick();
   }
@@ -2446,19 +2699,19 @@ function setGoalAiButtonsState() {
   if (generateBtn) {
     generateBtn.disabled = loading || onCooldown;
     generateBtn.textContent = loading
-      ? t("ai.goalCopilot.generateLoading", "Đang tạo gợi ý...")
+      ? t("ai.goalCopilot.generateLoading", "Äang táº¡o gá»£i ý...")
       : onCooldown
-      ? formatTemplate(t("ai.common.cooldown", "Thử lại sau {{sec}}s"), { sec: cooldownSec })
-      : t("ai.goalCopilot.generate", "AI gợi ý mới");
+      ? formatTemplate(t("ai.common.cooldown", "Thá»­ láº¡i sau {{sec}}s"), { sec: cooldownSec })
+      : t("ai.goalCopilot.generate", "AI gá»£i ý m:i");
   }
 
   if (improveBtn) {
     improveBtn.disabled = loading || onCooldown;
     improveBtn.textContent = loading
-      ? t("ai.goalCopilot.improveLoading", "Đang cải thiện...")
+      ? t("ai.goalCopilot.improveLoading", "Äang cáº£i thi!n...")
       : onCooldown
-      ? formatTemplate(t("ai.common.cooldown", "Thử lại sau {{sec}}s"), { sec: cooldownSec })
-      : t("ai.goalCopilot.improve", "AI cải thiện nội dung");
+      ? formatTemplate(t("ai.common.cooldown", "Thá»­ láº¡i sau {{sec}}s"), { sec: cooldownSec })
+      : t("ai.goalCopilot.improve", "AI cáº£i thi!n ni dung");
   }
 }
 
@@ -2469,7 +2722,7 @@ function readGoalContextInput() {
       area: byId("goalArea")?.value || "ca-nhan",
       period: byId("goalPeriod")?.value || "month",
       targetValue: Number(byId("goalTarget")?.value || 1),
-      unit: (byId("goalUnit")?.value || "lần").trim(),
+      unit: (byId("goalUnit")?.value || "láº§n").trim(),
       dueDate: byId("goalDueDate")?.value || "",
       priority: byId("goalPriority")?.value || "medium",
       note: (byId("goalNote")?.value || "").trim(),
@@ -2500,7 +2753,7 @@ function applyGoalBundle(option = {}) {
   setInputValue("goalArea", String(goal?.area || "ca-nhan"));
   setInputValue("goalPeriod", String(goal?.period || "month"));
   setInputValue("goalTarget", String(Number(goal?.targetValue || 1)));
-  setInputValue("goalUnit", String(goal?.unit || "lần").trim() || "lần");
+  setInputValue("goalUnit", String(goal?.unit || "láº§n").trim() || "láº§n");
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(goal?.dueDate || ""))) {
     setInputValue("goalDueDate", String(goal?.dueDate || ""));
   }
@@ -2533,7 +2786,7 @@ async function handleGoalAiAction(mode = "generate") {
   const cooldownSec = getCooldownSeconds(state.goalAi.cooldownUntil);
   if (cooldownSec > 0) {
     showToast(
-      formatTemplate(t("ai.common.cooldownToast", "Vui lòng chờ {{sec}} giây trước khi gọi AI tiếp theo."), {
+      formatTemplate(t("ai.common.cooldownToast", "Vui lòng chá» {{sec}} giây trÆ°:c khi gá»i AI tiáº¿p theo."), {
         sec: cooldownSec,
       }),
       "info"
@@ -2558,13 +2811,13 @@ async function handleGoalAiAction(mode = "generate") {
 
     state.goalAi.options = Array.isArray(res?.options) ? res.options.slice(0, 3) : [];
     renderGoalAiSuggestions();
-    showToast(t("toast.goalAiReady", "AI đã tạo 3 phương án mục tiêu cá nhân và mục tiêu tuần."), "success");
+    showToast(t("toast.goalAiReady", "AI ?ã táº¡o 3 phÆ°Æ¡ng án má»¥c tiêu cá nhân và má»¥c tiêu tuáº§n."), "success");
   } catch (err) {
     console.error("handleGoalAiAction error", err);
     state.goalAi.options = [];
     renderGoalAiSuggestions();
     showToast(
-      err?.message || t("toast.goalAiFail", "Không thể tạo gợi ý mục tiêu lúc này."),
+      err?.message || t("toast.goalAiFail", "Không thá»’ táº¡o gá»£i ý má»¥c tiêu lúc này."),
       "error"
     );
   } finally {
@@ -2586,7 +2839,7 @@ async function bindDashboardEvents() {
         await handleHabitCheckInAction(habitId);
       } catch (err) {
         console.error("dashboard check-in error", err);
-        showToast(err?.message || t("toast.habitUpdateFail", "Không thể cập nhật thói quen"), "error");
+        showToast(err?.message || t("toast.habitUpdateFail", "Không thá»’ cáº­p nháº­t thói quen"), "error");
       }
     },
     onOpenVideoPlan: (taskId) => {
@@ -2595,6 +2848,11 @@ async function bindDashboardEvents() {
       }
       if (location.hash !== "#video-plan") {
         location.hash = "#video-plan";
+      }
+    },
+    onOpenClasses: () => {
+      if (location.hash !== "#classes") {
+        location.hash = "#classes";
       }
     },
   });
@@ -2612,10 +2870,360 @@ async function bindWeeklyReviewModule() {
   bindState.weeklyReview = true;
 
   module.bindWeeklyReviewEvents({
-    onOpenHistory: (weekKey) => {
+    onFilterChange: ({ mode, weekKey, monthKey } = {}) => {
       const uid = ensureUser();
       if (!uid) return;
-      void loadWeeklyReview(uid, weekKey);
+      const safeMode = normalizeWeeklyReviewMode(mode || state.weeklyReviewFilter?.mode || "week");
+      const periodKey =
+        safeMode === "month"
+          ? String(monthKey || state.weeklyReviewFilter?.monthKey || getCurrentYm()).trim()
+          : String(weekKey || state.weeklyReviewFilter?.weekKey || getCurrentWeekKeyForReview()).trim();
+      void loadWeeklyReview(uid, periodKey, { mode: safeMode });
+    },
+  });
+}
+
+async function bindClassesModule() {
+  if (bindState.classes) return;
+  const module = await ensureClassesModule();
+  if (!module?.bindClassesEvents) return;
+
+  bindState.classes = true;
+  module.bindClassesEvents({
+    onChangeMode: async (mode) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      state.classesMode = persistClassesMode(mode);
+      state.classSelectedSessionId = "";
+      state.classRandomResult = null;
+      state.classRandomHistory = [];
+      await loadClasses(uid, { preserveSelection: false });
+    },
+    onChangeListTab: async (listTab) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      state.classesListTab = persistClassesListTab(listTab);
+      state.classSelectedId = "";
+      state.classSelectedSessionId = "";
+      await loadClasses(uid, { preserveSelection: false });
+    },
+    onResetClassForm: async () => {
+      state.classSelectedId = "";
+      state.classSelectedSessionId = "";
+      state.classStudents = [];
+      state.classSessions = [];
+      const uid = ensureUser();
+      if (!uid) {
+        await renderClassesPage();
+        return;
+      }
+      await loadClasses(uid, { preserveSelection: false });
+    },
+    onSelectPresentationClass: async (classId) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      state.classesMode = persistClassesMode("presentation");
+      state.classPresentationId = persistPresentationClass(classId);
+      state.classRandomResult = null;
+      state.classRandomHistory = [];
+      await loadClasses(uid, {
+        forceClassId: classId,
+        preserveSelection: false,
+      });
+    },
+    onSelectClass: async (classId) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await loadClasses(uid, {
+        forceClassId: classId,
+        preserveSelection: false,
+      });
+    },
+    onSelectSession: async (sessionId) => {
+      state.classSelectedSessionId = String(sessionId || "").trim();
+      await renderClassesPage();
+    },
+    onAddClass: async (payload = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      try {
+        const slots = module.parseClassSlotsInput(payload?.slotsText || "");
+        const created = await module.createClassWithSessions(uid, {
+          code: payload?.code,
+          title: payload?.title,
+          startDate: payload?.startDate,
+          slots,
+          description: payload?.description || "",
+          status: payload?.status || "active",
+        });
+        showToast(t("toast.classAdded", "? to lp mi."), "success");
+        state.classesListTab = persistClassesListTab("active");
+        await loadClasses(uid, {
+          forceClassId: String(created?.id || ""),
+          preserveSelection: false,
+          listTab: "active",
+        });
+      } catch (err) {
+        console.error("add class error", err);
+        showToast(err?.message || t("toast.classCreateFail", "Khng th to lp hc"), "error");
+      }
+    },
+    onSaveClass: async (payload = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(payload?.classId || state.classSelectedId || "").trim();
+      if (!classId) {
+        showToast(t("toast.classUpdateFail", "Khng th cp nht lp hc"), "error");
+        return;
+      }
+
+      try {
+        const slots = module.parseClassSlotsInput(payload?.slotsText || "");
+        await module.updateClassInfo(uid, classId, {
+          code: payload?.code,
+          title: payload?.title,
+          startDate: payload?.startDate,
+          slots,
+          description: payload?.description || "",
+          status: payload?.status || "active",
+        });
+        showToast(t("toast.classUpdated", "? cp nht lp hc."), "success");
+        const nextTab = String(payload?.status || "").trim() === "completed" ? "completed" : state.classesListTab;
+        await loadClasses(uid, {
+          forceClassId: classId,
+          preserveSelection: true,
+          listTab: nextTab,
+        });
+      } catch (err) {
+        console.error("save class error", err);
+        showToast(err?.message || t("toast.classUpdateFail", "Khng th cp nht lp hc"), "error");
+      }
+    },
+    onDeleteClass: async (payload = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(payload?.classId || state.classSelectedId || "").trim();
+      if (!classId) return;
+      openConfirmDelete("class", classId);
+    },
+    onReopenClass: async () => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(state.classSelectedId || "").trim();
+      if (!classId) return;
+
+      try {
+        await module.reopenCompletedClass(uid, classId);
+        state.classesListTab = persistClassesListTab("active");
+        showToast(t("toast.classReopened", "? m li lp hc."), "success");
+        await loadClasses(uid, {
+          forceClassId: classId,
+          preserveSelection: false,
+          listTab: "active",
+        });
+      } catch (err) {
+        console.error("reopen class error", err);
+        showToast(err?.message || t("toast.classReopenFail", "Khng th m li lp hc"), "error");
+      }
+    },
+    onAddStudent: async ({ name } = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(state.classSelectedId || "").trim();
+      if (!classId) {
+        showToast(t("classes.selectClassFirst", "Vui lng chn lp trc khi thm hc sinh."), "info");
+        return;
+      }
+
+      try {
+        await module.addStudentToClass(uid, classId, {
+          name: String(name || "").trim(),
+          joinedFromSessionNo: resolveNextSessionNoForStudent(),
+        });
+        const input = byId("classStudentName");
+        if (input) input.value = "";
+        showToast(t("toast.classStudentAdded", "? thm hc sinh vo lp."), "success");
+        await loadClasses(uid, {
+          forceClassId: classId,
+          preserveSelection: true,
+        });
+      } catch (err) {
+        console.error("add student error", err);
+        showToast(err?.message || t("toast.classStudentAddFail", "Khng th thm hc sinh"), "error");
+      }
+    },
+    onRemoveStudent: async (studentId) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(state.classSelectedId || "").trim();
+      const sid = String(studentId || "").trim();
+      if (!classId || !sid) return;
+
+      try {
+        await module.deactivateStudentFromNextSession(uid, classId, sid, resolveNextSessionNoForStudent());
+        showToast(t("toast.classStudentRemoved", "? cp nht trng thi hc sinh t bui k."), "success");
+        await loadClasses(uid, {
+          forceClassId: classId,
+          preserveSelection: true,
+        });
+      } catch (err) {
+        console.error("remove student error", err);
+        showToast(err?.message || t("toast.classStudentUpdateFail", "Khng th cp nht hc sinh"), "error");
+      }
+    },
+    onReactivateStudent: async (studentId) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(state.classSelectedId || "").trim();
+      const sid = String(studentId || "").trim();
+      if (!classId || !sid) return;
+
+      try {
+        await module.reactivateStudent(uid, classId, sid, resolveNextSessionNoForStudent());
+        showToast(t("toast.classStudentReactivated", "? kch hot li hc sinh t bui k."), "success");
+        await loadClasses(uid, {
+          forceClassId: classId,
+          preserveSelection: true,
+        });
+      } catch (err) {
+        console.error("reactivate student error", err);
+        showToast(err?.message || t("toast.classStudentUpdateFail", "Khng th cp nht hc sinh"), "error");
+      }
+    },
+    onSaveSession: async (payload = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(state.classSelectedId || "").trim();
+      const sessionId = String(payload?.sessionId || state.classSelectedSessionId || "").trim();
+      if (!classId || !sessionId) {
+        showToast(t("toast.classSessionSaveFail", "Khng th lu bui hc"), "error");
+        return;
+      }
+
+      try {
+        await module.saveClassSessionData(uid, classId, sessionId, {
+          status: payload?.status,
+          teachingPlan: payload?.teachingPlan,
+          teachingResultNote: payload?.teachingResultNote,
+          reviews: payload?.reviews || {},
+        });
+        showToast(t("toast.classSessionSaved", "? lu ghi ch v nhn xt bui hc."), "success");
+        await loadClasses(uid, {
+          forceClassId: classId,
+          preserveSelection: true,
+        });
+      } catch (err) {
+        console.error("save class session error", err);
+        showToast(err?.message || t("toast.classSessionSaveFail", "Khng th lu bui hc"), "error");
+      }
+    },
+    onShiftSessionNextWeek: async (payload = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(state.classSelectedId || "").trim();
+      const sessionId = String(payload?.sessionId || state.classSelectedSessionId || "").trim();
+      if (!classId || !sessionId) {
+        showToast(t("toast.classSessionShiftFail", "Khng th di bui hc"), "error");
+        return;
+      }
+
+      try {
+        await module.shiftSessionToNextWeek(uid, classId, sessionId, payload?.rescheduleReason || "");
+        showToast(t("toast.classSessionShifted", "? di bui hc v cp nht lch chui k tip."), "success");
+        await loadClasses(uid, {
+          forceClassId: classId,
+          preserveSelection: true,
+        });
+      } catch (err) {
+        console.error("shift class session error", err);
+        showToast(err?.message || t("toast.classSessionShiftFail", "Khng th di bui hc"), "error");
+      }
+    },
+    onAwardStar: async (studentId) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(state.classSelectedId || "").trim();
+      const sid = String(studentId || "").trim();
+      if (!classId || !sid) return;
+
+      try {
+        await module.awardStarToStudent(uid, classId, sid, 1);
+        showToast(t("toast.classStarAwarded", "Đã cộng 1⭐ cho học sinh."), "success");
+        await loadClasses(uid, {
+          forceClassId: classId,
+          preserveSelection: true,
+        });
+      } catch (err) {
+        console.error("award student star error", err);
+        showToast(err?.message || t("toast.classStarAwardFail", "Không thể cộng sao cho học sinh."), "error");
+      }
+    },
+    onRedeemStars: async (studentId) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(state.classSelectedId || "").trim();
+      const sid = String(studentId || "").trim();
+      if (!classId || !sid) return;
+
+      try {
+        await module.redeemStarsForStudent(uid, classId, sid, 5);
+        showToast(t("toast.classStarsRedeemed", "Đã quy đổi sao thành điểm và reset sao."), "success");
+        await loadClasses(uid, {
+          forceClassId: classId,
+          preserveSelection: true,
+        });
+      } catch (err) {
+        console.error("redeem student stars error", err);
+        showToast(
+          err?.message || t("toast.classStarsRedeemFail", "Không thể quy đổi sao thành điểm."),
+          "error"
+        );
+      }
+    },
+    onUpdateStudentPickPercent: async (studentId, pickPercent) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const classId = String(state.classSelectedId || "").trim();
+      const sid = String(studentId || "").trim();
+      if (!classId || !sid) return;
+
+      try {
+        await module.updateStudentPickPercentValue(uid, classId, sid, normalizePickPercentInput(pickPercent));
+        state.classStudents = state.classStudents.map((item) =>
+          String(item?.id || "") === sid
+            ? { ...item, pickPercent: normalizePickPercentInput(pickPercent) }
+            : item
+        );
+        await renderClassesPage();
+      } catch (err) {
+        console.error("update student pick percent error", err);
+        showToast(
+          err?.message || t("toast.classPickPercentSaveFail", "Không thể cập nhật % random học sinh."),
+          "error"
+        );
+      }
+    },
+    onRandomPick: async () => {
+      const result = module.pickRandomStudentByPercent(state.classStudents || []);
+      if (!result?.student) {
+        showToast(t("toast.classRandomEmpty", "Lớp hiện không có học sinh đang hoạt động để random."), "info");
+        return;
+      }
+
+      const now = new Date();
+      const name = String(result.student?.name || "").trim();
+      state.classRandomResult = {
+        studentId: String(result.student?.id || "").trim(),
+        name,
+        at: now.toISOString(),
+        atLabel: now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
+      };
+      state.classRandomHistory = [state.classRandomResult, ...(state.classRandomHistory || [])].slice(0, 5);
+      await renderClassesPage();
+      showToast(
+        formatTemplate(t("toast.classRandomPicked", "Đã random: {{name}}"), { name }),
+        "success"
+      );
     },
   });
 }
@@ -2646,8 +3254,19 @@ function bindRouteSyncEvents() {
       });
     }
 
+    if (routeId === "classes") {
+      void bindClassesModule().then(() => {
+        void loadClasses(uid, { preserveSelection: true });
+      });
+    }
+
     if (isWeeklyReviewRouteActive()) {
-      void bindWeeklyReviewModule().then(() => loadWeeklyReview(uid, ""));
+      const mode = normalizeWeeklyReviewMode(state.weeklyReviewFilter?.mode || "week");
+      const periodKey =
+        mode === "month"
+          ? String(state.weeklyReviewFilter?.monthKey || getCurrentYm()).trim()
+          : String(state.weeklyReviewFilter?.weekKey || getCurrentWeekKeyForReview()).trim();
+      void bindWeeklyReviewModule().then(() => loadWeeklyReview(uid, periodKey, { mode }));
     }
   };
 
@@ -2682,7 +3301,7 @@ function bindGoalEvents() {
     if (!option) return;
 
     applyGoalBundle(option);
-    showToast(t("toast.goalAiApplied", "Đã áp dụng gợi ý AI vào form mục tiêu và mục tiêu tuần."), "success");
+    showToast(t("toast.goalAiApplied", "Äã áp dá»¥ng gá»£i ý AI vào form má»¥c tiêu và má»¥c tiêu tuáº§n."), "success");
     await saveAppliedAiSuggestionSafe({
       type: "goal-bundle",
       mode: state.goalAi.mode || "generate",
@@ -2714,11 +3333,11 @@ function bindGoalEvents() {
         status: "saved",
         savedAt: new Date(),
       });
-      showToast(t("toast.weeklyGoalsSaved", "Đã lưu mục tiêu tuần."), "success");
+      showToast(t("toast.weeklyGoalsSaved", "Äã lÆ°u má»¥c tiêu tuáº§n."), "success");
     } catch (err) {
       console.error("save weekly goals error", err);
       setWeeklyGoalsSaveState({ status: "error" });
-      showToast(err?.message || t("toast.weeklyGoalsSaveFail", "Không thể lưu mục tiêu tuần."), "error");
+      showToast(err?.message || t("toast.weeklyGoalsSaveFail", "Không thá»’ lÆ°u má»¥c tiêu tuáº§n."), "error");
     }
   });
 
@@ -2741,7 +3360,7 @@ function bindGoalEvents() {
       period: byId("goalPeriod")?.value || "month",
       targetValue: Number(byId("goalTarget")?.value || 0),
       currentValue: 0,
-      unit: (byId("goalUnit")?.value || "lần").trim(),
+      unit: (byId("goalUnit")?.value || "láº§n").trim(),
       dueDate: byId("goalDueDate")?.value || null,
       status: "active",
       priority: byId("goalPriority")?.value || "medium",
@@ -2756,11 +3375,11 @@ function bindGoalEvents() {
       });
       setInputValue("goalTarget", "1");
 
-      showToast(t("toast.goalAdded", "Đã tạo mục tiêu mới."), "success");
+      showToast(t("toast.goalAdded", "Äã táº¡o má»¥c tiêu m:i."), "success");
       await refreshGoalsAndMotivation(uid);
     } catch (err) {
       console.error("createGoal error", err);
-      showToast(err?.message || t("toast.goalCreateFail", "Không thể tạo mục tiêu"), "error");
+      showToast(err?.message || t("toast.goalCreateFail", "Không thá»’ táº¡o má»¥c tiêu"), "error");
     }
   });
 
@@ -2780,11 +3399,11 @@ function bindGoalEvents() {
       setInputValue("habitName", "");
       setInputValue("habitTarget", "1");
 
-      showToast(t("toast.habitAdded", "Đã tạo thói quen mới."), "success");
+      showToast(t("toast.habitAdded", "Äã táº¡o thói quen m:i."), "success");
       await refreshGoalsAndMotivation(uid);
     } catch (err) {
       console.error("createHabit error", err);
-      showToast(err?.message || t("toast.habitCreateFail", "Không thể tạo thói quen"), "error");
+      showToast(err?.message || t("toast.habitCreateFail", "Không thá»’ táº¡o thói quen"), "error");
     }
   });
 
@@ -2804,23 +3423,23 @@ function bindGoalEvents() {
       if (btn.classList.contains("btn-goal-save")) {
         const current = row.querySelector(".goal-current-input")?.value;
         await saveGoalProgress(uid, goal.id, current, goal.targetValue);
-        showToast(t("toast.goalProgressUpdated", "Đã cập nhật tiến độ mục tiêu."), "success");
+        showToast(t("toast.goalProgressUpdated", "Äã cáº­p nháº­t tiáº¿n ? má»¥c tiêu."), "success");
       }
 
       if (btn.classList.contains("btn-goal-done")) {
         await markGoalDone(uid, goal.id);
-        showToast(t("toast.goalDoneXp", "Đã hoàn thành mục tiêu."), "success");
+        showToast(t("toast.goalDoneXp", "Äã hoàn thành má»¥c tiêu."), "success");
       }
 
       if (btn.classList.contains("btn-goal-del")) {
         await removeGoal(uid, goal.id);
-        showToast(t("toast.goalDeleted", "Đã xóa mục tiêu."), "success");
+        showToast(t("toast.goalDeleted", "Äã xóa má»¥c tiêu."), "success");
       }
 
       await refreshGoalsAndMotivation(uid);
     } catch (err) {
       console.error("goal action error", err);
-      showToast(err?.message || t("toast.goalUpdateFail", "Không thể cập nhật mục tiêu"), "error");
+      showToast(err?.message || t("toast.goalUpdateFail", "Không thá»’ cáº­p nháº­t má»¥c tiêu"), "error");
     }
   });
 
@@ -2833,7 +3452,7 @@ function bindGoalEvents() {
       await handleHabitCheckInAction(habitId);
     } catch (err) {
       console.error("goals focus check-in error", err);
-      showToast(err?.message || t("toast.habitUpdateFail", "Không thể cập nhật thói quen"), "error");
+      showToast(err?.message || t("toast.habitUpdateFail", "Không thá»’ cáº­p nháº­t thói quen"), "error");
     }
   });
 
@@ -2857,13 +3476,13 @@ function bindGoalEvents() {
 
       if (btn.classList.contains("btn-habit-del")) {
         await removeHabit(uid, habit.id);
-        showToast(t("toast.habitDeleted", "Đã xóa thói quen."), "success");
+        showToast(t("toast.habitDeleted", "Äã xóa thói quen."), "success");
       }
 
       await refreshGoalsAndMotivation(uid);
     } catch (err) {
       console.error("habit action error", err);
-      showToast(err?.message || t("toast.habitUpdateFail", "Không thể cập nhật thói quen"), "error");
+      showToast(err?.message || t("toast.habitUpdateFail", "Không thá»’ cáº­p nháº­t thói quen"), "error");
     }
   });
 }
@@ -2985,52 +3604,28 @@ function bindVideoEvents() {
 
   byId("videoAiSuggestionList")?.addEventListener("click", async (e) => {
     const applyBtn = e.target.closest(".btn-video-ai-apply");
-    const saveBtn = e.target.closest(".btn-video-ai-save-blueprint");
-    if (!applyBtn && !saveBtn) return;
-
-    const btn = applyBtn || saveBtn;
-    const index = Number(btn?.dataset?.index);
+    if (!applyBtn) return;
+    const index = Number(applyBtn?.dataset?.index);
     if (!Number.isFinite(index)) return;
     const option = state.videoAi.options[index];
     if (!option) return;
 
-    if (applyBtn) {
-      applyVideoSuggestion(option);
-      rememberVideoAiAppliedTitle(option?.title || "");
-      showToast(t("toast.videoAiApplied", "Đã áp dụng phương án AI vào form video."), "success");
-      await saveAppliedAiSuggestionSafe({
-        type: "video-copilot",
-        mode: state.videoAi.mode || "generate",
-        inputSnapshot: state.videoAi.inputSnapshot || {},
-        appliedOutput: option,
-        appliedAt: new Date(),
-      });
-      return;
-    }
-
-    if (saveBtn) {
-      const uid = ensureUser();
-      if (!uid) return;
-      try {
-        const payload = buildBlueprintPayloadFromSuggestion(option, getSelectedBlueprintLanguage());
-        await saveContentBlueprint(uid, payload);
-        state.contentBlueprints = await loadContentBlueprints(uid);
-        syncVideoBlueprintControls();
-        showToast(t("toast.blueprintSaved", "Đã lưu template nội dung."), "success");
-      } catch (err) {
-        console.error("save blueprint from ai error", err);
-        showToast(
-          err?.message || t("toast.blueprintSaveFail", "Không thể lưu template nội dung."),
-          "error"
-        );
-      }
-    }
+    applyVideoSuggestion(option);
+    rememberVideoAiAppliedTitle(option?.title || "");
+    showToast(t("toast.videoAiApplied", "Đã áp dụng phương án AI vào form video."), "success");
+    await saveAppliedAiSuggestionSafe({
+      type: "video-copilot",
+      mode: state.videoAi.mode || "generate",
+      inputSnapshot: state.videoAi.inputSnapshot || {},
+      appliedOutput: option,
+      appliedAt: new Date(),
+    });
   });
 
   byId("btnVideoApplyBlueprint")?.addEventListener("click", () => {
     const selectedId = String(byId("videoBlueprintSelect")?.value || "").trim();
     if (!selectedId) {
-      showToast(t("toast.blueprintApplyFail", "Không thể áp dụng template đã chọn."), "info");
+      showToast(t("toast.blueprintApplyFail", "Không thá»’ áp dá»¥ng template ?ã chá»n."), "info");
       return;
     }
 
@@ -3038,7 +3633,7 @@ function bindVideoEvents() {
       (item) => String(item?.id || "").trim() === selectedId
     );
     if (!blueprint) {
-      showToast(t("toast.blueprintApplyFail", "Không thể áp dụng template đã chọn."), "error");
+      showToast(t("toast.blueprintApplyFail", "Không thá»’ áp dá»¥ng template ?ã chá»n."), "error");
       return;
     }
 
@@ -3060,7 +3655,7 @@ function bindVideoEvents() {
     setInputValue("videoType", blueprint.videoType || "short");
     setInputValue("videoBlueprintType", blueprint.videoType || "short");
 
-    showToast(t("toast.blueprintApplied", "Đã áp dụng template vào form video."), "success");
+    showToast(t("toast.blueprintApplied", "Äã áp dá»¥ng template vào form video."), "success");
   });
 
   byId("btnVideoSaveBlueprint")?.addEventListener("click", async () => {
@@ -3069,7 +3664,7 @@ function bindVideoEvents() {
 
     try {
       const payload = {
-        name: (byId("videoTitle")?.value || "").trim() || t("videoPlan.blueprints.fallbackName", "Mẫu nội dung AI"),
+        name: (byId("videoTitle")?.value || "").trim() || t("videoPlan.blueprints.fallbackName", "Máº«u ni dung AI"),
         language: getSelectedBlueprintLanguage(),
         videoType: getSelectedVideoType(),
         hookTemplate: "",
@@ -3087,11 +3682,11 @@ function bindVideoEvents() {
       await saveContentBlueprint(uid, payload);
       state.contentBlueprints = await loadContentBlueprints(uid);
       syncVideoBlueprintControls();
-      showToast(t("toast.blueprintSaved", "Đã lưu template nội dung."), "success");
+      showToast(t("toast.blueprintSaved", "Äã lÆ°u template ni dung."), "success");
     } catch (err) {
       console.error("save blueprint error", err);
       showToast(
-        err?.message || t("toast.blueprintSaveFail", "Không thể lưu template nội dung."),
+        err?.message || t("toast.blueprintSaveFail", "Không thá»’ lÆ°u template ni dung."),
         "error"
       );
     }
@@ -3143,11 +3738,11 @@ function bindVideoEvents() {
     if (!id) return false;
     const task = state.videoTasks.find((item) => item.id === id);
     if (!task) {
-      showToast(t("toast.videoNotFound", "Không tìm thấy công việc video"), "error");
+      showToast(t("toast.videoNotFound", "Không tìm tháº¥y công vi!c video"), "error");
       return false;
     }
     if (!videoEditPanel) {
-      showToast(t("toast.videoUpdateFail", "Không thể cập nhật công việc video"), "error");
+      showToast(t("toast.videoUpdateFail", "Không thá»’ cáº­p nháº­t công vi!c video"), "error");
       return false;
     }
 
@@ -3222,11 +3817,11 @@ function bindVideoEvents() {
       setInputValue("videoBlueprintType", "short");
       syncVideoBlueprintControls();
 
-      showToast(t("toast.videoAdded", "Đã thêm công việc video mới."), "success");
+      showToast(t("toast.videoAdded", "Äã thêm công vi!c video m:i."), "success");
       await refreshVideoAndMotivation(uid);
     } catch (err) {
       console.error("createVideoTask error", err);
-      showToast(err?.message || t("toast.videoCreateFail", "Không thể tạo công việc video"), "error");
+      showToast(err?.message || t("toast.videoCreateFail", "Không thá»’ táº¡o công vi!c video"), "error");
     }
   });
 
@@ -3261,11 +3856,11 @@ function bindVideoEvents() {
     if (retroBtn) {
       const task = state.videoTasks.find((item) => item.id === taskId);
       if (!task) {
-        showToast(t("toast.videoNotFound", "Không tìm thấy công việc video"), "error");
+        showToast(t("toast.videoNotFound", "Không tìm tháº¥y công vi!c video"), "error");
         return;
       }
       if (!videoRetroPanel) {
-        showToast(t("toast.videoRetroOpenFail", "Không thể mở dữ liệu kết quả xuất bản."), "error");
+        showToast(t("toast.videoRetroOpenFail", "Không thá»’ mx dá»¯ li!u káº¿t quáº£ xuáº¥t báº£n."), "error");
         return;
       }
 
@@ -3289,11 +3884,11 @@ function bindVideoEvents() {
 
     try {
       await removeVideoTask(uid, card.dataset.id);
-      showToast(t("toast.videoDeleted", "Đã xóa công việc video."), "success");
+      showToast(t("toast.videoDeleted", "Äã xóa công vi!c video."), "success");
       await refreshVideoAndMotivation(uid);
     } catch (err) {
       console.error("removeVideoTask error", err);
-      showToast(err?.message || t("toast.videoDeleteFail", "Không thể xóa công việc video"), "error");
+      showToast(err?.message || t("toast.videoDeleteFail", "Không thá»’ xóa công vi!c video"), "error");
     }
   });
 
@@ -3303,12 +3898,12 @@ function bindVideoEvents() {
 
     const taskId = String(byId("vrTaskId")?.value || "").trim();
     if (!taskId) {
-      showToast(t("toast.videoRetroOpenFail", "Không thể mở dữ liệu kết quả xuất bản."), "error");
+      showToast(t("toast.videoRetroOpenFail", "Không thá»’ mx dá»¯ li!u káº¿t quáº£ xuáº¥t báº£n."), "error");
       return;
     }
     const task = state.videoTasks.find((item) => item.id === taskId);
     if (!task) {
-      showToast(t("toast.videoNotFound", "Không tìm thấy công việc video"), "error");
+      showToast(t("toast.videoNotFound", "Không tìm tháº¥y công vi!c video"), "error");
       return;
     }
 
@@ -3332,12 +3927,12 @@ function bindVideoEvents() {
       if (videoRetroPanel) {
         bootstrap.Offcanvas.getOrCreateInstance(videoRetroPanel)?.hide();
       }
-      showToast(t("toast.videoRetroSaved", "Đã lưu kết quả xuất bản."), "success");
+      showToast(t("toast.videoRetroSaved", "Äã lÆ°u káº¿t quáº£ xuáº¥t báº£n."), "success");
       await refreshWeeklyReviewIfVisible(uid);
     } catch (err) {
       console.error("saveVideoRetro error", err);
       showToast(
-        err?.message || t("toast.videoRetroSaveFail", "Không thể lưu kết quả xuất bản."),
+        err?.message || t("toast.videoRetroSaveFail", "Không thá»’ lÆ°u káº¿t quáº£ xuáº¥t báº£n."),
         "error"
       );
     }
@@ -3349,11 +3944,11 @@ function bindVideoEvents() {
 
     const taskId = (byId("evId")?.value || "").trim();
     if (!taskId) {
-      showToast(t("toast.videoNotFound", "Không tìm thấy công việc video"), "error");
+      showToast(t("toast.videoNotFound", "Không tìm tháº¥y công vi!c video"), "error");
       return;
     }
     if (!state.videoTasks.some((item) => item.id === taskId)) {
-      showToast(t("toast.videoNotFound", "Không tìm thấy công việc video"), "error");
+      showToast(t("toast.videoNotFound", "Không tìm tháº¥y công vi!c video"), "error");
       return;
     }
 
@@ -3372,12 +3967,12 @@ function bindVideoEvents() {
       if (videoEditPanel) {
         bootstrap.Offcanvas.getOrCreateInstance(videoEditPanel)?.hide();
       }
-      showToast(t("toast.videoUpdated", "Đã cập nhật công việc video."), "success");
+      showToast(t("toast.videoUpdated", "Äã cáº­p nháº­t công vi!c video."), "success");
       await refreshVideoAndMotivation(uid);
     } catch (err) {
       console.error("updateVideoTaskDetails error", err);
       showToast(
-        err?.message || t("toast.videoUpdateFail", "Không thể cập nhật công việc video"),
+        err?.message || t("toast.videoUpdateFail", "Không thá»’ cáº­p nháº­t công vi!c video"),
         "error"
       );
     }
@@ -3410,11 +4005,11 @@ function bindVideoEvents() {
 
       try {
         await moveTaskToStage(uid, task, stage);
-        showToast(t("toast.videoMoved", "Đã chuyển bước công việc video."), "success");
+        showToast(t("toast.videoMoved", "Äã chuyá»’n bÆ°:c công vi!c video."), "success");
         await refreshVideoAndMotivation(uid);
       } catch (err) {
         console.error("moveTaskToStage error", err);
-        showToast(err?.message || t("toast.videoMoveFail", "Không thể chuyển bước"), "error");
+        showToast(err?.message || t("toast.videoMoveFail", "Không thá»’ chuyá»’n bÆ°:c"), "error");
       }
     });
   });
@@ -3427,10 +4022,10 @@ function bindExportEvent() {
 
     try {
       await exportCsvCurrentMonth(uid);
-      showToast(t("toast.csvExportSuccess", "Đã xuất CSV tháng hiện tại."), "success");
+      showToast(t("toast.csvExportSuccess", "Äã xuáº¥t CSV tháng hi!n táº¡i."), "success");
     } catch (err) {
       console.error("exportCsvCurrentMonth error", err);
-      showToast(err?.message || t("toast.csvExportFail", "Xuất CSV thất bại"), "error");
+      showToast(err?.message || t("toast.csvExportFail", "Xuáº¥t CSV tháº¥t báº¡i"), "error");
     }
   });
 }
@@ -3460,41 +4055,92 @@ bindGoalEvents();
 bindVideoEvents();
 bindExportEvent();
 initSettingsModule();
-void preloadRouteModule(currentRouteId());
+let authBootstrapSettled = false;
+let authBootstrapTimer = null;
+
+function clearAuthBootstrapTimer() {
+  if (authBootstrapTimer) {
+    clearTimeout(authBootstrapTimer);
+    authBootstrapTimer = null;
+  }
+}
+
+function startAuthWarmStart() {
+  const hasHint = hasAuthWarmHint();
+  if (!hasHint) {
+    setActiveRoute("auth");
+    return;
+  }
+
+  const warmRoute = resolveWarmStartRoute();
+  setGlobalLoading(true);
+  setActiveRoute(warmRoute);
+  void preloadRouteModule(warmRoute);
+
+  authBootstrapTimer = setTimeout(() => {
+    if (authBootstrapSettled) return;
+    setGlobalLoading(false);
+    if (!state.currentUser) {
+      setActiveRoute("auth");
+    }
+  }, AUTH_BOOTSTRAP_TIMEOUT_MS);
+}
+
+void preloadRouteModule(resolveWarmStartRoute());
 if (isWeeklyReviewRouteActive()) {
   void bindWeeklyReviewModule();
 }
+if (isClassesRouteActive()) {
+  void bindClassesModule();
+}
+startAuthWarmStart();
 
 byId("btnConfirmDelete")?.addEventListener("click", handleConfirmDelete);
+byId("confirmDeleteModal")?.addEventListener("hidden.bs.offcanvas", clearPendingDeleteState);
 
 watchAuth(async (user) => {
+  authBootstrapSettled = true;
+  clearAuthBootstrapTimer();
+
   state.currentUser = user || null;
   updateUserMenuUI(user || null);
 
   if (!user) {
+    setGlobalLoading(false);
     setActiveRoute("auth");
     resetAppView();
     return;
   }
 
+  setGlobalLoading(true);
   try {
-    await loadUserSettingsAndApply(user.uid);
-  } catch (err) {
-    console.error("loadUserSettingsAndApply error", err);
-    state.settings = applySettingsToApp(state, createDefaultSettings());
-    resetSettingsSave();
-    applySettingsDerivedRuntime();
-    renderSettingsForm(state.settings, state.settingsSaveState);
-  }
+    try {
+      await loadUserSettingsAndApply(user.uid);
+    } catch (err) {
+      console.error("loadUserSettingsAndApply error", err);
+      state.settings = applySettingsToApp(state, createDefaultSettings());
+      resetSettingsSave();
+      applySettingsDerivedRuntime();
+      renderSettingsForm(state.settings, state.settingsSaveState);
+    }
 
-  const nextRoute = resolvePostLoginRoute();
-  setActiveRoute(nextRoute);
-  await preloadRouteModule(nextRoute);
-  if (nextRoute === "dashboard") {
-    await bindDashboardEvents();
+    const nextRoute = resolvePostLoginRoute();
+    setActiveRoute(nextRoute);
+    await preloadRouteModule(nextRoute);
+    if (nextRoute === "dashboard") {
+      await bindDashboardEvents();
+    }
+    if (nextRoute === "weekly-review") {
+      await bindWeeklyReviewModule();
+    }
+    if (nextRoute === "classes") {
+      await bindClassesModule();
+    }
+    await refreshAll(user.uid);
+  } finally {
+    setGlobalLoading(false);
   }
-  if (nextRoute === "weekly-review") {
-    await bindWeeklyReviewModule();
-  }
-  await refreshAll(user.uid);
 });
+
+
+

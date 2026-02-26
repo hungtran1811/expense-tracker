@@ -15,6 +15,9 @@
   --radius-md: 14px;
   --radius-lg: 18px;
   --radius-xl: 22px;
+  --page-max-width: 100%;
+  --page-gutter-x: clamp(16px, 2.2vw, 28px);
+  --page-gutter-y: 16px;
 }
 
 * {
@@ -265,7 +268,12 @@ h6,
 
 .content .container-fluid {
   min-width: 0;
-  max-width: 100%;
+  width: 100%;
+  max-width: var(--page-max-width);
+  margin-inline: auto;
+  padding-inline: var(--page-gutter-x) !important;
+  padding-top: var(--page-gutter-y);
+  padding-bottom: var(--page-gutter-y);
 }
 
 .route .row,
@@ -275,11 +283,20 @@ h6,
 
 .route {
   display: none;
+  width: 100%;
 }
 
 .route.active {
   display: block;
   animation: route-fade 0.22s ease;
+}
+
+/* Đồng bộ lề trái/phải cho các route còn lại theo cảm giác dashboard */
+#video-plan,
+#classes,
+#accounts,
+#settings {
+  padding-inline: clamp(10px, 1.2vw, 18px);
 }
 
 body[data-route="auth"] .app-shell {
@@ -572,7 +589,7 @@ body[data-route="auth"] #btnSidebarToggle {
 }
 
 .page-header {
-  margin: 4px 0 14px;
+  margin: 4px 0 16px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -588,6 +605,12 @@ body[data-route="auth"] #btnSidebarToggle {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.finance-nav-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .filters-row {
@@ -1055,12 +1078,26 @@ body[data-route="auth"] #btnSidebarToggle {
 }
 
 @media (max-width: 767.98px) {
+  :root {
+    --page-gutter-x: 14px;
+    --page-gutter-y: 14px;
+  }
+
+  #video-plan,
+  #classes,
+  #accounts,
+  #settings {
+    padding-inline: 0;
+  }
+
   .topbar {
     padding: 12px 14px;
   }
 
   .content .container-fluid {
-    padding: 14px !important;
+    padding-inline: var(--page-gutter-x) !important;
+    padding-top: var(--page-gutter-y) !important;
+    padding-bottom: var(--page-gutter-y) !important;
   }
 
   .topbar-center {
@@ -1385,11 +1422,6 @@ body {
 
 .video-form-actions #videoAiLanguage {
   min-width: 140px;
-}
-
-.video-blueprint-card {
-  background: linear-gradient(165deg, #f8fbff 0%, #f2f7ff 100%) !important;
-  border-radius: 12px;
 }
 
 .video-filter-grid {
@@ -1801,6 +1833,43 @@ body {
   margin-top: 14px;
 }
 
+.goals-flow-card {
+  border: 1px solid #dbe6f6;
+  background: linear-gradient(160deg, #fdfefe 0%, #f7fbff 52%, #eef6ff 100%);
+}
+
+.goals-flow-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.goals-flow-step {
+  border: 1px solid #dbe6f6;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.goals-flow-step strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.goals-flow-step-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #e8f0ff;
+  margin-bottom: 6px;
+}
+
 .goals-kpi-card {
   background: linear-gradient(145deg, #ffffff, #f7fbff 52%, #eff6ff);
   border: 1px solid #d9e5f7;
@@ -1898,6 +1967,16 @@ body {
   border-radius: 12px;
   background: #f8fbff;
   padding: 8px 12px;
+}
+
+.wr-filter-controls .form-label {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.wr-filter-controls .form-select,
+.wr-filter-controls .form-control {
+  min-width: 140px;
 }
 
 .wr-metric-list {
@@ -2215,6 +2294,246 @@ body[data-ui-density="compact"] .dash-priority-item {
   padding: 8px 9px;
 }
 
+.dash-hero-class {
+  padding-top: 10px;
+  border-top: 1px dashed var(--line, #d7deec);
+}
+
+.dash-class-summary {
+  font-weight: 700;
+  color: var(--text-1, #11223b);
+}
+
+.dash-class-detail {
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+.classes-mode-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.classes-mode-switch .btn {
+  border-radius: 10px !important;
+  min-width: 132px;
+}
+
+.classes-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.classes-admin-col {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+#classes .card {
+  border-radius: 14px;
+}
+
+#classesList {
+  display: grid;
+  gap: 10px;
+  max-height: 52vh;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.classes-list-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.classes-list-tabs .btn {
+  flex: 1 1 0;
+  margin: 0 !important;
+  border-radius: 10px !important;
+}
+
+.class-item {
+  border: 1px solid var(--line, #d7deec);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fff;
+}
+
+.class-item.is-active {
+  border-color: var(--brand, #2563eb);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.16);
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.class-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.class-item-code {
+  font-weight: 700;
+  color: var(--text-1, #11223b);
+}
+
+.class-item-title {
+  margin-top: 2px;
+  font-size: 0.92rem;
+  color: var(--text-2, #334a68);
+}
+
+.class-item-meta {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: var(--text-3, #5d7391);
+}
+
+.class-detail-grid {
+  display: grid;
+  gap: 6px;
+}
+
+#classStudentsList .table-responsive,
+#classSessionsList {
+  max-height: 45vh;
+  overflow: auto;
+}
+
+.class-leaderboard-table td,
+.class-leaderboard-table th {
+  white-space: nowrap;
+}
+
+#classSessionsList {
+  display: grid;
+  gap: 8px;
+}
+
+.class-session-item {
+  width: 100%;
+  border: 1px solid var(--line, #d7deec);
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+  padding: 8px 10px;
+}
+
+.class-session-item.is-active {
+  border-color: var(--brand, #2563eb);
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.class-session-item .text-warning-emphasis {
+  color: #a16207 !important;
+}
+
+.class-session-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+#sessionReviewTable .class-review-note {
+  min-width: 160px;
+}
+
+#classes .class-table td,
+#classes .class-table th {
+  white-space: normal;
+  vertical-align: middle;
+}
+
+.classes-present-head .badge {
+  font-weight: 600;
+}
+
+.classes-presentation-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.classes-presentation-tabs .btn {
+  border-radius: 10px !important;
+}
+
+.classes-present-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 14px;
+  align-items: start;
+}
+
+.classes-present-side {
+  display: grid;
+  gap: 14px;
+}
+
+.class-present-students {
+  display: grid;
+  gap: 10px;
+}
+
+.class-present-student {
+  border: 1px solid var(--line, #d7deec);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.class-present-student-main strong {
+  color: var(--text-1, #11223b);
+}
+
+.class-present-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.class-random-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.class-random-result {
+  border: 1px dashed var(--line, #d7deec);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(37, 99, 235, 0.03);
+}
+
+.class-random-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.class-random-history li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text-2, #334a68);
+}
+
 @media (min-width: 992px) {
   .nav-rail {
     min-height: 100%;
@@ -2244,12 +2563,29 @@ body[data-ui-density="compact"] .dash-priority-item {
     align-items: flex-start !important;
   }
 
+  .wr-filter-controls {
+    width: 100%;
+  }
+
+  .wr-filter-controls > div {
+    flex: 1 1 100%;
+  }
+
+  .wr-filter-controls .form-select,
+  .wr-filter-controls .form-control {
+    min-width: 100%;
+  }
+
   .wr-history-top {
     flex-direction: column;
   }
 
   .goals-tier + .goals-tier {
     margin-top: 10px;
+  }
+
+  .goals-flow-steps {
+    grid-template-columns: 1fr;
   }
 
   #stSaveStatus {
@@ -2399,6 +2735,82 @@ body[data-ui-density="compact"] .dash-priority-item {
   .wr-breakdown-meta {
     grid-template-columns: 1fr;
   }
+
+  .classes-admin-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .classes-admin-col {
+    gap: 12px;
+  }
+
+  #classesList,
+  #classStudentsList .table-responsive,
+  #classSessionsList {
+    max-height: none;
+  }
+
+  .class-item-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .classes-mode-switch {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+
+  .classes-mode-switch .btn {
+    flex: 0 0 auto;
+  }
+
+  .classes-list-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .classes-presentation-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 4px;
+  }
+
+  .classes-presentation-tabs .btn {
+    flex: 0 0 auto;
+  }
+
+  .classes-present-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .classes-present-side {
+    gap: 12px;
+  }
+
+  .class-present-student {
+    grid-template-columns: 1fr;
+  }
+
+  .class-present-actions .btn {
+    width: 100%;
+  }
+
+  .class-session-item {
+    padding: 8px;
+  }
+
+  #classes .page-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  #sessionReviewTable .class-review-note {
+    min-width: 110px;
+  }
 }
 
 @media (min-width: 768px) and (max-width: 991.98px) {
@@ -2437,6 +2849,31 @@ body[data-ui-density="compact"] .dash-priority-item {
 
   .wr-breakdown-meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #sessionReviewTable .class-review-note {
+    min-width: 130px;
+  }
+
+  .classes-admin-grid {
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .classes-admin-col-right {
+    grid-column: 1 / -1;
+  }
+
+  .classes-present-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .classes-present-side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .class-present-actions {
+    justify-content: flex-start;
   }
 }
 

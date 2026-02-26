@@ -117,6 +117,57 @@ function resolveWeekRange(inputWeekKey, now = new Date()) {
   };
 }
 
+function isValidMonthKey(value = "") {
+  return /^\d{4}-\d{2}$/.test(String(value || "").trim());
+}
+
+function monthRangeFromKey(monthKey) {
+  const key = String(monthKey || "").trim();
+  if (!isValidMonthKey(key)) return null;
+  const [yearRaw, monthRaw] = key.split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+
+  const start = new Date(year, month - 1, 1);
+  start.setHours(0, 0, 0, 0);
+  const endExclusive = new Date(year, month, 1);
+  endExclusive.setHours(0, 0, 0, 0);
+
+  return {
+    monthKey: `${yearRaw}-${monthRaw}`,
+    start,
+    endExclusive,
+  };
+}
+
+function getCurrentMonthKey(now = new Date()) {
+  const d = startOfDayLocal(now);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function resolveMonthRange(inputMonthKey, now = new Date()) {
+  const currentMonthKey = getCurrentMonthKey(now);
+  const resolved = monthRangeFromKey(inputMonthKey) || monthRangeFromKey(currentMonthKey);
+
+  if (!resolved) {
+    const fallback = monthRangeFromKey(currentMonthKey);
+    return {
+      monthKey: currentMonthKey,
+      start: fallback?.start || startOfDayLocal(now),
+      endExclusive: fallback?.endExclusive || new Date(startOfDayLocal(now).getTime() + 86400000),
+      startKey: dateKeyLocal(fallback?.start || now),
+      endKey: dateKeyLocal(new Date((fallback?.endExclusive?.getTime?.() || now.getTime()) - 86400000)),
+    };
+  }
+
+  return {
+    ...resolved,
+    startKey: dateKeyLocal(resolved.start),
+    endKey: dateKeyLocal(new Date(resolved.endExclusive.getTime() - 86400000)),
+  };
+}
+
 function sumAmount(list = []) {
   return (Array.isArray(list) ? list : []).reduce((sum, item) => sum + Number(item?.amount || 0), 0);
 }
@@ -180,7 +231,7 @@ function buildGoalsSnapshot({ goals, habits, weekHabitLogs }) {
   };
 }
 
-function buildVideoSnapshot({ tasks, weekRange, now, deadlineWindowHours }) {
+function buildVideoSnapshot({ tasks, periodRange, now, deadlineWindowHours, periodMode = "week" }) {
   const safeTasks = Array.isArray(tasks) ? tasks : [];
   const safeNow = now instanceof Date ? now : new Date();
   const hours = clampNumber(deadlineWindowHours, 12, 336, DEFAULT_DEADLINE_WINDOW_HOURS);
@@ -198,7 +249,7 @@ function buildVideoSnapshot({ tasks, weekRange, now, deadlineWindowHours }) {
     if (!deadline) return;
 
     const dueTime = deadline.getTime();
-    if (dueTime >= weekRange.start.getTime() && dueTime < weekRange.endExclusive.getTime()) {
+    if (dueTime >= periodRange.start.getTime() && dueTime < periodRange.endExclusive.getTime()) {
       dueInWeek += 1;
     }
     if (dueTime >= safeNow.getTime() && dueTime <= horizon.getTime()) {
@@ -231,6 +282,7 @@ function buildVideoSnapshot({ tasks, weekRange, now, deadlineWindowHours }) {
     dueInWeek,
     dueInWindow,
     overdue,
+    periodMode,
     deadlineWindowHours: hours,
     stageCounts,
   };
@@ -305,6 +357,46 @@ function buildWeekLabel(weekRange) {
   });
 }
 
+function buildMonthLabel(monthRange) {
+  const [year, month] = String(monthRange?.monthKey || "").split("-");
+  const header = year && month ? `Tháng ${month}/${year}` : t("weeklyReview.header.fallbackWeek");
+  return `${header} • ${toShortDate(monthRange.start)} - ${toShortDate(
+    new Date(monthRange.endExclusive.getTime() - 86400000)
+  )}`;
+}
+
+function resolvePeriodRange(mode = "week", periodKey = "", now = new Date()) {
+  const safeMode = mode === "month" ? "month" : "week";
+
+  if (safeMode === "month") {
+    const range = resolveMonthRange(periodKey, now);
+    return {
+      mode: "month",
+      periodKey: range.monthKey,
+      weekKey: "",
+      monthKey: range.monthKey,
+      start: range.start,
+      endExclusive: range.endExclusive,
+      startKey: range.startKey,
+      endKey: range.endKey,
+      label: buildMonthLabel(range),
+    };
+  }
+
+  const range = resolveWeekRange(periodKey, now);
+  return {
+    mode: "week",
+    periodKey: range.weekKey,
+    weekKey: range.weekKey,
+    monthKey: getCurrentMonthKey(range.start),
+    start: range.start,
+    endExclusive: range.endExclusive,
+    startKey: range.startKey,
+    endKey: range.endKey,
+    label: buildWeekLabel(range),
+  };
+}
+
 function normalizeHistoryItem(item) {
   const weekKey = String(item?.weekKey || item?.id || "").trim();
   const updatedAt = timestampToDate(item?.updatedAt) || timestampToDate(item?.createdAt);
@@ -321,7 +413,8 @@ export function getCurrentWeekKey(now = new Date()) {
 
 export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
   const now = options?.now instanceof Date ? options.now : new Date();
-  const weekRange = resolveWeekRange(weekKey, now);
+  const periodMode = String(options?.periodMode || "week").trim() === "month" ? "month" : "week";
+  const periodRange = resolvePeriodRange(periodMode, weekKey, now);
   const deadlineWindowHours = clampNumber(
     options?.deadlineWindowHours,
     12,
@@ -340,12 +433,12 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     tasks,
     historyRaw,
   ] = await Promise.all([
-    listExpensesByDateRange(uid, weekRange.start, weekRange.endExclusive),
-    listIncomesByDateRange(uid, weekRange.start, weekRange.endExclusive),
-    listTransfersByDateRange(uid, weekRange.start, weekRange.endExclusive),
+    listExpensesByDateRange(uid, periodRange.start, periodRange.endExclusive),
+    listIncomesByDateRange(uid, periodRange.start, periodRange.endExclusive),
+    listTransfersByDateRange(uid, periodRange.start, periodRange.endExclusive),
     listGoals(uid),
     listHabits(uid, { active: true }),
-    listHabitLogsByRange(uid, weekRange.startKey, weekRange.endKey),
+    listHabitLogsByRange(uid, periodRange.startKey, periodRange.endKey),
     listVideoTasks(uid),
     listWeeklyReviews(uid, historyLimit),
   ]);
@@ -353,7 +446,7 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
   const snapshot = {
     finance: buildFinanceSnapshot({ expenses, incomes, transfers }),
     goals: buildGoalsSnapshot({ goals, habits, weekHabitLogs }),
-    video: buildVideoSnapshot({ tasks, weekRange, now, deadlineWindowHours }),
+    video: buildVideoSnapshot({ tasks, periodRange, now, deadlineWindowHours, periodMode }),
   };
   const releasePlan = buildReleasePlanSnapshot(snapshot);
 
@@ -361,26 +454,34 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     .map((item) => normalizeHistoryItem(item))
     .filter((item) => item.weekKey);
 
-  if (!history.some((item) => item.weekKey === weekRange.weekKey)) {
+  if (periodMode === "week" && !history.some((item) => item.weekKey === periodRange.weekKey)) {
     history.unshift({
-      weekKey: weekRange.weekKey,
-      label: weekRange.weekKey,
+      weekKey: periodRange.weekKey,
+      label: periodRange.weekKey,
       updatedAt: null,
     });
   }
 
   return {
-    weekKey: weekRange.weekKey,
-    weekLabel: buildWeekLabel(weekRange),
+    weekKey: periodRange.weekKey,
+    weekLabel: periodRange.label,
     range: {
-      start: weekRange.start,
-      endExclusive: weekRange.endExclusive,
-      startKey: weekRange.startKey,
-      endKey: weekRange.endKey,
+      start: periodRange.start,
+      endExclusive: periodRange.endExclusive,
+      startKey: periodRange.startKey,
+      endKey: periodRange.endKey,
+    },
+    period: {
+      mode: periodRange.mode,
+      key: periodRange.periodKey,
+      weekKey: periodRange.weekKey,
+      monthKey: periodRange.monthKey,
+      label: periodRange.label,
     },
     snapshot,
     releasePlan,
-    history: history.slice(0, historyLimit),
+    history: periodMode === "week" ? history.slice(0, historyLimit) : [],
+    historyEnabled: periodMode === "week",
     options: {
       deadlineWindowHours,
     },

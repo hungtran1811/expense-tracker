@@ -1,12 +1,11 @@
 ﻿import { t } from "../shared/constants/copy.vi.js";
 import { REPORTS_PAGE_ENABLED, AI_PAGE_ENABLED } from "../shared/constants/featureFlags.js";
+import { LAST_ROUTE_KEY } from "../shared/constants/keys.js";
 
 const routes = Array.from(document.querySelectorAll(".route"));
 const navLinks = Array.from(document.querySelectorAll(".rail-link"));
 const topbarTitleEl = document.querySelector(".topbar-title .title");
 const topbarSubtitleEl = document.querySelector(".topbar-title .subtitle");
-
-const LAST_ROUTE_KEY = "nexus_last_route";
 
 const blockedRoutes = new Set();
 if (!REPORTS_PAGE_ENABLED) blockedRoutes.add("reports");
@@ -45,7 +44,8 @@ function renderRoute(routeId) {
 
   navLinks.forEach((link) => {
     const href = (link.getAttribute("href") || "").replace("#", "").trim();
-    link.classList.toggle("active", href === id);
+    const isFinanceGroup = href === "expenses" && id === "accounts";
+    link.classList.toggle("active", href === id || isFinanceGroup);
     if (blockedRoutes.has(href)) link.classList.add("d-none");
   });
 

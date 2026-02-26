@@ -154,3 +154,70 @@
 - Card đầu tiên là `Số dư tài khoản` (ID `dashboardAccountBalances`), hiển thị gọn, không trùng card khác.
 - Regression nhanh:
 - Auth, CRUD finance, goals lock `target=1`, video workflow + XP, settings autosave vẫn hoạt động.
+
+## 15) Class Manager (Phase 3.2)
+- Route và điều hướng:
+- Nav có mục `#classes`.
+- Đổi route `dashboard -> classes -> video-plan -> classes` liên tục 10 lần, không duplicate handler.
+- Reload tại `#classes` vẫn mở lại đúng route.
+- Tạo lớp:
+- Tạo lớp với `code`, `title`, `startDate`, `slots` (ví dụ `2 19:30`, `6 08:30`), lưu thành công.
+- Chặn trùng mã lớp trong cùng user.
+- Sau khi tạo, tự sinh đủ 14 buổi.
+- Mapping phase đúng:
+- Buổi 1-8: `knowledge`.
+- Buổi 9-13: `project`.
+- Buổi 14: `jury`.
+- Quản lý học sinh:
+- Thêm học sinh vào lớp thành công.
+- Ngừng học sinh: áp dụng từ buổi kế tiếp (dữ liệu buổi cũ không đổi).
+- Kích hoạt lại học sinh: áp dụng từ buổi kế tiếp.
+- Buổi học và nhận xét:
+- Chọn 1 buổi, lưu `teachingPlan`, `teachingResultNote`, `status`, `studentReviews`.
+- Reload vẫn còn dữ liệu ghi chú và nhận xét.
+- Đặt buổi sang `done` thì `doneSessions`, `remainingSessions`, `nextSessionNo` cập nhật đúng.
+- Dashboard widget:
+- Card đầu có khối `Buổi học sắp tới`.
+- Có lớp sắp dạy: hiển thị đúng `mã lớp/tên lớp`, thời gian, `buổi x/14`, số buổi còn lại.
+- Không có lớp sắp dạy: fallback text rõ ràng.
+- Bấm link trong widget mở đúng `#classes`.
+
+## 16) Class Manager Update (Phase 3.2B)
+- Tab danh sách:
+- Trong `#classes`, chuyển qua lại `Đang dạy` / `Đã hoàn thành` liên tục, không nhân đôi handler.
+- Mỗi tab hiển thị đúng số lượng lớp theo trạng thái.
+- Reload lại tại `#classes` giữ đúng tab vừa chọn (`nexus_classes_list_tab_v1`).
+- Auto-complete lớp:
+- Đánh dấu buổi 14 thành `done`, lớp tự chuyển sang tab `Đã hoàn thành`.
+- Ở tab `Đang dạy` không còn lớp vừa hoàn thành.
+- Dashboard widget `Buổi học sắp tới` không lấy lớp đã hoàn thành.
+- Mở lại lớp:
+- Trong tab hoàn thành, bấm `Mở lại lớp` chuyển lớp về tab `Đang dạy`.
+- Lớp mở lại vẫn xem/sửa được như bình thường.
+- Dời buổi an toàn:
+- Chỉ dời được buổi có trạng thái `planned`.
+- Bấm `Dời sang tuần kế` tại một buổi planned: buổi mục tiêu và chuỗi planned phía sau được dời nối tiếp, không trùng `scheduledAt`.
+- Nếu có buổi `done` nằm sau buổi cần dời: thao tác bị chặn với thông báo rõ.
+- Session đã dời hiển thị marker `Đã dời từ dd/mm`.
+- Regression nhanh:
+- Auth, finance CRUD/transfer, goals lock `target=1`, video workflow + XP, settings autosave không regress.
+
+## 17) Class Presenter (Phase 3.2D)
+- Chuyển chế độ `Quản trị` ↔ `Trình chiếu` liên tục, không duplicate handler.
+- Trong `Trình chiếu`, tab lớp chỉ hiển thị lớp `active`.
+- Bấm `+⭐` cho học sinh: sao tăng đúng.
+- Bấm `Đã sử dụng`: quy đổi `5⭐ = +1 điểm`, sao reset về `0`.
+- Chỉ random trên học sinh `active`.
+- Random khi tổng `%` không bằng `100` vẫn chạy, có cảnh báo mềm “chuẩn hóa theo tổng hiện tại”.
+- Lưu `%` theo từng học sinh (0..100), reload vẫn đúng.
+- Lưới từng lớp không chồng layout ở `<=767`, `768-991`, `>=992`.
+- Regression nhanh: Auth, finance CRUD/transfer, goals lock `target=1`, video workflow + XP, settings autosave không regress.
+
+## 18) Layout Consistency + Warm Start (Stabilization)
+- So sánh trực quan 8 route chính: `#dashboard`, `#expenses`, `#goals`, `#weekly-review`, `#classes`, `#video-plan`, `#accounts`, `#settings`.
+- Xác nhận khoảng cách trái/phải đồng nhất, không còn cảm giác trang sát nav.
+- Test responsive `<=767`, `768-991`, `>=992`: không overflow ngang ở các route chính.
+- Auth warm-start:
+- Đã đăng nhập, reload tại `#classes` hoặc `#video-plan`: vào lại đúng route nhanh, không đứng lâu ở login.
+- Truy cập `/#auth` khi còn session hợp lệ: app tự vào route làm việc.
+- Session không hợp lệ/hết hạn: fallback về `#auth` sạch, không trạng thái treo.
