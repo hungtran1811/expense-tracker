@@ -75,9 +75,14 @@ function normalizeAccountBalanceItem(item = {}) {
   };
 }
 
-function parseClassNextDate(value) {
+function toDateSafe(value) {
   if (!value) return null;
-  if (value?.seconds) {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value?.toDate === "function") {
+    const dt = value.toDate();
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  if (Number.isFinite(Number(value?.seconds || 0))) {
     const dt = new Date(Number(value.seconds) * 1000);
     return Number.isNaN(dt.getTime()) ? null : dt;
   }
@@ -85,54 +90,14 @@ function parseClassNextDate(value) {
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
-function buildUpcomingClassModule(classes = [], now = new Date()) {
-  const safeNow = now instanceof Date ? now : new Date();
-  const nowMs = safeNow.getTime();
-  const list = (Array.isArray(classes) ? classes : [])
-    .map((item) => {
-      const nextDate = parseClassNextDate(item?.nextScheduledAt);
-      const totalSessions = Math.max(1, Number(item?.totalSessions || 14));
-      const remainingSessions = Math.max(
-        0,
-        Number(item?.remainingSessions ?? totalSessions - Number(item?.doneSessions || 0))
-      );
-      return {
-        ...item,
-        totalSessions,
-        remainingSessions,
-        nextDate,
-      };
-    })
-    .filter((item) => String(item?.status || "active") === "active" && item.remainingSessions > 0)
-    .filter((item) => item.nextDate instanceof Date && !Number.isNaN(item.nextDate.getTime()))
-    .sort((a, b) => a.nextDate.getTime() - b.nextDate.getTime());
-
-  const picked = list.find((item) => item.nextDate.getTime() >= nowMs) || list[0] || null;
-  if (!picked) {
-    return {
-      hasUpcoming: false,
-      title: t("dashboard.classes.title", "Buổi học sắp tới"),
-      empty: t("dashboard.classes.empty", "Chưa có buổi học nào sắp tới."),
-      open: t("dashboard.classes.open", "Mở lớp học"),
-      classId: "",
-      summary: "",
-      detail: "",
-    };
-  }
-
-  const dateLabel = toDateLabel(picked.nextDate);
-  const timeLabel = picked.nextDate.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-  const sessionNo = Math.max(1, Number(picked?.nextSessionNo || 1));
-
-  return {
-    hasUpcoming: true,
-    title: t("dashboard.classes.title", "Buổi học sắp tới"),
-    empty: "",
-    open: t("dashboard.classes.open", "Mở lớp học"),
-    classId: String(picked?.id || ""),
-    summary: `${picked?.code || ""} • ${picked?.title || ""}`.trim().replace(/^•\s*/, ""),
-    detail: `${dateLabel} ${timeLabel} • Buổi ${sessionNo}/${picked.totalSessions} • Còn ${picked.remainingSessions} buổi`,
-  };
+function isSameLocalDate(a, b) {
+  if (!(a instanceof Date) || Number.isNaN(a.getTime())) return false;
+  if (!(b instanceof Date) || Number.isNaN(b.getTime())) return false;
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
 function getHabitCandidates(state = {}) {
@@ -419,28 +384,43 @@ export function buildDashboardHeroVM(state = {}, now = new Date()) {
 }
 
 export function buildDashboardModulesVM(state = {}, now = new Date()) {
-  const goals = normalizeGoals(state.goals);
-  const openVideoTasks = calcOpenVideoTasks(state.videoTasks);
+  const safeNow = now instanceof Date ? now : new Date();
+  const classes = (Array.isArray(state.classes) ? state.classes : [])
+    .filter((item) => String(item?.status || "active").trim() !== "completed")
+    .map((item) => {
+      const nextScheduledAt = toDateSafe(item?.nextScheduledAt);
+      return {
+        classId: String(item?.id || "").trim(),
+        code: String(item?.code || "").trim(),
+        title: String(item?.title || "").trim(),
+        nextSessionNo: Math.max(0, Number(item?.nextSessionNo || 0)),
+        nextScheduledAt,
+        isToday: isSameLocalDate(nextScheduledAt, safeNow),
+      };
+    })
+    .filter((item) => item.classId && item.nextScheduledAt instanceof Date)
+    .sort((a, b) => {
+      const byTime = a.nextScheduledAt.getTime() - b.nextScheduledAt.getTime();
+      if (byTime !== 0) return byTime;
+      return String(a.code || "").localeCompare(String(b.code || ""), "vi");
+    });
   const accountBalances = (Array.isArray(state.accountBalances) ? state.accountBalances : [])
     .map((item) => normalizeAccountBalanceItem(item))
     .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
     .slice(0, 4);
 
   return {
-    video: {
-      count: openVideoTasks,
-      subtitle: t("dashboard.modules.video.subtitle", ""),
-    },
-    goals: {
-      count: goals.length,
-      subtitle: t("dashboard.modules.goals.subtitle", ""),
+    classes: {
+      count: classes.length,
+      subtitle: t("dashboard.classes.title", "Buổi học sắp tới"),
+      emptyText: t("dashboard.classes.empty", "Chưa có buổi học nào sắp tới."),
+      items: classes,
     },
     accounts: {
       title: t("dashboard.modules.accounts.title", "Số dư tài khoản"),
       empty: t("dashboard.modules.accounts.empty", "Chưa có dữ liệu số dư tài khoản."),
       items: accountBalances,
     },
-    classes: buildUpcomingClassModule(state.classes, now),
   };
 }
 

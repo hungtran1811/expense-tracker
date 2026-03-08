@@ -1,8 +1,14 @@
-import { t, formatTemplate } from "../../shared/constants/copy.vi.js";
+import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
+import { CLASSES_ADMIN_TAB, CLASSES_MODE, CLASSES_SESSION_FILTER } from "./classes.controller.js";
 
-let _eventsBound = false;
+function byId(id) {
+  return document.getElementById(id);
+}
 
-const byId = (id) => document.getElementById(id);
+function safeText(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -13,14 +19,37 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function toDateLabel(value) {
+  if (!value) return "";
+  const dt = value instanceof Date ? value : new Date(value?.seconds ? value.seconds * 1000 : value);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleDateString("vi-VN");
+}
+
+function toDateTimeLabel(value) {
+  if (!value) return "";
+  const dt = value instanceof Date ? value : new Date(value?.seconds ? value.seconds * 1000 : value);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleString("vi-VN", {
+    hour12: false,
+  });
+}
+
+function weekdayLabel(value = 1) {
+  const weekday = Number(value || 1);
+  if (weekday === 7) return "Chủ nhật";
+  if (!Number.isInteger(weekday) || weekday < 1 || weekday > 6) return "Thứ 2";
+  return `Thứ ${weekday + 1}`;
+}
+
+function setText(id, value = "") {
+  const el = byId(id);
+  if (el) el.textContent = value;
+}
+
 function setHtml(id, html = "") {
   const el = byId(id);
   if (el) el.innerHTML = html;
-}
-
-function setText(id, text = "") {
-  const el = byId(id);
-  if (el) el.textContent = text;
 }
 
 function setValue(id, value = "") {
@@ -28,535 +57,474 @@ function setValue(id, value = "") {
   if (el) el.value = value;
 }
 
-function setDisabled(id, disabled = false) {
+function setActiveButton(id, isActive) {
   const el = byId(id);
-  if (el) el.disabled = !!disabled;
+  if (!el) return;
+  el.classList.toggle("active", !!isActive);
+  el.classList.toggle("btn-primary", !!isActive);
+  el.classList.toggle("btn-outline-primary", !isActive);
 }
 
-function toInputDate(value) {
-  if (!value) return "";
-  const d = value?.seconds ? new Date(Number(value.seconds) * 1000) : new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+function setVisible(id, visible) {
+  const el = byId(id);
+  if (!el) return;
+  el.classList.toggle("d-none", !visible);
 }
 
-function renderModeSwitch(vm = {}) {
-  const mode = String(vm?.mode || "admin");
-  const adminBtn = byId("classesModeAdmin");
-  const presentationBtn = byId("classesModePresentation");
-  if (adminBtn) {
-    adminBtn.classList.toggle("active", mode !== "presentation");
-    adminBtn.dataset.classesMode = "admin";
-    adminBtn.textContent = t("classes.modes.admin", "Quản trị");
-  }
-  if (presentationBtn) {
-    presentationBtn.classList.toggle("active", mode === "presentation");
-    presentationBtn.dataset.classesMode = "presentation";
-    presentationBtn.textContent = t("classes.modes.presentation", "Trình chiếu");
-  }
-  byId("classesAdminPane")?.classList.toggle("d-none", mode === "presentation");
-  byId("classesPresentationPane")?.classList.toggle("d-none", mode !== "presentation");
+function renderModeSwitch(mode = CLASSES_MODE.ADMIN) {
+  setActiveButton("classesModeAdmin", mode === CLASSES_MODE.ADMIN);
+  setActiveButton("classesModePresentation", mode === CLASSES_MODE.PRESENTATION);
+  setVisible("classesAdminPane", mode === CLASSES_MODE.ADMIN);
+  setVisible("classesPresentationPane", mode === CLASSES_MODE.PRESENTATION);
 }
 
-function renderListTabs(vm = {}) {
-  const listTab = String(vm?.listTab || "active");
-  const activeCount = Number(vm?.classCounts?.active || 0);
-  const completedCount = Number(vm?.classCounts?.completed || 0);
-  const tabActive = byId("classesListTabActive");
-  const tabCompleted = byId("classesListTabCompleted");
-  if (tabActive) {
-    tabActive.classList.toggle("active", listTab === "active");
-    tabActive.textContent = `${t("classes.tabs.active", "Đang dạy")} (${activeCount})`;
-  }
-  if (tabCompleted) {
-    tabCompleted.classList.toggle("active", listTab === "completed");
-    tabCompleted.textContent = `${t("classes.tabs.completed", "Đã hoàn thành")} (${completedCount})`;
-  }
+function renderAdminTabs(tab = CLASSES_ADMIN_TAB.OVERVIEW) {
+  const tabs = [
+    ["classesTabOverview", "classesPaneOverview", CLASSES_ADMIN_TAB.OVERVIEW],
+    ["classesTabSessions", "classesPaneSessions", CLASSES_ADMIN_TAB.SESSIONS],
+    ["classesTabStudents", "classesPaneStudents", CLASSES_ADMIN_TAB.STUDENTS],
+    ["classesTabCreate", "classesPaneCreate", CLASSES_ADMIN_TAB.CREATE],
+  ];
+  tabs.forEach(([tabId, paneId, value]) => {
+    const isActive = tab === value;
+    const tabEl = byId(tabId);
+    if (tabEl) {
+      setActiveButton(tabId, isActive);
+      tabEl.classList.toggle("active", isActive);
+      tabEl.setAttribute("aria-selected", isActive ? "true" : "false");
+    }
+    setVisible(paneId, isActive);
+  });
 }
 
-function renderClassesList(vm = {}) {
-  const classes = Array.isArray(vm?.classes) ? vm.classes : [];
-  const selectedClassId = String(vm?.selectedClass?.id || "");
-  if (!classes.length) {
-    const isCompleted = String(vm?.listTab || "active") === "completed";
-    setHtml(
-      "classesList",
-      `<div class="text-muted small">${escapeHtml(
-        isCompleted
-          ? t("classes.emptyCompleted", "Chưa có lớp nào hoàn thành.")
-          : t("classes.emptyClasses", "Chưa có lớp học nào.")
-      )}</div>`
-    );
-    return;
-  }
-  setHtml(
-    "classesList",
-    classes
-      .map((item) => {
-        const id = String(item?.id || "");
-        const active = id === selectedClassId ? "is-active" : "";
-        const done = Number(item?.doneSessions || 0);
-        const total = Number(item?.totalSessions || 14);
-        const remaining = Number(item?.remainingSessions || Math.max(0, total - done));
-        return `
-          <article class="class-item ${active}">
-            <div class="class-item-head">
-              <div>
-                <div class="class-item-code">${escapeHtml(String(item?.code || "--"))}</div>
-                <div class="class-item-title">${escapeHtml(String(item?.title || ""))}</div>
-              </div>
-              <span class="badge ${String(item?.status || "") === "completed" ? "text-bg-success" : "text-bg-light"}">
-                ${escapeHtml(String(item?.statusLabel || ""))}
-              </span>
-            </div>
-            <div class="class-item-meta">${escapeHtml(
-              t("classes.progressLabel", "Đã dạy {{progress}} • Còn {{remaining}} buổi")
-                .replace("{{progress}}", `${done}/${total}`)
-                .replace("{{remaining}}", String(remaining))
-            )}</div>
-            <button class="btn btn-sm btn-outline-primary mt-2" data-class-select="${escapeHtml(id)}">
-              ${escapeHtml(t("classes.actions.selectClass", "Chọn lớp"))}
-            </button>
-          </article>
-        `;
-      })
-      .join("")
+function renderClassList(vm = {}) {
+  const active = Array.isArray(vm?.classesActive) ? vm.classesActive : [];
+  const completed = Array.isArray(vm?.classesCompleted) ? vm.classesCompleted : [];
+
+  setText(
+    "classesListSummary",
+    formatTemplate("Đang dạy {{active}} • Đã hoàn thành {{completed}}", {
+      active: active.length,
+      completed: completed.length,
+    })
   );
+
+  const renderItem = (item, type = "active") => {
+    const id = safeText(item?.id);
+    const selected = id && id === safeText(vm?.selectedClassId) ? "selected" : "";
+    const statusLabel = type === "completed" ? "Đã hoàn thành" : "Đang dạy";
+    const subtitle = [safeText(item?.subject), safeText(item?.level)].filter(Boolean).join(" • ");
+    const progress = formatTemplate("Đã dạy {{done}}/{{total}} • Còn {{remaining}} buổi", {
+      done: Number(item?.doneSessions || 0),
+      total: Number(item?.totalSessions || 14),
+      remaining: Number(item?.remainingSessions || 0),
+    });
+
+    return `
+      <button class="classes-list-item ${selected}" type="button" data-class-select="${escapeHtml(id)}">
+        <div class="classes-list-head">
+          <strong>${escapeHtml(safeText(item?.code, "(Không mã)"))}</strong>
+          <span class="badge text-bg-light">${statusLabel}</span>
+        </div>
+        <div class="classes-list-title">${escapeHtml(safeText(item?.title, "(Chưa đặt tên lớp)"))}</div>
+        <div class="classes-list-sub">${escapeHtml(subtitle)}</div>
+        <div class="classes-list-meta">${escapeHtml(progress)}</div>
+      </button>
+    `;
+  };
+
+  const html = `
+    <div class="classes-list-block">
+      <div class="classes-list-group-title">Đang dạy</div>
+      ${
+        active.length
+          ? active.map((item) => renderItem(item, "active")).join("")
+          : '<div class="text-muted small">Chưa có lớp đang dạy.</div>'
+      }
+    </div>
+    <div class="classes-list-block mt-3">
+      <div class="classes-list-group-title">Đã hoàn thành</div>
+      ${
+        completed.length
+          ? completed.map((item) => renderItem(item, "completed")).join("")
+          : '<div class="text-muted small">Chưa có lớp hoàn thành.</div>'
+      }
+    </div>
+  `;
+  setHtml("classesList", html);
 }
 
 function renderClassDetail(vm = {}) {
-  const selectedClass = vm?.selectedClass || null;
-  const detail = vm?.detail || {};
-  if (!selectedClass) {
-    setHtml("classDetail", `<div class="text-muted small">${escapeHtml(t("classes.emptyClassDetail", "Chọn một lớp để xem chi tiết."))}</div>`);
-    return;
-  }
-  const done = Number(detail?.doneSessions || 0);
-  const total = Number(detail?.totalSessions || 14);
-  const remaining = Number(detail?.remainingSessions || 0);
-  const showReopen = !!detail?.canReopen;
-  setHtml(
-    "classDetail",
-    `
-      <div class="class-detail-grid">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-          <strong>${escapeHtml(String(selectedClass?.code || "--"))}</strong>
-          <span>•</span>
-          <span>${escapeHtml(String(selectedClass?.title || ""))}</span>
-          ${showReopen ? `<span class="badge text-bg-success">${escapeHtml(t("classes.badges.completed", "Hoàn thành"))}</span>` : ""}
-        </div>
-        <div class="small text-muted">${escapeHtml(t("classes.labels.startDate", "Bắt đầu"))}: ${escapeHtml(String(detail?.startDateText || "--"))}</div>
-        <div class="small text-muted">${escapeHtml(t("classes.labels.schedule", "Lịch học"))}: ${escapeHtml(String(detail?.slotText || "--"))}</div>
-        <div class="small text-muted">${escapeHtml(
-          t("classes.progressLabel", "Đã dạy {{progress}} • Còn {{remaining}} buổi")
-            .replace("{{progress}}", `${done}/${total}`)
-            .replace("{{remaining}}", String(remaining))
-        )}</div>
-        ${
-          showReopen
-            ? `<div><button class="btn btn-sm btn-outline-primary" id="btnReopenClass">${escapeHtml(
-                t("classes.actions.reopenClass", "Mở lại lớp")
-              )}</button></div>`
-            : ""
-        }
-      </div>
-    `
-  );
-}
-
-function renderStudents(vm = {}) {
-  const students = Array.isArray(vm?.students) ? vm.students : [];
-  const isReadOnly = !!vm?.isReadOnly;
-  setDisabled("btnAddStudent", isReadOnly);
-  if (byId("classStudentName")) byId("classStudentName").disabled = isReadOnly;
-
-  if (!students.length) {
-    setHtml("classStudentsList", `<div class="text-muted small">${escapeHtml(t("classes.emptyStudents", "Chưa có học sinh."))}</div>`);
+  const item = vm?.selectedClass || null;
+  if (!item) {
+    setText("classDetailEmpty", "Chọn một lớp để xem và chỉnh sửa.");
+    setVisible("classDetailFormWrap", false);
+    setVisible("classDetailEmpty", true);
     return;
   }
 
-  setHtml(
-    "classStudentsList",
-    `
-      <div class="table-responsive">
-        <table class="table table-sm align-middle class-table">
-          <thead>
-            <tr>
-              <th>${escapeHtml(t("classes.student.table.name", "Học sinh"))}</th>
-              <th>${escapeHtml(t("classes.student.table.status", "Trạng thái"))}</th>
-              <th>${escapeHtml(t("classes.student.table.scope", "Mốc áp dụng"))}</th>
-              <th>${escapeHtml(t("classes.student.table.points", "Điểm"))}</th>
-              <th>${escapeHtml(t("classes.student.table.stars", "Sao"))}</th>
-              <th>${escapeHtml(t("classes.student.table.pickPercent", "% random"))}</th>
-              <th class="text-end">${escapeHtml(t("classes.student.table.actions", "Thao tác"))}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${students
-              .map((student) => {
-                const id = String(student?.id || "");
-                const active = !!student?.active;
-                const range = student?.leftFromSessionNo
-                  ? `Từ buổi ${student?.joinedFromSessionNo || 1} - trước buổi ${student?.leftFromSessionNo}`
-                  : `Từ buổi ${student?.joinedFromSessionNo || 1}`;
-                const action = isReadOnly
-                  ? `<span class="small text-muted">${escapeHtml(t("classes.readOnly", "Chỉ xem"))}</span>`
-                  : active
-                  ? `<button class="btn btn-sm btn-outline-danger" data-student-remove="${escapeHtml(id)}">${escapeHtml(
-                      t("classes.actions.removeStudent", "Ngừng từ buổi kế")
-                    )}</button>`
-                  : `<button class="btn btn-sm btn-outline-primary" data-student-reactivate="${escapeHtml(id)}">${escapeHtml(
-                      t("classes.actions.reactivateStudent", "Kích hoạt lại")
-                    )}</button>`;
-                return `
-                  <tr>
-                    <td>${escapeHtml(String(student?.name || "(Chưa có tên)"))}</td>
-                    <td><span class="badge ${active ? "text-bg-success" : "text-bg-secondary"}">${escapeHtml(
-                      active ? t("classes.student.active", "Đang học") : t("classes.student.inactive", "Tạm ngừng")
-                    )}</span></td>
-                    <td class="small text-muted">${escapeHtml(range)}</td>
-                    <td><span class="badge text-bg-primary">${Number(student?.pointsTotal || 0)}</span></td>
-                    <td><span class="badge text-bg-warning">${Number(student?.starsBalance || 0)}⭐</span></td>
-                    <td><input type="number" min="0" max="100" class="form-control form-control-sm class-pick-percent" data-student-pick-percent="${escapeHtml(
-                      id
-                    )}" value="${escapeHtml(String(Number(student?.pickPercent || 0)))}" ${isReadOnly || !active ? "disabled" : ""} /></td>
-                    <td class="text-end">${action}</td>
-                  </tr>
-                `;
-              })
-              .join("")}
-          </tbody>
-        </table>
-      </div>
-    `
+  setVisible("classDetailFormWrap", true);
+  setVisible("classDetailEmpty", false);
+  setText(
+    "classDetailProgress",
+    formatTemplate("Đã dạy {{done}}/{{total}} • Còn {{remaining}} buổi", {
+      done: Number(item?.doneSessions || 0),
+      total: Number(item?.totalSessions || 14),
+      remaining: Number(item?.remainingSessions || 0),
+    })
   );
+  setValue("classId", safeText(item?.id));
+  setValue("classCode", safeText(item?.code));
+  setValue("classSubject", safeText(item?.subject));
+  setValue("classLevel", safeText(item?.level));
+  setValue(
+    "classStartDate",
+    safeText(item?.startDate?.toDate ? item.startDate.toDate().toISOString().slice(0, 10) : "")
+  );
+  setValue("classWeekday", String(item?.weekday || 1));
+  setValue("classStartTime", safeText(item?.startTime, "08:00"));
+  setValue("classStatus", safeText(item?.status, "active"));
+  setValue("classDescription", safeText(item?.description));
 }
 
-function renderSessions(vm = {}) {
-  const sessions = Array.isArray(vm?.sessions) ? vm.sessions : [];
-  const selectedSessionId = String(vm?.selectedSessionId || "");
+function renderSessionFilter(filter = CLASSES_SESSION_FILTER.UPCOMING) {
+  setActiveButton("classesSessionFilterUpcoming", filter === CLASSES_SESSION_FILTER.UPCOMING);
+  setActiveButton("classesSessionFilterPast", filter === CLASSES_SESSION_FILTER.PAST);
+  setActiveButton("classesSessionFilterAll", filter === CLASSES_SESSION_FILTER.ALL);
+}
+
+function renderSessionsList(vm = {}) {
+  const sessions = Array.isArray(vm?.visibleSessions) ? vm.visibleSessions : [];
+  const selectedSessionId = safeText(vm?.selectedSessionId);
+
   if (!sessions.length) {
-    setHtml("classSessionsList", `<div class="text-muted small">${escapeHtml(t("classes.emptySessions", "Chưa có lịch buổi học."))}</div>`);
+    setHtml("classSessionsList", '<div class="text-muted small">Không có buổi học trong bộ lọc hiện tại.</div>');
+    return;
+  }
+
+  const html = sessions
+    .map((session) => {
+      const sid = safeText(session?.id);
+      const selected = sid === selectedSessionId ? "selected" : "";
+      const dateLabel = toDateLabel(session?.scheduledAt) || session?.sessionDate || "--/--/----";
+      const status = safeText(session?.status, "planned");
+      const statusLabel = status === "done" ? "Đã dạy" : status === "cancelled" ? "Hoãn" : "Kế hoạch";
+      return `
+        <button class="classes-session-item ${selected}" type="button" data-session-select="${escapeHtml(sid)}">
+          <div class="classes-session-head">
+            <strong>Buổi ${Number(session?.sessionNo || 0)}</strong>
+            <span class="badge text-bg-light">${statusLabel}</span>
+          </div>
+          <div class="classes-session-meta">${escapeHtml(dateLabel)} • ${escapeHtml(
+            safeText(session?.startTime, "--:--")
+          )}</div>
+        </button>
+      `;
+    })
+    .join("");
+  setHtml("classSessionsList", html);
+}
+
+function renderUpcomingSessionCard(vm = {}) {
+  const upcoming = vm?.upcomingSession || null;
+  if (!upcoming) {
+    setHtml("classesUpcomingSessionCard", '<div class="text-muted small">Không có buổi sắp tới.</div>');
     return;
   }
   setHtml(
-    "classSessionsList",
-    sessions
-      .map((session) => {
-        const id = String(session?.id || "");
-        const moved = session?.isRescheduled
-          ? `<div class="small text-warning-emphasis mt-1">${escapeHtml(
-              t("classes.sessionRescheduledFrom", "Đã dời từ {{date}}").replace("{{date}}", String(session?.rescheduledFromLabel || "--"))
-            )}</div>`
-          : "";
-        return `
-          <button class="class-session-item ${id === selectedSessionId ? "is-active" : ""}" data-session-select="${escapeHtml(id)}">
-            <div class="class-session-head">
-              <strong>${escapeHtml(t("classes.labels.session", "Buổi"))} ${Number(session?.sessionNo || 0)}</strong>
-              <span class="badge text-bg-light">${escapeHtml(String(session?.statusLabel || ""))}</span>
-            </div>
-            <div class="small text-muted">${escapeHtml(String(session?.phaseLabel || ""))}</div>
-            <div class="small">${escapeHtml(String(session?.scheduleLabel || "--"))}</div>
-            ${moved}
-          </button>
-        `;
-      })
-      .join("")
+    "classesUpcomingSessionCard",
+    `
+      <div class="classes-upcoming-card">
+        <div class="d-flex justify-content-between align-items-center gap-2">
+          <strong>Buổi ${Number(upcoming?.sessionNo || 0)}</strong>
+          <span class="badge text-bg-light">${
+            safeText(upcoming?.status, "planned") === "done" ? "Đã dạy" : "Kế hoạch"
+          }</span>
+        </div>
+        <div class="small mt-1">${escapeHtml(
+          toDateLabel(upcoming?.scheduledAt) || upcoming?.sessionDate || "--/--/----"
+        )} • ${escapeHtml(safeText(upcoming?.startTime, "--:--"))}</div>
+      </div>
+    `
   );
 }
 
-function renderSessionReviewEditor(vm = {}) {
+function renderSessionEditor(vm = {}) {
   const session = vm?.selectedSession || null;
-  const reviewRows = Array.isArray(vm?.reviewRows) ? vm.reviewRows : [];
-  const reviewOptions = Array.isArray(vm?.reviewStatusOptions) ? vm.reviewStatusOptions : [];
-  const isReadOnly = !!vm?.isReadOnly;
-  const canShift = !!session && String(session?.status || "planned") === "planned" && !isReadOnly;
-  setDisabled("sessionTeachingPlan", !session || isReadOnly);
-  setDisabled("sessionTeachingResult", !session || isReadOnly);
-  setDisabled("sessionStatus", !session || isReadOnly);
-  setDisabled("sessionRescheduleReason", !canShift);
-  setDisabled("btnShiftSessionNextWeek", !canShift);
-  setDisabled("btnSaveSessionReview", !session || isReadOnly);
-
+  const students = Array.isArray(vm?.students) ? vm.students : [];
   if (!session) {
-    setHtml("sessionReviewTable", `<div class="text-muted small">${escapeHtml(t("classes.emptySessionEditor", "Chọn buổi học để nhập ghi chú."))}</div>`);
-    setValue("sessionId", "");
+    setVisible("sessionEditor", false);
+    setVisible("sessionEditorEmpty", true);
     return;
   }
 
-  setValue("sessionId", String(session?.id || ""));
-  setValue("sessionStatus", String(session?.status || "planned"));
-  setValue("sessionTeachingPlan", String(session?.teachingPlan || ""));
-  setValue("sessionTeachingResult", String(session?.teachingResultNote || ""));
+  setVisible("sessionEditor", true);
+  setVisible("sessionEditorEmpty", false);
+  setValue("sessionId", safeText(session?.id));
+  setValue("sessionStatus", safeText(session?.status, "planned"));
+  setValue("sessionDate", safeText(session?.sessionDate));
+  setValue("sessionStartTime", safeText(session?.startTime, "08:00"));
+  setValue("sessionEndTime", safeText(session?.endTime, "10:00"));
+  setValue("sessionLessonPlan", safeText(session?.lessonPlan));
+  setValue("sessionNote", safeText(session?.sessionNote));
+  setText("sessionWeekdayText", weekdayLabel(session?.weekday));
 
-  const rowsHtml = reviewRows.length
-    ? reviewRows
-        .map((row) => {
-          const options = reviewOptions
-            .map((opt) => `<option value="${escapeHtml(opt.value)}" ${opt.value === String(row?.reviewStatus || "normal") ? "selected" : ""}>${escapeHtml(opt.label)}</option>`)
-            .join("");
-          const disabled = row?.applicable && !isReadOnly ? "" : "disabled";
-          return `
-            <tr data-student-id="${escapeHtml(String(row?.id || ""))}" data-applicable="${row?.applicable ? "1" : "0"}">
-              <td>${escapeHtml(String(row?.name || ""))}</td>
-              <td><select class="form-select form-select-sm class-review-status" ${disabled}>${options}</select></td>
-              <td><input class="form-control form-control-sm class-review-note" value="${escapeHtml(String(row?.reviewNote || ""))}" ${disabled} /></td>
-            </tr>
-          `;
+  const attendanceRows = students
+    .filter((student) => String(student?.status || "active") === "active")
+    .map((student) => {
+      const sid = safeText(student?.id);
+      const attendance = safeText(session?.attendance?.[sid], "present");
+      return `
+        <div class="session-row">
+          <div class="session-row-name">${escapeHtml(safeText(student?.name, "(Không rõ)"))}</div>
+          <select class="form-select form-select-sm" data-session-attendance="${escapeHtml(sid)}">
+            <option value="present" ${attendance === "present" ? "selected" : ""}>Đi học</option>
+            <option value="absent" ${attendance === "absent" ? "selected" : ""}>Vắng</option>
+          </select>
+        </div>
+      `;
+    })
+    .join("");
+
+  const reviewRows = students
+    .filter((student) => String(student?.status || "active") === "active")
+    .map((student) => {
+      const sid = safeText(student?.id);
+      const review = safeText(session?.reviews?.[sid], "normal");
+      return `
+        <div class="session-row">
+          <div class="session-row-name">${escapeHtml(safeText(student?.name, "(Không rõ)"))}</div>
+          <select class="form-select form-select-sm" data-session-review="${escapeHtml(sid)}">
+            <option value="normal" ${review === "normal" ? "selected" : ""}>Bình thường</option>
+            <option value="unfocused" ${review === "unfocused" ? "selected" : ""}>Mất tập trung</option>
+            <option value="good" ${review === "good" ? "selected" : ""}>Hoàn thành tốt</option>
+            <option value="excellent" ${review === "excellent" ? "selected" : ""}>Xuất sắc</option>
+          </select>
+        </div>
+      `;
+    })
+    .join("");
+
+  setHtml(
+    "sessionAttendanceList",
+    attendanceRows || '<div class="text-muted small">Không có học sinh active trong lớp này.</div>'
+  );
+  setHtml(
+    "sessionReviewList",
+    reviewRows || '<div class="text-muted small">Không có học sinh active trong lớp này.</div>'
+  );
+}
+
+function renderStudentsList(vm = {}) {
+  const students = Array.isArray(vm?.students) ? vm.students : [];
+  if (!students.length) {
+    setHtml("classStudentsList", '<div class="text-muted small">Chưa có học sinh trong lớp.</div>');
+    return;
+  }
+
+  const html = students
+    .map((student) => {
+      const sid = safeText(student?.id);
+      const status = safeText(student?.status, "active");
+      const statusLabel = status === "inactive" ? "Tạm ngưng" : "Đang học";
+      const actionLabel = status === "inactive" ? "Kích hoạt lại" : "Ngừng";
+      return `
+        <div class="student-row">
+          <div class="student-row-main">
+            <strong>${escapeHtml(safeText(student?.name, "(Không tên)"))}</strong>
+            <div class="small text-muted">${escapeHtml(safeText(student?.note))}</div>
+          </div>
+          <div class="student-row-actions">
+            <span class="badge text-bg-light">${statusLabel}</span>
+            <button class="btn btn-sm btn-outline-primary" type="button" data-student-toggle="${escapeHtml(
+              sid
+            )}">${actionLabel}</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+  setHtml("classStudentsList", html);
+}
+
+function renderPresentationAttendanceList(presentation = {}) {
+  const attendance = Array.isArray(presentation?.attendance) ? presentation.attendance : [];
+  const searchText = safeText(presentation?.gameState?.studentQuery || "").toLowerCase();
+  const filtered = searchText
+    ? attendance.filter((item) => safeText(item?.name).toLowerCase().includes(searchText))
+    : attendance;
+
+  if (!filtered.length) {
+    setHtml("presentationAttendanceList", '<div class="text-muted small">Không có học sinh phù hợp.</div>');
+    return;
+  }
+
+  const html = filtered
+    .map((item) => {
+      const present = safeText(item?.attendance, "present") === "present";
+      const used = !!item?.used;
+      const sid = safeText(item?.studentId);
+      return `
+        <div class="presentation-student-row">
+          <div class="presentation-student-main">
+            <strong>${escapeHtml(safeText(item?.name, "(Không rõ)"))}</strong>
+            <div class="small text-muted">Điểm buổi: +${Math.max(0, Number(item?.pointCount || 0))}</div>
+          </div>
+          <div class="presentation-student-actions">
+            <button class="btn btn-sm ${present ? "btn-success" : "btn-outline-secondary"}" type="button" data-pres-attendance="${escapeHtml(
+              sid
+            )}" data-next="${present ? "absent" : "present"}">${present ? "Đi học" : "Vắng"}</button>
+            <div class="input-group input-group-sm presentation-point-input">
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value="1"
+                class="form-control"
+                data-pres-point-input="${escapeHtml(sid)}"
+              />
+              <button class="btn btn-outline-warning" type="button" data-pres-point-custom="${escapeHtml(
+                sid
+              )}">Cộng</button>
+            </div>
+            <button class="btn btn-sm ${used ? "btn-primary" : "btn-outline-primary"}" type="button" data-pres-used="${escapeHtml(
+              sid
+            )}">${used ? "Đã dùng" : "Chưa dùng"}</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+  setHtml("presentationAttendanceList", html);
+}
+
+function renderPresentationLeaderboard(presentation = {}) {
+  setHtml("presentationLeaderboardSession", "");
+  const classBoard = Array.isArray(presentation?.leaderboardClass) ? presentation.leaderboardClass : [];
+  setHtml(
+    "presentationLeaderboardClass",
+    classBoard.length
+      ? classBoard
+          .map((item) => `<div class="small">${escapeHtml(item?.name)} • +${Number(item?.count || 0)}</div>`)
+          .join("")
+      : '<div class="text-muted small">Chưa có dữ liệu bảng điểm lớp.</div>'
+  );
+}
+
+function renderPresentationHistory(presentation = {}) {
+  const history = Array.isArray(presentation?.gameState?.wheelHistory)
+    ? presentation.gameState.wheelHistory
+    : [];
+  const html = history.length
+    ? history
+        .slice(0, 12)
+        .map((entry, index) => {
+          const pickedAtLabel = toDateTimeLabel(entry?.pickedAt);
+          const name = safeText(entry?.name, "Không rõ tên");
+          return `<div class="presentation-history-item"><strong>#${index + 1} • ${escapeHtml(
+            name
+          )}</strong><small>${escapeHtml(pickedAtLabel || "--/--/----")}</small></div>`;
         })
         .join("")
-    : `<tr><td colspan="3" class="text-muted small">${escapeHtml(t("classes.emptyStudentsForSession", "Chưa có học sinh áp dụng cho buổi này."))}</td></tr>`;
-
-  setHtml(
-    "sessionReviewTable",
-    `<div class="table-responsive"><table class="table table-sm align-middle class-table"><thead><tr><th>${escapeHtml(
-      t("classes.student.table.name", "Học sinh")
-    )}</th><th>${escapeHtml(t("classes.review.table.status", "Đánh giá"))}</th><th>${escapeHtml(
-      t("classes.review.table.note", "Ghi chú")
-    )}</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`
-  );
+    : '<div class="text-muted small">Chưa có lịch sử random tên trong buổi này.</div>';
+  setHtml("presentationHistoryList", html);
 }
 
-function renderClassForm(vm = {}) {
-  const selectedClass = vm?.selectedClass || null;
-  const isReadOnly = !!vm?.isReadOnly && !!selectedClass;
-  setValue("classId", String(selectedClass?.id || ""));
-  setValue("classCode", String(selectedClass?.code || ""));
-  setValue("classTitle", String(selectedClass?.title || ""));
-  setValue("classStartDate", selectedClass?.startDate ? toInputDate(selectedClass.startDate) : "");
-  setValue("classStatus", String(selectedClass?.status || "active"));
-  setValue("classDescription", String(selectedClass?.description || ""));
-  setValue("classSlots", Array.isArray(selectedClass?.slots) ? selectedClass.slots.map((s) => `${s.weekday} ${s.startTime}`).join("\n") : "");
-  ["classCode", "classTitle", "classStartDate", "classStatus", "classDescription", "classSlots"].forEach((id) =>
-    setDisabled(id, isReadOnly)
-  );
-  setDisabled("btnSaveClass", !selectedClass || isReadOnly);
-  setDisabled("btnDeleteClass", !selectedClass || isReadOnly);
-  setText(
-    "classesFormMode",
-    selectedClass
-      ? isReadOnly
-        ? t("classes.formModeRead", "Đang xem lớp đã hoàn thành")
-        : t("classes.formModeEdit", "Đang sửa lớp đã chọn")
-      : t("classes.formModeCreate", "Tạo lớp mới")
-  );
-}
-
-function renderPresentation(vm = {}) {
+function renderPresentationPane(vm = {}) {
   const presentation = vm?.presentation || {};
-  const tabs = Array.isArray(presentation?.tabs) ? presentation.tabs : [];
-  const selectedClassId = String(presentation?.selectedClass?.id || vm?.selectedClass?.id || "");
-  const selectedClassName =
-    String(presentation?.selectedClass?.title || "").trim() || String(presentation?.selectedClass?.code || "").trim();
-  setText(
-    "classesPresentationTitle",
-    selectedClassName
-      ? formatTemplate(t("classes.presentation.titleWithClass", "Trình chiếu lớp: {{name}}"), { name: selectedClassName })
-      : t("classes.presentation.title", "Trình chiếu theo lớp")
-  );
-  setText("classesPresentationSubtitle", t("classes.presentation.subtitle", "Chỉ hiển thị phần cần dùng trong lúc dạy."));
-
-  setHtml(
-    "classesPresentationClassTabs",
-    tabs.length
-      ? tabs
+  const classesActive = Array.isArray(vm?.classesActive) ? vm.classesActive : [];
+  const selectClass = byId("classPresentationSelect");
+  if (selectClass) {
+    const selectedId = safeText(presentation?.selectedClassId);
+    selectClass.innerHTML = classesActive.length
+      ? classesActive
           .map(
-            (item) => `<button class="btn btn-outline-primary btn-sm ${
-              String(item?.id || "") === selectedClassId ? "active" : ""
-            }" data-presentation-class="${escapeHtml(String(item?.id || ""))}">${escapeHtml(String(item?.code || "--"))}</button>`
+            (item) =>
+              `<option value="${escapeHtml(safeText(item?.id))}" ${
+                safeText(item?.id) === selectedId ? "selected" : ""
+              }>${escapeHtml(safeText(item?.code || item?.title || "Lớp"))}</option>`
           )
           .join("")
-      : `<div class="text-muted small">${escapeHtml(t("classes.presentation.emptyClasses", "Chưa có lớp đang dạy."))}</div>`
-  );
+      : '<option value="">Chưa có lớp active</option>';
+  }
 
-  const students = Array.isArray(presentation?.students) ? presentation.students : [];
-  setHtml(
-    "classLeaderboard",
-    students.length
-      ? `<div class="table-responsive"><table class="table table-sm align-middle class-table"><thead><tr><th>#</th><th>${escapeHtml(
-          t("classes.student.table.name", "Học sinh")
-        )}</th><th>${escapeHtml(t("classes.student.table.points", "Điểm"))}</th><th>${escapeHtml(
-          t("classes.student.table.stars", "Sao")
-        )}</th></tr></thead><tbody>${(presentation?.leaderboard || [])
+  const selectSession = byId("presentationSessionSelect");
+  if (selectSession) {
+    const selectedSessionId = safeText(presentation?.selectedSessionId);
+    const options = Array.isArray(presentation?.availableSessions) ? presentation.availableSessions : [];
+    selectSession.innerHTML = options.length
+      ? options
           .map(
-            (s, idx) =>
-              `<tr><td>${idx + 1}</td><td>${escapeHtml(String(s?.name || ""))}</td><td>${Number(
-                s?.pointsTotal || 0
-              )}</td><td>${Number(s?.starsBalance || 0)}⭐</td></tr>`
+            (session) =>
+              `<option value="${escapeHtml(safeText(session?.id))}" ${
+                safeText(session?.id) === selectedSessionId ? "selected" : ""
+              }>${escapeHtml(safeText(session?.label || `Buổi ${Number(session?.sessionNo || 0)}`))}</option>`
           )
-          .join("")}</tbody></table></div>`
-      : `<div class="text-muted small">${escapeHtml(t("classes.presentation.emptyStudents", "Lớp chưa có học sinh đang học."))}</div>`
+          .join("")
+      : '<option value="">Chưa có buổi</option>';
+  }
+
+  const session = presentation?.session || null;
+  setText(
+    "presentationSessionInfo",
+    session
+      ? `Buổi ${Number(session?.sessionNo || 0)} • ${
+          toDateLabel(session?.scheduledAt) || session?.sessionDate || "--/--/----"
+        }`
+      : "Chưa có buổi học để trình chiếu."
   );
 
-  setHtml(
-    "classPresentationStudents",
-    students.length
-      ? `<div class="class-present-students">${students
-          .map(
-            (s) => `<article class="class-present-student">
-              <div class="class-present-student-main">
-                <strong>${escapeHtml(String(s?.name || ""))}</strong>
-                <div class="small text-muted">${escapeHtml(
-                  formatTemplate(t("classes.presentation.pickPercentLabel", "Xác suất gọi: {{percent}}%"), {
-                    percent: Number(s?.pickPercent || 0),
-                  })
-                )}</div>
-              </div>
-              <div class="class-present-actions">
-                <button class="btn btn-sm btn-outline-primary" data-student-star-add="${escapeHtml(
-                  String(s?.id || "")
-                )}">${escapeHtml(t("classes.actions.awardStar", "+⭐"))}</button>
-                <button class="btn btn-sm btn-outline-secondary" data-student-redeem="${escapeHtml(
-                  String(s?.id || "")
-                )}">${escapeHtml(t("classes.actions.redeemStars", "Đã sử dụng"))}</button>
-              </div>
-            </article>`
-          )
-          .join("")}</div>`
-      : ""
-  );
+  const sync = presentation?.syncState || {};
+  const pendingOps = Math.max(0, Number(sync?.pendingOps || 0));
+  const syncBadge = byId("presentationSyncBadge");
+  if (syncBadge) {
+    if (sync?.hasError) {
+      syncBadge.className = "badge text-bg-danger";
+      syncBadge.textContent = "Lỗi đồng bộ";
+    } else if (sync?.isSyncing || pendingOps > 0) {
+      syncBadge.className = "badge text-bg-warning";
+      syncBadge.textContent = `Đang đồng bộ (${pendingOps})`;
+    } else {
+      syncBadge.className = "badge text-bg-light";
+      syncBadge.textContent = "Đã đồng bộ";
+    }
+  }
 
-  const history = Array.isArray(presentation?.randomHistory) ? presentation.randomHistory : [];
-  const warning = presentation?.percentNormalized
-    ? `<div class="alert alert-warning py-2 px-3 mb-2 small">${escapeHtml(
-        formatTemplate(
-          t("classes.random.normalizedWarning", "Tổng % hiện tại là {{total}}. Hệ thống đang chuẩn hóa theo tổng hiện tại."),
-          { total: Number(presentation?.totalPickPercent || 0).toFixed(2).replace(/\.00$/, "") }
-        )
-      )}</div>`
-    : "";
-  const result = presentation?.randomResult?.name
-    ? `<div class="class-random-result"><div class="small text-muted">${escapeHtml(
-        t("classes.random.resultTitle", "Kết quả vừa chọn")
-      )}</div><strong>${escapeHtml(String(presentation.randomResult.name || ""))}</strong></div>`
-    : `<div class="text-muted small">${escapeHtml(t("classes.random.resultEmpty", "Chưa random lần nào."))}</div>`;
-  const historyHtml = history.length
-    ? `<ul class="class-random-history">${history
-        .map((item) => `<li><span>${escapeHtml(String(item?.name || ""))}</span><small>${escapeHtml(String(item?.atLabel || ""))}</small></li>`)
-        .join("")}</ul>`
-    : `<div class="text-muted small">${escapeHtml(t("classes.random.historyEmpty", "Chưa có lịch sử random."))}</div>`;
-  setHtml(
-    "classRandomPanel",
-    `${warning}<button class="btn btn-primary w-100 mb-2" id="btnClassRandomPick" ${
-      presentation?.canRandom ? "" : "disabled"
-    }>${escapeHtml(t("classes.random.pickButton", "Random tên"))}</button>${result}<div class="mt-2"><div class="small text-muted mb-1">${escapeHtml(
-      t("classes.random.historyTitle", "5 lượt gần nhất")
-    )}</div>${historyHtml}</div>`
-  );
+  setValue("presentationStudentSearch", safeText(presentation?.gameState?.studentQuery || ""));
+  renderPresentationAttendanceList(presentation);
+  setHtml("presentationGameTabs", "");
+  setHtml("presentationGameStage", "");
+  renderPresentationLeaderboard(presentation);
+  renderPresentationHistory(presentation);
+
+  const randomResult = byId("presentationRandomResult");
+  if (randomResult) {
+    randomResult.textContent = safeText(
+      presentation?.gameState?.wheelResultText || "",
+      "Bấm Random học sinh để chọn nhanh một bạn."
+    );
+  }
 }
 
 export function renderClassesPage(vm = {}) {
-  renderModeSwitch(vm);
-  if (vm?.showAdmin) {
-    renderListTabs(vm);
-    renderClassesList(vm);
-    renderClassDetail(vm);
-    renderStudents(vm);
-    renderSessions(vm);
-    renderSessionReviewEditor(vm);
-    renderClassForm(vm);
-    const filteredCount = Array.isArray(vm?.classes) ? vm.classes.length : 0;
-    const activeCount = Number(vm?.classCounts?.active || 0);
-    const completedCount = Number(vm?.classCounts?.completed || 0);
-    setText("classesCountBadge", `${filteredCount} lớp`);
-  } else {
-    const activeCount = Number(vm?.classCounts?.active || 0);
-    setText("classesCountBadge", `${activeCount} lớp đang dạy`);
-  }
-  if (vm?.showPresentation) renderPresentation(vm);
-}
+  setText("classesPageTitle", t("classes.title", "Lớp học"));
+  setText(
+    "classesPageSubtitle",
+    t("classes.subtitle", "Quản lý lớp, buổi học và trình chiếu ngay trong một màn hình.")
+  );
+  setText("classesAdminTabOverviewLabel", t("classes.adminTabs.overview", "Tổng quan"));
+  setText("classesAdminTabSessionsLabel", t("classes.adminTabs.sessions", "Buổi học"));
+  setText("classesAdminTabStudentsLabel", t("classes.adminTabs.students", "Học sinh"));
+  setText("classesAdminTabCreateLabel", t("classes.adminTabs.create", "Tạo lớp"));
 
-function readClassFormPayload() {
-  return {
-    classId: String(byId("classId")?.value || "").trim(),
-    code: String(byId("classCode")?.value || "").trim(),
-    title: String(byId("classTitle")?.value || "").trim(),
-    startDate: String(byId("classStartDate")?.value || "").trim(),
-    slotsText: String(byId("classSlots")?.value || "").trim(),
-    description: String(byId("classDescription")?.value || "").trim(),
-    status: String(byId("classStatus")?.value || "active").trim() || "active",
-  };
-}
-
-function readSessionFormPayload() {
-  const reviews = {};
-  document.querySelectorAll("#sessionReviewTable tbody tr[data-student-id]").forEach((row) => {
-    const studentId = String(row?.dataset?.studentId || "").trim();
-    const applicable = String(row?.dataset?.applicable || "1") === "1";
-    if (!studentId || !applicable) return;
-    reviews[studentId] = {
-      status: String(row.querySelector(".class-review-status")?.value || "normal"),
-      note: String(row.querySelector(".class-review-note")?.value || "").trim(),
-    };
-  });
-  return {
-    sessionId: String(byId("sessionId")?.value || "").trim(),
-    status: String(byId("sessionStatus")?.value || "planned").trim() || "planned",
-    teachingPlan: String(byId("sessionTeachingPlan")?.value || "").trim(),
-    teachingResultNote: String(byId("sessionTeachingResult")?.value || "").trim(),
-    rescheduleReason: String(byId("sessionRescheduleReason")?.value || "").trim(),
-    reviews,
-  };
-}
-
-function runHandler(handler, ...args) {
-  if (typeof handler !== "function") return;
-  Promise.resolve(handler(...args)).catch((err) => console.error("classes handler error", err));
-}
-
-export function bindClassesEvents(handlers = {}) {
-  if (_eventsBound) return;
-  const root = byId("classes");
-  if (!root) return;
-  _eventsBound = true;
-
-  root.addEventListener("click", (event) => {
-    const target = event.target;
-    const modeBtn = target.closest("[data-classes-mode]");
-    if (modeBtn?.dataset?.classesMode) return runHandler(handlers.onChangeMode, modeBtn.dataset.classesMode);
-    const ptClass = target.closest("[data-presentation-class]");
-    if (ptClass?.dataset?.presentationClass != null) return runHandler(handlers.onSelectPresentationClass, ptClass.dataset.presentationClass);
-    const tabBtn = target.closest("[data-class-tab]");
-    if (tabBtn?.dataset?.classTab) return runHandler(handlers.onChangeListTab, tabBtn.dataset.classTab);
-    const classBtn = target.closest("[data-class-select]");
-    if (classBtn?.dataset?.classSelect != null) return runHandler(handlers.onSelectClass, classBtn.dataset.classSelect);
-    const sessionBtn = target.closest("[data-session-select]");
-    if (sessionBtn?.dataset?.sessionSelect != null) return runHandler(handlers.onSelectSession, sessionBtn.dataset.sessionSelect);
-    const removeBtn = target.closest("[data-student-remove]");
-    if (removeBtn?.dataset?.studentRemove) return runHandler(handlers.onRemoveStudent, removeBtn.dataset.studentRemove);
-    const reactivateBtn = target.closest("[data-student-reactivate]");
-    if (reactivateBtn?.dataset?.studentReactivate) return runHandler(handlers.onReactivateStudent, reactivateBtn.dataset.studentReactivate);
-    const starBtn = target.closest("[data-student-star-add]");
-    if (starBtn?.dataset?.studentStarAdd) return runHandler(handlers.onAwardStar, starBtn.dataset.studentStarAdd);
-    const redeemBtn = target.closest("[data-student-redeem]");
-    if (redeemBtn?.dataset?.studentRedeem) return runHandler(handlers.onRedeemStars, redeemBtn.dataset.studentRedeem);
-    if (target.closest("#btnClassRandomPick")) return runHandler(handlers.onRandomPick);
-    if (target.closest("#btnReopenClass")) return runHandler(handlers.onReopenClass);
-    if (target.closest("#btnClassReset")) return runHandler(handlers.onResetClassForm);
-    if (target.closest("#btnAddClass")) return runHandler(handlers.onAddClass, readClassFormPayload());
-    if (target.closest("#btnSaveClass")) return runHandler(handlers.onSaveClass, readClassFormPayload());
-    if (target.closest("#btnDeleteClass")) return runHandler(handlers.onDeleteClass, readClassFormPayload());
-    if (target.closest("#btnAddStudent")) return runHandler(handlers.onAddStudent, { name: String(byId("classStudentName")?.value || "").trim() });
-    if (target.closest("#btnShiftSessionNextWeek")) return runHandler(handlers.onShiftSessionNextWeek, readSessionFormPayload());
-    if (target.closest("#btnSaveSessionReview")) return runHandler(handlers.onSaveSession, readSessionFormPayload());
-  });
-
-  root.addEventListener("change", (event) => {
-    const input = event.target.closest("[data-student-pick-percent]");
-    if (!input) return;
-    runHandler(
-      handlers.onUpdateStudentPickPercent,
-      String(input.dataset.studentPickPercent || "").trim(),
-      Number(input.value || 0)
-    );
-  });
-
-  byId("classStudentName")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    runHandler(handlers.onAddStudent, { name: String(byId("classStudentName")?.value || "").trim() });
-  });
+  renderModeSwitch(vm?.mode || CLASSES_MODE.ADMIN);
+  renderAdminTabs(vm?.adminTab || CLASSES_ADMIN_TAB.OVERVIEW);
+  renderClassList(vm);
+  renderClassDetail(vm);
+  renderSessionFilter(vm?.sessionFilter || CLASSES_SESSION_FILTER.UPCOMING);
+  renderSessionsList(vm);
+  renderUpcomingSessionCard(vm);
+  renderSessionEditor(vm);
+  renderStudentsList(vm);
+  renderPresentationPane(vm);
 }

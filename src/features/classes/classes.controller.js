@@ -1,607 +1,693 @@
 import {
-  createClass,
-  listClasses,
-  readClass,
-  updateClass,
-  deleteClass,
   addClassStudent,
+  updateClass,
   updateClassStudent,
-  removeClassStudent,
-  listClassStudents,
-  createClassSessions,
-  listClassSessions,
-  updateClassSession,
-  saveSessionReviews,
-  shiftClassSessionNextWeek,
-  awardStudentStar,
-  redeemStudentStars,
-  updateStudentPickPercent,
-  bulkUpdateStudentPickPercent,
+  createClassWithAutoSessions,
+  listClassesOverview,
+  loadClassBundle,
+  rescheduleSessionChainByWeek,
+  saveSessionAttendanceAndReviews,
+  addSessionPoints,
+  appendSessionGameHistory,
+  resetSessionPoints,
+  resolveSessionPointsLegacy,
+  toggleSessionHighlight,
+  toggleSessionUsed,
+  resetSessionUsed,
+  resetSessionHighlights,
+  deleteClassCascadeHard,
 } from "../../services/firebase/firestore.js";
-import { t } from "../../shared/constants/copy.vi.js";
 
-const SESSION_TOTAL = 14;
-const DEFAULT_DURATION_MIN = 120;
+export const CLASS_TOTAL_SESSIONS = 14;
+export const CLASS_DURATION_MIN = 120;
+export const CLASSES_MODE = Object.freeze({
+  ADMIN: "admin",
+  PRESENTATION: "presentation",
+});
+export const CLASSES_ADMIN_TAB = Object.freeze({
+  OVERVIEW: "overview",
+  SESSIONS: "sessions",
+  STUDENTS: "students",
+  CREATE: "create",
+});
+export const CLASSES_SESSION_FILTER = Object.freeze({
+  UPCOMING: "upcoming",
+  PAST: "past",
+  ALL: "all",
+});
 
-const WEEKDAY_LABELS = {
-  1: "Thứ 2",
-  2: "Thứ 3",
-  3: "Thứ 4",
-  4: "Thứ 5",
-  5: "Thứ 6",
-  6: "Thứ 7",
-  7: "Chủ nhật",
-};
-
-const SESSION_PHASE_LABELS = {
-  knowledge: "Kiến thức mới",
-  project: "Làm dự án",
-  jury: "Bảo vệ",
-};
-
-const SESSION_STATUS_LABELS = {
-  planned: "Kế hoạch",
-  done: "Đã dạy",
-  cancelled: "Hoãn",
-};
-
-const CLASS_STATUS_LABELS = {
-  active: "Đang dạy",
-  completed: "Hoàn thành",
-  archived: "Lưu trữ",
-};
-
-const REVIEW_STATUS_LABELS = {
-  good: "Tốt",
-  normal: "Bình thường",
-  low_focus: "Chưa tập trung",
-  distracted: "Mất tập trung",
-  absent: "Vắng mặt",
-};
-
-export const REVIEW_STATUS_OPTIONS = Object.freeze([
-  { value: "good", label: REVIEW_STATUS_LABELS.good },
-  { value: "normal", label: REVIEW_STATUS_LABELS.normal },
-  { value: "low_focus", label: REVIEW_STATUS_LABELS.low_focus },
-  { value: "distracted", label: REVIEW_STATUS_LABELS.distracted },
-  { value: "absent", label: REVIEW_STATUS_LABELS.absent },
-]);
-
-export const SESSION_STATUS_OPTIONS = Object.freeze([
-  { value: "planned", label: SESSION_STATUS_LABELS.planned },
-  { value: "done", label: SESSION_STATUS_LABELS.done },
-  { value: "cancelled", label: SESSION_STATUS_LABELS.cancelled },
-]);
-
-function asDate(value) {
+function toDate(value) {
   if (!value) return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : new Date(value);
-  if (value?.seconds) {
-    const d = new Date(Number(value.seconds) * 1000);
-    return Number.isNaN(d.getTime()) ? null : d;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value?.toDate === "function") {
+    const dt = value.toDate();
+    return Number.isNaN(dt.getTime()) ? null : dt;
   }
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (typeof value?.seconds === "number") {
+    const dt = new Date(Number(value.seconds) * 1000);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  }
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
-function toDateLabel(value) {
-  const d = asDate(value);
-  if (!d) return "--";
-  return d.toLocaleDateString("vi-VN");
+function toMs(value) {
+  const dt = toDate(value);
+  return dt ? dt.getTime() : 0;
 }
 
-function toDateTimeLabel(value, fallbackTime = "") {
-  const d = asDate(value);
-  if (!d) return fallbackTime || "--";
-  const date = d.toLocaleDateString("vi-VN");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${date} ${hh}:${mm}`;
+function toDateKey(value) {
+  const dt = toDate(value);
+  if (!dt) return "";
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(
+    dt.getDate()
+  ).padStart(2, "0")}`;
 }
 
-function cleanText(value = "") {
-  return String(value || "").trim();
-}
-
-function cleanVietnamese(value = "") {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "D")
-    .toLowerCase()
-    .trim();
-}
-
-function parseWeekdayToken(token = "") {
-  const raw = cleanVietnamese(token).replace(/^thu\s*/g, "").replace(/^ngay\s*/g, "");
-  if (/^(cn|chu\s*nhat|chunhat|sunday|sun)$/i.test(raw)) return 7;
-  const num = Number(raw.match(/[1-7]/)?.[0] || 0);
-  if (Number.isInteger(num) && num >= 1 && num <= 7) return num;
-  return 0;
-}
-
-function normalizeStartTime(raw = "") {
-  const match = String(raw || "")
-    .trim()
-    .match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return "";
+function toTimeText(value, fallback = "08:00") {
+  const text = String(value || "").trim();
+  const match = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return fallback;
   const hh = Number(match[1]);
   const mm = Number(match[2]);
   if (!Number.isInteger(hh) || !Number.isInteger(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
-    return "";
+    return fallback;
   }
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
-function normalizePickPercent(value = 0) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  return Math.max(0, Math.min(100, num));
+function addMinutesToTimeText(timeText = "08:00", minutes = CLASS_DURATION_MIN) {
+  const normalized = toTimeText(timeText, "08:00");
+  const [hh, mm] = normalized.split(":").map(Number);
+  const total = hh * 60 + mm + Number(minutes || CLASS_DURATION_MIN);
+  const safe = ((total % 1440) + 1440) % 1440;
+  const outH = Math.floor(safe / 60);
+  const outM = safe % 60;
+  return `${String(outH).padStart(2, "0")}:${String(outM).padStart(2, "0")}`;
 }
 
-function normalizeClassesMode(mode = "") {
-  return String(mode || "").trim() === "presentation" ? "presentation" : "admin";
+function weekdayFromDate(value) {
+  const dt = toDate(value);
+  if (!dt) return 1;
+  const day = dt.getDay();
+  return day === 0 ? 7 : day;
 }
 
-function normalizeListTab(value = "") {
+function normalizeMode(value = "") {
+  return String(value || "").trim() === CLASSES_MODE.PRESENTATION
+    ? CLASSES_MODE.PRESENTATION
+    : CLASSES_MODE.ADMIN;
+}
+
+function normalizeAdminTab(value = "") {
+  const tab = String(value || "").trim();
+  if (tab === CLASSES_ADMIN_TAB.SESSIONS) return CLASSES_ADMIN_TAB.SESSIONS;
+  if (tab === CLASSES_ADMIN_TAB.STUDENTS) return CLASSES_ADMIN_TAB.STUDENTS;
+  if (tab === CLASSES_ADMIN_TAB.CREATE) return CLASSES_ADMIN_TAB.CREATE;
+  return CLASSES_ADMIN_TAB.OVERVIEW;
+}
+
+function normalizeSessionFilter(value = "") {
+  const filter = String(value || "").trim();
+  if (filter === CLASSES_SESSION_FILTER.PAST) return CLASSES_SESSION_FILTER.PAST;
+  if (filter === CLASSES_SESSION_FILTER.ALL) return CLASSES_SESSION_FILTER.ALL;
+  return CLASSES_SESSION_FILTER.UPCOMING;
+}
+
+function normalizeClassStatus(value = "") {
   return String(value || "").trim() === "completed" ? "completed" : "active";
 }
 
-export function parseClassSlotsInput(text = "") {
-  const rows = String(text || "")
-    .split(/[\n;,]+/g)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const map = new Map();
-  rows.forEach((line) => {
-    const normalized = line.replace(/\s+/g, " ").trim();
-    const m = normalized.match(/(chủ\s*nhật|chu\s*nhat|cn|[1-7]|thứ\s*[2-7]|thu\s*[2-7])\D+(\d{1,2}:\d{2})/i);
-    if (!m) return;
-    const weekday = parseWeekdayToken(m[1]);
-    const startTime = normalizeStartTime(m[2]);
-    if (!weekday || !startTime) return;
-    map.set(`${weekday}_${startTime}`, { weekday, startTime });
-  });
-
-  return Array.from(map.values()).sort((a, b) => {
-    if (a.weekday !== b.weekday) return a.weekday - b.weekday;
-    return String(a.startTime).localeCompare(String(b.startTime));
-  });
+function normalizeStudentStatus(value = "", activeValue = null) {
+  const status = String(value || "").trim();
+  if (status === "inactive" || activeValue === false) return "inactive";
+  return "active";
 }
 
-export function formatClassSlots(slots = []) {
-  const safe = Array.isArray(slots) ? slots : [];
-  if (!safe.length) return t("classes.emptySlots", "Chưa có lịch cố định");
-  return safe
-    .map((slot) => {
-      const weekday = Number(slot?.weekday || 0);
-      const label = WEEKDAY_LABELS[weekday] || `Thứ ${weekday}`;
-      const start = normalizeStartTime(slot?.startTime || "");
-      return `${label} ${start || "--:--"}`;
+function normalizeAttendanceStatus(value = "") {
+  return String(value || "").trim() === "absent" ? "absent" : "present";
+}
+
+function normalizeReviewStatus(value = "") {
+  const status = String(value || "").trim();
+  if (status === "unfocused") return "unfocused";
+  if (status === "good") return "good";
+  if (status === "excellent") return "excellent";
+  if (status === "low_focus") return "unfocused";
+  return "normal";
+}
+
+function normalizePointsMap(raw = {}) {
+  const out = {};
+  Object.entries(raw && typeof raw === "object" ? raw : {}).forEach(([studentId, value]) => {
+    const sid = String(studentId || "").trim();
+    if (!sid) return;
+    const num = Number(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return;
+    out[sid] = Math.trunc(num);
+  });
+  return out;
+}
+
+function normalizeGameHistory(raw = []) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry, index) => {
+      const winnerIds = Array.isArray(entry?.winnerIds)
+        ? entry.winnerIds.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+      return {
+        id: String(entry?.id || `gh_${index + 1}`).trim(),
+        type: String(entry?.type || "custom").trim() || "custom",
+        title: String(entry?.title || "").trim(),
+        winnerIds,
+        pointsAwarded: Math.max(0, Math.trunc(Number(entry?.pointsAwarded || 0))),
+        createdAt: entry?.createdAt || null,
+        meta: entry?.meta && typeof entry.meta === "object" ? entry.meta : {},
+      };
     })
-    .join(", ");
+    .filter((entry) => entry.id || entry.title || entry.winnerIds.length);
+}
+
+function sortClasses(list = []) {
+  return [...(Array.isArray(list) ? list : [])].sort((a, b) => {
+    const byStatus =
+      (String(a?.status || "active") === "completed" ? 1 : 0) -
+      (String(b?.status || "active") === "completed" ? 1 : 0);
+    if (byStatus !== 0) return byStatus;
+    const byUpdated = toMs(b?.updatedAt) - toMs(a?.updatedAt);
+    if (byUpdated !== 0) return byUpdated;
+    return String(a?.code || "").localeCompare(String(b?.code || ""), "vi");
+  });
 }
 
 function normalizeClassItem(item = {}) {
-  const totalSessions = Math.max(1, Number(item?.totalSessions || SESSION_TOTAL));
-  const doneSessions = Math.max(0, Number(item?.doneSessions || 0));
-  const remainingSessions =
-    item?.remainingSessions != null
-      ? Math.max(0, Number(item.remainingSessions || 0))
-      : Math.max(0, totalSessions - doneSessions);
-  const nextSessionNo = Math.max(0, Number(item?.nextSessionNo || 0));
-  const status = String(item?.status || "active");
-
+  const slots = Array.isArray(item?.slots) ? item.slots : [];
+  const slot = slots[0] || {};
+  const subject = String(item?.subject || "").trim();
+  const level = String(item?.level || "").trim();
+  const title = String(item?.title || "").trim() || [subject, level].filter(Boolean).join(" ").trim();
   return {
     ...item,
-    totalSessions,
-    doneSessions,
-    remainingSessions,
-    nextSessionNo,
-    durationMin: Math.max(30, Number(item?.durationMin || DEFAULT_DURATION_MIN)),
-    status,
-    startDateText: toDateLabel(item?.startDate),
-    slotText: formatClassSlots(item?.slots || []),
-    statusLabel: CLASS_STATUS_LABELS[status] || CLASS_STATUS_LABELS.active,
+    id: String(item?.id || "").trim(),
+    code: String(item?.code || "").trim(),
+    title,
+    subject,
+    level,
+    status: normalizeClassStatus(item?.status),
+    startDate: item?.startDate || null,
+    weekday: Number(item?.weekday || slot?.weekday || 1),
+    startTime: toTimeText(item?.startTime || slot?.startTime || "08:00"),
+    totalSessions: Math.max(1, Number(item?.totalSessions || CLASS_TOTAL_SESSIONS)),
+    doneSessions: Math.max(0, Number(item?.doneSessions || 0)),
+    remainingSessions: Math.max(0, Number(item?.remainingSessions || 0)),
+    nextSessionNo: Math.max(0, Number(item?.nextSessionNo || 0)),
+    nextScheduledAt: item?.nextScheduledAt || null,
+    description: String(item?.description || "").trim(),
   };
 }
 
-function normalizeSessionItem(item = {}) {
-  const sessionNo = Math.max(1, Number(item?.sessionNo || 1));
-  const status = String(item?.status || "planned");
-  const phase = String(item?.phase || "knowledge");
-  const weekday = Number(item?.weekday || 1);
-  const startTime = normalizeStartTime(item?.startTime || "");
-  const endTime = normalizeStartTime(item?.endTime || "");
-  const reviewMap = item?.studentReviews && typeof item.studentReviews === "object" ? item.studentReviews : {};
-  const rescheduledFromDate = asDate(item?.rescheduledFrom);
+function normalizeStudentItem(item = {}) {
+  return {
+    ...item,
+    id: String(item?.id || "").trim(),
+    name: String(item?.name || "").trim(),
+    note: String(item?.note || "").trim(),
+    status: normalizeStudentStatus(item?.status, item?.active),
+  };
+}
+
+function normalizeLegacyReviews(raw = {}) {
+  const out = {};
+  Object.entries(raw && typeof raw === "object" ? raw : {}).forEach(([studentId, value]) => {
+    const sid = String(studentId || "").trim();
+    if (!sid) return;
+    out[sid] = normalizeReviewStatus(value?.status || value);
+  });
+  return out;
+}
+
+function normalizeSessionItem(item = {}, students = []) {
+  const attendanceRaw = item?.attendance && typeof item.attendance === "object" ? item.attendance : {};
+  const reviewsRaw = item?.reviews && typeof item.reviews === "object" ? item.reviews : {};
+  const legacyReviews = normalizeLegacyReviews(item?.studentReviews || {});
+  const lessonPlan = String(item?.lessonPlan || item?.teachingPlan || "").trim();
+  const sessionNote = String(item?.sessionNote || item?.teachingResultNote || "").trim();
+  const scheduledAt = item?.scheduledAt || null;
+  const startTime = toTimeText(item?.startTime || "08:00");
+  const endTime = toTimeText(item?.endTime || addMinutesToTimeText(startTime, CLASS_DURATION_MIN));
+
+  const attendance = buildAttendanceDefault(students, attendanceRaw);
+  const reviews = {};
+  Object.keys(attendance).forEach((studentId) => {
+    reviews[studentId] = normalizeReviewStatus(reviewsRaw[studentId] || legacyReviews[studentId] || "normal");
+  });
 
   return {
     ...item,
-    sessionNo,
-    status,
-    phase,
-    weekday,
+    id: String(item?.id || "").trim(),
+    sessionNo: Math.max(1, Number(item?.sessionNo || 1)),
+    status: String(item?.status || "planned").trim() || "planned",
+    scheduledAt,
+    sessionDate: toDateKey(scheduledAt),
+    weekday: Number(item?.weekday || weekdayFromDate(scheduledAt)),
     startTime,
     endTime,
-    studentReviews: reviewMap,
-    phaseLabel: SESSION_PHASE_LABELS[phase] || SESSION_PHASE_LABELS.knowledge,
-    statusLabel: SESSION_STATUS_LABELS[status] || SESSION_STATUS_LABELS.planned,
-    weekdayLabel: WEEKDAY_LABELS[weekday] || `Thứ ${weekday}`,
-    scheduleLabel: toDateTimeLabel(item?.scheduledAt, startTime),
-    isRescheduled: !!rescheduledFromDate,
-    rescheduledFromLabel: rescheduledFromDate ? toDateLabel(rescheduledFromDate) : "",
+    lessonPlan,
+    sessionNote,
+    attendance,
+    reviews,
+    pointsByStudent: normalizePointsMap(resolveSessionPointsLegacy(item)),
+    gameHistory: normalizeGameHistory(item?.gameHistory || []),
+    highlightStudentIds: Array.isArray(item?.highlightStudentIds) ? item.highlightStudentIds : [],
+    usedStudentIds: Array.isArray(item?.usedStudentIds) ? item.usedStudentIds : [],
+    rescheduleHistory: Array.isArray(item?.rescheduleHistory) ? item.rescheduleHistory : [],
   };
 }
 
-function mapStudentItem(item = {}) {
-  return {
-    ...item,
-    name: cleanText(item?.name),
-    active: !!item?.active,
-    joinedFromSessionNo: Math.max(1, Number(item?.joinedFromSessionNo || 1)),
-    leftFromSessionNo: Number(item?.leftFromSessionNo || 0) || null,
-    starsBalance: Math.max(0, Math.floor(Number(item?.starsBalance || 0))),
-    pointsTotal: Math.max(0, Math.floor(Number(item?.pointsTotal || 0))),
-    pickPercent: normalizePickPercent(item?.pickPercent || 0),
-  };
-}
-
-function isStudentAppliedForSession(student = {}, sessionNo = 1) {
-  const joinedFrom = Math.max(1, Number(student?.joinedFromSessionNo || 1));
-  const leftFrom = Number(student?.leftFromSessionNo || 0);
-  if (sessionNo < joinedFrom) return false;
-  if (leftFrom > 0 && sessionNo >= leftFrom) return false;
-  return true;
-}
-
-function pickSelectedSessionId(sessions = [], selectedSessionId = "") {
-  const selected = String(selectedSessionId || "").trim();
-  if (selected && sessions.some((item) => String(item?.id || "") === selected)) return selected;
-  const nextPlanned = sessions.find((item) => String(item?.status || "planned") === "planned");
-  if (nextPlanned?.id) return nextPlanned.id;
-  return sessions[0]?.id || "";
-}
-
-function pickRecentSession(sessions = []) {
-  const done = sessions
-    .filter((item) => String(item?.status || "") === "done")
-    .sort((a, b) => Number(b?.sessionNo || 0) - Number(a?.sessionNo || 0));
-  return done[0] || null;
-}
-
-function pickUpcomingSession(sessions = []) {
-  return sessions.find((item) => String(item?.status || "planned") === "planned") || null;
-}
-
-function filterClassesByTab(classes = [], listTab = "active") {
-  const safeTab = normalizeListTab(listTab);
-  if (safeTab === "completed") {
-    return classes.filter((item) => String(item?.status || "") === "completed");
+export function generateSessions14({ startDate, weekday = 1, startTime = "08:00" } = {}) {
+  const start = toDate(startDate);
+  if (!start) return [];
+  const targetWeekday = Math.max(1, Math.min(7, Number(weekday || 1)));
+  const base = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0, 0);
+  let cursor = new Date(base);
+  while (weekdayFromDate(cursor) !== targetWeekday) {
+    cursor.setDate(cursor.getDate() + 1);
   }
-  return classes.filter((item) => String(item?.status || "active") === "active");
+
+  const out = [];
+  const safeStartTime = toTimeText(startTime, "08:00");
+  for (let index = 1; index <= CLASS_TOTAL_SESSIONS; index += 1) {
+    const day = new Date(cursor);
+    day.setDate(cursor.getDate() + (index - 1) * 7);
+    const [hh, mm] = safeStartTime.split(":").map(Number);
+    day.setHours(hh, mm, 0, 0);
+    out.push({
+      sessionNo: index,
+      scheduledAt: day,
+      startTime: safeStartTime,
+      endTime: addMinutesToTimeText(safeStartTime, CLASS_DURATION_MIN),
+      status: "planned",
+    });
+  }
+  return out;
 }
 
-function sortStudentsForLeaderboard(students = []) {
-  return [...students].sort((a, b) => {
-    const byPoints = Number(b?.pointsTotal || 0) - Number(a?.pointsTotal || 0);
-    if (byPoints !== 0) return byPoints;
-    const byStars = Number(b?.starsBalance || 0) - Number(a?.starsBalance || 0);
-    if (byStars !== 0) return byStars;
-    return String(a?.name || "").localeCompare(String(b?.name || ""), "vi");
+export function partitionSessionsByTime(sessions = [], now = new Date()) {
+  const nowMs = toMs(now);
+  const all = [...(Array.isArray(sessions) ? sessions : [])].sort(
+    (a, b) => Number(a?.sessionNo || 0) - Number(b?.sessionNo || 0)
+  );
+  const upcoming = [];
+  const past = [];
+
+  all.forEach((session) => {
+    const scheduledMs = toMs(session?.scheduledAt);
+    if (!scheduledMs) return;
+    if (scheduledMs >= nowMs) upcoming.push(session);
+    else past.push(session);
   });
-}
-
-function buildPresentationVM({
-  mode,
-  classes,
-  selectedClass,
-  students,
-  randomResult,
-  randomHistory,
-}) {
-  const presentationClasses = filterClassesByTab(classes, "active");
-  const tabs = presentationClasses.map((item) => ({
-    id: String(item?.id || "").trim(),
-    code: cleanText(item?.code),
-    title: cleanText(item?.title),
-    remainingSessions: Number(item?.remainingSessions || 0),
-  }));
-
-  const activeStudents = (Array.isArray(students) ? students : [])
-    .filter((student) => !!student?.active)
-    .sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || ""), "vi"));
-  const leaderboard = sortStudentsForLeaderboard(activeStudents);
-  const totalPickPercent = activeStudents.reduce(
-    (sum, student) => sum + normalizePickPercent(student?.pickPercent || 0),
-    0
-  );
-  const percentNormalized = totalPickPercent > 0 && Math.abs(totalPickPercent - 100) > 0.001;
 
   return {
-    mode,
-    tabs,
-    selectedClass,
-    leaderboard,
-    students: activeStudents,
-    totalPickPercent,
-    percentNormalized,
-    randomResult: randomResult || null,
-    randomHistory: Array.isArray(randomHistory) ? randomHistory.slice(0, 5) : [],
-    canRandom: activeStudents.length > 0,
-  };
-}
-
-export function buildClassesPageVM(input = {}) {
-  const normalizedClasses = (Array.isArray(input?.classes) ? input.classes : []).map((item) =>
-    normalizeClassItem(item)
-  );
-  const mode = normalizeClassesMode(input?.mode);
-  const listTab = normalizeListTab(input?.listTab);
-  const classCounts = {
-    active: normalizedClasses.filter((item) => String(item?.status || "active") === "active").length,
-    completed: normalizedClasses.filter((item) => String(item?.status || "") === "completed").length,
-  };
-
-  const adminClasses = filterClassesByTab(normalizedClasses, listTab);
-  const presentationClasses = filterClassesByTab(normalizedClasses, "active");
-  const scopedClasses = mode === "presentation" ? presentationClasses : adminClasses;
-
-  const selectedClassIdInput =
-    mode === "presentation"
-      ? String(input?.presentationClassId || input?.selectedClassId || "").trim()
-      : String(input?.selectedClassId || "").trim();
-  const selectedClass =
-    scopedClasses.find((item) => String(item?.id || "") === selectedClassIdInput) || scopedClasses[0] || null;
-
-  const students = (Array.isArray(input?.students) ? input.students : []).map((item) => mapStudentItem(item));
-  const sessions = (Array.isArray(input?.sessions) ? input.sessions : [])
-    .map((item) => normalizeSessionItem(item))
-    .sort((a, b) => Number(a?.sessionNo || 0) - Number(b?.sessionNo || 0));
-
-  const selectedSessionId = pickSelectedSessionId(sessions, input?.selectedSessionId);
-  const selectedSession = sessions.find((item) => String(item?.id || "") === selectedSessionId) || null;
-  const sessionNo = Number(selectedSession?.sessionNo || 1);
-
-  const reviewRows = students
-    .map((student) => {
-      const review = selectedSession?.studentReviews?.[student.id] || {};
-      const applicable = isStudentAppliedForSession(student, sessionNo);
-      return {
-        id: student.id,
-        name: student.name || "(Chưa có tên)",
-        active: student.active,
-        starsBalance: student.starsBalance,
-        pointsTotal: student.pointsTotal,
-        pickPercent: student.pickPercent,
-        applicable,
-        reviewStatus: applicable ? String(review?.status || "normal") : "absent",
-        reviewNote: applicable ? String(review?.note || "") : "",
-        joinLeaveLabel: student.leftFromSessionNo
-          ? `Từ buổi ${student.joinedFromSessionNo} - trước buổi ${student.leftFromSessionNo}`
-          : `Từ buổi ${student.joinedFromSessionNo}`,
-      };
-    })
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), "vi"));
-
-  const upcomingSession = pickUpcomingSession(sessions);
-  const recentSession = pickRecentSession(sessions);
-  const isCompletedClass = String(selectedClass?.status || "") === "completed";
-  const canReopen = isCompletedClass;
-  const isReadOnlyAdmin = isCompletedClass || listTab === "completed";
-
-  return {
-    mode,
-    showAdmin: mode === "admin",
-    showPresentation: mode === "presentation",
-    listTab,
-    classCounts,
-    classes: adminClasses,
-    selectedClass,
-    selectedSession,
-    selectedSessionId,
-    students,
-    sessions,
-    reviewRows,
-    reviewStatusOptions: REVIEW_STATUS_OPTIONS,
-    sessionStatusOptions: SESSION_STATUS_OPTIONS,
-    detail: {
-      upcomingSession,
-      recentSession,
-      doneSessions: Number(selectedClass?.doneSessions || 0),
-      remainingSessions: Number(selectedClass?.remainingSessions || 0),
-      totalSessions: Number(selectedClass?.totalSessions || SESSION_TOTAL),
-      startDateText: selectedClass?.startDateText || "--",
-      slotText: selectedClass?.slotText || t("classes.emptySlots", "Chưa có lịch cố định"),
-      durationMin: Number(selectedClass?.durationMin || DEFAULT_DURATION_MIN),
-      isCompletedClass,
-      canReopen,
+    all,
+    upcoming,
+    past,
+    counts: {
+      all: all.length,
+      upcoming: upcoming.length,
+      past: past.length,
     },
-    isReadOnly: isReadOnlyAdmin,
-    presentation: buildPresentationVM({
-      mode,
-      classes: normalizedClasses,
-      selectedClass,
-      students,
-      randomResult: input?.classRandomResult || null,
-      randomHistory: input?.classRandomHistory || [],
-    }),
   };
 }
 
-export function pickRandomStudentByPercent(students = []) {
-  const activeStudents = (Array.isArray(students) ? students : []).filter((student) => !!student?.active);
-  if (!activeStudents.length) return null;
+export function buildAttendanceDefault(students = [], current = {}) {
+  const out = {};
+  (Array.isArray(students) ? students : []).forEach((student) => {
+    const sid = String(student?.id || "").trim();
+    if (!sid) return;
+    if (normalizeStudentStatus(student?.status, student?.active) !== "active") return;
+    out[sid] = normalizeAttendanceStatus(current?.[sid] || "present");
+  });
+  return out;
+}
 
-  const weighted = activeStudents.map((student) => ({
-    ...student,
-    weight: normalizePickPercent(student?.pickPercent || 0),
-  }));
-  const totalWeight = weighted.reduce((sum, student) => sum + student.weight, 0);
+function mapStudentsById(students = []) {
+  const map = new Map();
+  (Array.isArray(students) ? students : []).forEach((student) => {
+    const sid = String(student?.id || "").trim();
+    if (!sid) return;
+    map.set(sid, student);
+  });
+  return map;
+}
 
-  if (totalWeight <= 0) {
-    const idx = Math.floor(Math.random() * activeStudents.length);
-    return {
-      student: activeStudents[idx],
-      normalizedByTotal: false,
-      totalWeight: 0,
-    };
-  }
+function buildSessionPointCounter(session = {}, deltaMap = {}) {
+  const counter = new Map();
 
-  let seed = Math.random() * totalWeight;
-  for (const student of weighted) {
-    seed -= student.weight;
-    if (seed <= 0) {
-      return {
-        student,
-        normalizedByTotal: Math.abs(totalWeight - 100) > 0.001,
-        totalWeight,
-      };
+  Object.entries(session?.pointsByStudent && typeof session.pointsByStudent === "object" ? session.pointsByStudent : {}).forEach(
+    ([studentId, value]) => {
+      const sid = String(studentId || "").trim();
+      if (!sid) return;
+      const num = Math.max(0, Math.trunc(Number(value || 0)));
+      if (!num) return;
+      counter.set(sid, num);
     }
+  );
+
+  Object.entries(deltaMap && typeof deltaMap === "object" ? deltaMap : {}).forEach(([studentId, value]) => {
+    const sid = String(studentId || "").trim();
+    if (!sid) return;
+    const delta = Math.trunc(Number(value || 0));
+    if (!Number.isFinite(delta) || !delta) return;
+    const next = Math.max(0, Number(counter.get(sid) || 0) + delta);
+    if (!next) {
+      counter.delete(sid);
+      return;
+    }
+    counter.set(sid, next);
+  });
+
+  return counter;
+}
+
+export function buildSessionLeaderboard(session = {}, students = [], deltaMap = {}) {
+  const studentMap = mapStudentsById(students);
+  return Array.from(buildSessionPointCounter(session, deltaMap).entries())
+    .map(([studentId, count]) => ({
+      studentId,
+      name: String(studentMap.get(studentId)?.name || "").trim() || "(Khong ro)",
+      count: Number(count || 0),
+    }))
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0));
+}
+
+export function buildClassLeaderboard(sessions = [], students = [], pointsDeltaBySession = {}) {
+  const studentMap = mapStudentsById(students);
+  const counter = new Map();
+
+  (Array.isArray(sessions) ? sessions : []).forEach((session) => {
+    const sessionId = String(session?.id || "").trim();
+    const deltaMap = sessionId ? pointsDeltaBySession?.[sessionId] || {} : {};
+    buildSessionPointCounter(session, deltaMap).forEach((value, studentId) => {
+      counter.set(studentId, Number(counter.get(studentId) || 0) + Math.max(0, Number(value || 0)));
+    });
+  });
+
+  return Array.from(counter.entries())
+    .map(([studentId, count]) => ({
+      studentId,
+      name: String(studentMap.get(studentId)?.name || "").trim() || "(Khong ro)",
+      count: Number(count || 0),
+    }))
+    .sort((a, b) => Number(b.count || 0) - Number(a.count || 0));
+}
+
+export function pickRandomStudentNoImmediateRepeat(candidates = [], lastStudentId = "") {
+  const list = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
+  if (!list.length) return null;
+  const lastId = String(lastStudentId || "").trim();
+
+  let pool = list;
+  if (list.length > 1 && lastId) {
+    const filtered = list.filter((item) => String(item?.studentId || item?.id || "").trim() !== lastId);
+    if (filtered.length) pool = filtered;
   }
 
-  const fallback = weighted[weighted.length - 1];
+  const index = Math.floor(Math.random() * pool.length);
+  return pool[index] || null;
+}
+
+function pickSelectedClass(classes = [], selectedClassId = "") {
+  const id = String(selectedClassId || "").trim();
+  const list = Array.isArray(classes) ? classes : [];
+  if (!list.length) return null;
+  if (id) {
+    const matched = list.find((item) => String(item?.id || "") === id);
+    if (matched) return matched;
+  }
+  const active = list.find((item) => String(item?.status || "active") !== "completed");
+  return active || list[0];
+}
+
+function pickSelectedSession(sessions = [], selectedSessionId = "", preferredFilter = "upcoming") {
+  const all = Array.isArray(sessions) ? sessions : [];
+  const sid = String(selectedSessionId || "").trim();
+  if (!all.length) return null;
+  if (sid) {
+    const matched = all.find((item) => String(item?.id || "") === sid);
+    if (matched) return matched;
+  }
+
+  const partition = partitionSessionsByTime(all, new Date());
+  if (preferredFilter === CLASSES_SESSION_FILTER.PAST && partition.past.length) {
+    return partition.past[partition.past.length - 1];
+  }
+  if (partition.upcoming.length) return partition.upcoming[0];
+  if (partition.past.length) return partition.past[partition.past.length - 1];
+  return all[0];
+}
+
+function pickPresentationSession(sessions = [], selectedSessionId = "", now = new Date()) {
+  const all = Array.isArray(sessions) ? sessions : [];
+  if (!all.length) return null;
+  const sid = String(selectedSessionId || "").trim();
+  if (sid) {
+    const matched = all.find((item) => String(item?.id || "").trim() === sid);
+    if (matched) return matched;
+  }
+
+  const todayKey = toDateKey(now);
+  const todaySession = all.find((item) => toDateKey(item?.scheduledAt) === todayKey);
+  if (todaySession) return todaySession;
+
+  const partition = partitionSessionsByTime(all, now);
+  if (partition.upcoming.length) return partition.upcoming[0];
+  if (partition.past.length) return partition.past[partition.past.length - 1];
+  return all[0];
+}
+
+function normalizeSyncState(syncState = {}) {
+  const pendingOps = Math.max(0, Number(syncState?.pendingOps || 0));
   return {
-    student: fallback,
-    normalizedByTotal: Math.abs(totalWeight - 100) > 0.001,
-    totalWeight,
+    pendingOps,
+    lastSyncedAt: syncState?.lastSyncedAt || null,
+    hasError: !!syncState?.hasError,
+    isSyncing: !!syncState?.isSyncing,
   };
 }
 
-export function buildUpcomingClassWidgetVM(classes = [], now = new Date()) {
-  const nowMs = (now instanceof Date ? now : new Date()).getTime();
-  const candidates = (Array.isArray(classes) ? classes : [])
-    .map((item) => normalizeClassItem(item))
-    .filter((item) => String(item?.status || "active") === "active" && Number(item?.remainingSessions || 0) > 0)
-    .map((item) => ({ ...item, nextDate: asDate(item?.nextScheduledAt) }))
-    .filter((item) => item.nextDate instanceof Date && !Number.isNaN(item.nextDate.getTime()))
-    .sort((a, b) => a.nextDate.getTime() - b.nextDate.getTime());
+function toSessionOption(session = {}) {
+  const sessionId = String(session?.id || "").trim();
+  const dateLabel = toDateKey(session?.scheduledAt) || "--/--/----";
+  const status = String(session?.status || "planned").trim() || "planned";
+  return {
+    id: sessionId,
+    sessionNo: Number(session?.sessionNo || 0),
+    label: `Buoi ${Number(session?.sessionNo || 0)} - ${dateLabel}`,
+    status,
+  };
+}
 
-  if (!candidates.length) {
+export function buildClassesPageVM({
+  classes = [],
+  mode = CLASSES_MODE.ADMIN,
+  adminTab = CLASSES_ADMIN_TAB.OVERVIEW,
+  sessionFilter = CLASSES_SESSION_FILTER.UPCOMING,
+  selectedClassId = "",
+  presentationClassId = "",
+  presentationSelectedSessionId = "",
+  students = [],
+  sessions = [],
+  selectedSessionId = "",
+  pointsDeltaBySession = {},
+  syncState = {},
+  gameState = {},
+} = {}) {
+  const normalizedMode = normalizeMode(mode);
+  const normalizedAdminTab = normalizeAdminTab(adminTab);
+  const normalizedFilter = normalizeSessionFilter(sessionFilter);
+
+  const classList = sortClasses((Array.isArray(classes) ? classes : []).map(normalizeClassItem));
+  const classesActive = classList.filter((item) => item.status !== "completed");
+  const classesCompleted = classList.filter((item) => item.status === "completed");
+  const selectedClass = pickSelectedClass(classList, selectedClassId);
+
+  const normalizedStudents = (Array.isArray(students) ? students : []).map(normalizeStudentItem);
+  const normalizedSessions = (Array.isArray(sessions) ? sessions : []).map((item) =>
+    normalizeSessionItem(item, normalizedStudents)
+  );
+  const sessionPartition = partitionSessionsByTime(normalizedSessions, new Date());
+
+  const selectedSession = pickSelectedSession(normalizedSessions, selectedSessionId, normalizedFilter);
+  const selectedSessionIdSafe = String(selectedSession?.id || "").trim();
+  const upcomingSession = sessionPartition.upcoming[0] || null;
+
+  let visibleSessions = sessionPartition.all;
+  if (normalizedFilter === CLASSES_SESSION_FILTER.UPCOMING) visibleSessions = sessionPartition.upcoming;
+  if (normalizedFilter === CLASSES_SESSION_FILTER.PAST) visibleSessions = sessionPartition.past;
+
+  const presentationClass = pickSelectedClass(classesActive, presentationClassId || selectedClass?.id || "");
+  const presentationSession = pickPresentationSession(
+    normalizedSessions,
+    presentationSelectedSessionId,
+    new Date()
+  );
+  const presentationSessionId = String(presentationSession?.id || "").trim();
+  const sessionDelta = presentationSessionId ? pointsDeltaBySession?.[presentationSessionId] || {} : {};
+  const sessionPointCounter = buildSessionPointCounter(presentationSession, sessionDelta);
+
+  const presentationAttendance = Object.entries(
+    buildAttendanceDefault(normalizedStudents, presentationSession?.attendance || {})
+  ).map(([studentId, attendance]) => {
+    const student = normalizedStudents.find((item) => String(item?.id || "") === studentId);
     return {
-      hasUpcoming: false,
-      title: t("dashboard.classes.title", "Buổi học sắp tới"),
-      summary: t("dashboard.classes.empty", "Chưa có buổi học nào sắp tới."),
-      detail: "",
-      classId: "",
+      studentId,
+      name: String(student?.name || "").trim() || "(Khong ro)",
+      attendance,
+      pointCount: Number(sessionPointCounter.get(studentId) || 0),
+      used: (presentationSession?.usedStudentIds || []).includes(studentId),
+      status: student?.status || "active",
+      note: student?.note || "",
     };
-  }
+  });
 
-  const next = candidates.find((item) => item.nextDate.getTime() >= nowMs) || candidates[0];
-  const sessionNo = Math.max(1, Number(next?.nextSessionNo || 1));
-  const totalSessions = Math.max(1, Number(next?.totalSessions || SESSION_TOTAL));
-  const remaining = Math.max(0, Number(next?.remainingSessions || totalSessions - Number(next?.doneSessions || 0)));
+  const randomCandidates = presentationAttendance.filter((item) => item.attendance === "present");
+  const leaderboardSession = buildSessionLeaderboard(presentationSession, normalizedStudents, sessionDelta);
+  const leaderboardClass = buildClassLeaderboard(
+    normalizedSessions,
+    normalizedStudents,
+    pointsDeltaBySession
+  );
+  const gameHistory = [...(Array.isArray(presentationSession?.gameHistory) ? presentationSession.gameHistory : [])].sort(
+    (a, b) => toMs(b?.createdAt) - toMs(a?.createdAt)
+  );
 
   return {
-    hasUpcoming: true,
-    classId: String(next?.id || "").trim(),
-    title: `${cleanText(next?.code)} • ${cleanText(next?.title)}`.trim(),
-    summary: `${toDateTimeLabel(next?.nextDate)} • Buổi ${sessionNo}/${totalSessions}`,
-    detail: `Còn ${remaining} buổi`,
+    mode: normalizedMode,
+    adminTab: normalizedAdminTab,
+    sessionFilter: normalizedFilter,
+    classesAll: classList,
+    classesActive,
+    classesCompleted,
+    selectedClass,
+    selectedClassId: String(selectedClass?.id || "").trim(),
+    students: normalizedStudents,
+    sessionsAll: sessionPartition.all,
+    sessionsUpcoming: sessionPartition.upcoming,
+    sessionsPast: sessionPartition.past,
+    sessionCounts: sessionPartition.counts,
+    visibleSessions,
+    selectedSession,
+    selectedSessionId: selectedSessionIdSafe,
+    upcomingSession,
+    presentation: {
+      selectedClass: presentationClass,
+      selectedClassId: String(presentationClass?.id || "").trim(),
+      selectedSessionId: presentationSessionId,
+      session: presentationSession,
+      availableSessions: normalizedSessions.map((session) => toSessionOption(session)),
+      attendance: presentationAttendance,
+      randomCandidates,
+      leaderboardSession,
+      leaderboardClass,
+      pointsSession: leaderboardSession,
+      pointsClass: leaderboardClass,
+      gameHistory,
+      syncState: normalizeSyncState(syncState),
+      gameState: gameState && typeof gameState === "object" ? gameState : {},
+    },
   };
 }
 
-export function normalizeClassesModeValue(value = "") {
-  return normalizeClassesMode(value);
-}
-
-export async function loadClassesOverview(uid, filter = {}) {
-  if (!uid) return [];
-  const list = await listClasses(uid, filter);
-  return (Array.isArray(list) ? list : []).map((item) => normalizeClassItem(item));
+export async function loadClassesOverview(uid) {
+  const list = await listClassesOverview(uid);
+  return (Array.isArray(list) ? list : []).map(normalizeClassItem);
 }
 
 export async function loadClassDetail(uid, classId, options = {}) {
-  const id = cleanText(classId);
-  if (!uid || !id) return { classItem: null, students: [], sessions: [] };
+  const bundle = await loadClassBundle(uid, classId, {
+    ensureSessions: options?.ensureSessions !== false,
+    autoCompletePastSessions: options?.autoCompletePastSessions !== false,
+    autoCompleteOptions: options?.autoCompleteOptions || {},
+  });
 
-  const ensureSessions = options?.ensureSessions !== false;
-  let [classItem, students, sessions] = await Promise.all([
-    readClass(uid, id),
-    listClassStudents(uid, id),
-    listClassSessions(uid, id),
-  ]);
-
-  if (ensureSessions && classItem && (!Array.isArray(sessions) || sessions.length === 0)) {
-    await createClassSessions(uid, id);
-    [classItem, sessions] = await Promise.all([readClass(uid, id), listClassSessions(uid, id)]);
-  }
+  const students = (Array.isArray(bundle?.students) ? bundle.students : []).map(normalizeStudentItem);
+  const sessions = (Array.isArray(bundle?.sessions) ? bundle.sessions : []).map((item) =>
+    normalizeSessionItem(item, students)
+  );
 
   return {
-    classItem: classItem ? normalizeClassItem(classItem) : null,
-    students: (Array.isArray(students) ? students : []).map((item) => mapStudentItem(item)),
-    sessions: (Array.isArray(sessions) ? sessions : []).map((item) => normalizeSessionItem(item)),
+    classItem: bundle?.classItem ? normalizeClassItem(bundle.classItem) : null,
+    students,
+    sessions,
   };
 }
 
-export async function createClassWithSessions(uid, payload = {}) {
-  const created = await createClass(uid, payload);
-  await createClassSessions(uid, created.id);
-  return readClass(uid, created.id);
+export async function createClassFlow(uid, payload = {}) {
+  return createClassWithAutoSessions(uid, payload);
 }
 
-export async function updateClassInfo(uid, classId, payload = {}) {
-  await updateClass(uid, classId, payload);
-  return readClass(uid, classId);
-}
-
-export async function reopenCompletedClass(uid, classId) {
-  await updateClass(uid, classId, { status: "active" });
-  return readClass(uid, classId);
-}
-
-export async function deleteClassById(uid, classId) {
-  return deleteClass(uid, classId);
-}
-
-export async function addStudentToClass(uid, classId, payload = {}) {
-  return addClassStudent(uid, classId, payload);
-}
-
-export async function deactivateStudentFromNextSession(uid, classId, studentId, nextSessionNo = 1) {
-  return removeClassStudent(uid, classId, studentId, nextSessionNo);
-}
-
-export async function reactivateStudent(uid, classId, studentId, nextSessionNo = 1) {
-  return updateClassStudent(uid, classId, studentId, {
-    active: true,
-    leftFromSessionNo: null,
-    joinedFromSessionNo: Math.max(1, Number(nextSessionNo || 1)),
+export async function updateClassFlow(uid, classId, payload = {}) {
+  const slots = [{ weekday: Number(payload?.weekday || 1), startTime: toTimeText(payload?.startTime || "08:00") }];
+  await updateClass(uid, classId, {
+    code: payload?.code,
+    title: payload?.title,
+    subject: payload?.subject,
+    level: payload?.level,
+    startDate: payload?.startDate,
+    slots,
+    weekday: payload?.weekday,
+    startTime: payload?.startTime,
+    status: payload?.status,
+    description: payload?.description,
   });
-}
-
-export async function saveClassSessionData(uid, classId, sessionId, payload = {}) {
-  const safePayload = {
-    status: String(payload?.status || "planned"),
-    teachingPlan: String(payload?.teachingPlan || ""),
-    teachingResultNote: String(payload?.teachingResultNote || ""),
-  };
-
-  await updateClassSession(uid, classId, sessionId, safePayload);
-  if (payload?.reviews && typeof payload.reviews === "object") {
-    await saveSessionReviews(uid, classId, sessionId, payload.reviews);
-  }
   return true;
 }
 
-export async function shiftSessionToNextWeek(uid, classId, sessionId, reason = "") {
-  return shiftClassSessionNextWeek(uid, classId, sessionId, reason);
+export async function deleteClassFlow(uid, classId) {
+  return deleteClassCascadeHard(uid, classId);
 }
 
-export async function awardStarToStudent(uid, classId, studentId, delta = 1) {
-  return awardStudentStar(uid, classId, studentId, delta);
+export async function addStudentFlow(uid, classId, payload = {}) {
+  return addClassStudent(uid, classId, payload);
 }
 
-export async function redeemStarsForStudent(uid, classId, studentId, ratio = 5) {
-  return redeemStudentStars(uid, classId, studentId, { ratio });
+export async function updateStudentFlow(uid, classId, studentId, payload = {}) {
+  return updateClassStudent(uid, classId, studentId, payload);
 }
 
-export async function updateStudentPickPercentValue(uid, classId, studentId, pickPercent = 0) {
-  return updateStudentPickPercent(uid, classId, studentId, pickPercent);
+export async function saveSessionFlow(uid, classId, sessionId, payload = {}) {
+  return saveSessionAttendanceAndReviews(uid, classId, sessionId, payload);
 }
 
-export async function bulkUpdateStudentPickPercentValue(uid, classId, patchList = []) {
-  return bulkUpdateStudentPickPercent(uid, classId, patchList);
+export async function rescheduleSessionFlow(uid, classId, sessionId, reason = "") {
+  return rescheduleSessionChainByWeek(uid, classId, sessionId, reason);
+}
+
+export async function addSessionPointsFlow(uid, classId, sessionId, pointsPatch = {}, options = {}) {
+  return addSessionPoints(uid, classId, sessionId, pointsPatch, options);
+}
+
+export async function appendSessionGameHistoryFlow(uid, classId, sessionId, entry = {}) {
+  return appendSessionGameHistory(uid, classId, sessionId, entry);
+}
+
+export async function resetSessionPointsFlow(uid, classId, sessionId) {
+  return resetSessionPoints(uid, classId, sessionId);
+}
+
+export async function toggleSessionHighlightFlow(uid, classId, sessionId, studentId) {
+  return toggleSessionHighlight(uid, classId, sessionId, studentId);
+}
+
+export async function toggleSessionUsedFlow(uid, classId, sessionId, studentId) {
+  return toggleSessionUsed(uid, classId, sessionId, studentId);
+}
+
+export async function resetSessionUsedFlow(uid, classId, sessionId) {
+  return resetSessionUsed(uid, classId, sessionId);
+}
+
+export async function resetSessionHighlightsFlow(uid, classId, sessionId) {
+  return resetSessionHighlights(uid, classId, sessionId);
 }

@@ -1,5 +1,5 @@
-﻿import { t } from "../shared/constants/copy.vi.js";
-import { REPORTS_PAGE_ENABLED, AI_PAGE_ENABLED } from "../shared/constants/featureFlags.js";
+import { t } from "../shared/constants/copy.vi.js";
+import { ENABLED_ROUTES } from "../shared/constants/featureFlags.js";
 import { LAST_ROUTE_KEY } from "../shared/constants/keys.js";
 
 const routes = Array.from(document.querySelectorAll(".route"));
@@ -8,8 +8,9 @@ const topbarTitleEl = document.querySelector(".topbar-title .title");
 const topbarSubtitleEl = document.querySelector(".topbar-title .subtitle");
 
 const blockedRoutes = new Set();
-if (!REPORTS_PAGE_ENABLED) blockedRoutes.add("reports");
-if (!AI_PAGE_ENABLED) blockedRoutes.add("ai");
+Object.entries(ENABLED_ROUTES || {}).forEach(([routeId, isEnabled]) => {
+  if (isEnabled === false) blockedRoutes.add(String(routeId || "").trim());
+});
 
 function hasRoute(id) {
   return routes.some((sec) => sec.id === id);
@@ -24,13 +25,20 @@ function normalizeRoute(routeId) {
 
 function updateTopbar(routeId) {
   const title = t(`routeMeta.${routeId}.title`, t("routeMeta.dashboard.title", "Trung tâm"));
-  const subtitle = t(
+  let subtitle = t(
     `routeMeta.${routeId}.subtitle`,
     t("routeMeta.dashboard.subtitle", "Tổng quan")
   );
+  if (routeId === "dashboard") {
+    subtitle = "Tổng quan tài chính và lịch lớp học sắp tới";
+  }
+  const hasSubtitle = String(subtitle || "").trim().length > 0;
 
   if (topbarTitleEl) topbarTitleEl.textContent = title;
-  if (topbarSubtitleEl) topbarSubtitleEl.textContent = subtitle;
+  if (topbarSubtitleEl) {
+    topbarSubtitleEl.textContent = subtitle;
+    topbarSubtitleEl.classList.toggle("d-none", !hasSubtitle);
+  }
 
   document.body.dataset.route = routeId;
 }

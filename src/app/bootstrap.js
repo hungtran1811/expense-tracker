@@ -24,17 +24,19 @@ import { fillAccountSelect } from "../shared/ui/tables.js";
 import {
   addExpense,
   getExpense,
+  listExpensesByMonth,
   updateExpense,
   deleteExpense,
   addIncome,
   getIncome,
   updateIncome,
   deleteIncome,
+  listClassesOverview,
   saveAppliedAiSuggestion,
   listAppliedAiSuggestions,
 } from "../services/firebase/firestore.js";
 import { exportCsvCurrentMonth } from "../features/export/exportCsv.js";
-import { AI_BACKGROUND_ENABLED } from "../shared/constants/featureFlags.js";
+import { AI_BACKGROUND_ENABLED, ENABLED_ROUTES } from "../shared/constants/featureFlags.js";
 import {
   loadGoalsData,
   createGoal,
@@ -47,12 +49,18 @@ import {
   loadWeeklyGoalsPlan,
   saveWeeklyGoalsPlan,
   getCurrentGoalsWeekKey,
+  partitionGoals,
+  buildGoalsOverview,
+  sortActiveGoals,
+  sortCompletedGoals,
 } from "../features/goals/goals.controller.js";
 import {
   renderGoalsTable,
   renderHabitsTable,
   renderGoalsSummary,
-  renderGoalsDailyFocus,
+  renderGoalsSummaryStrip,
+  renderGoalsSupportHabits,
+  renderGoalsEmptyState,
 } from "../features/goals/goals.ui.js";
 import { getMotivationSummary } from "../features/motivation/motivation.controller.js";
 import {
@@ -116,91 +124,39 @@ const AI_REQUEST_TIMEOUT_MS = 15000;
 const VIDEO_AI_COOLDOWN_MS = 2000;
 const GOAL_AI_COOLDOWN_MS = 0;
 const AI_EXPENSE_DEBOUNCE_MS = 600;
-const AI_EXPENSE_AUTO_CONFIDENCE = 0.75;
+const AI_EXPENSE_AUTO_CONFIDENCE = 0.9;
+const AI_EXPENSE_HISTORY_MONTHS = 12;
+const AI_EXPENSE_HISTORY_CACHE_TTL_MS = 15 * 60 * 1000;
 const DEFAULT_EXPENSE_FILTERS = { category: "all", account: "all", search: "" };
 const DEFAULT_INCOME_FILTERS = { account: "all", search: "" };
-const CLASSES_LIST_TAB_KEY = "nexus_classes_list_tab_v1";
-const CLASSES_MODE_KEY = "nexus_classes_mode_v1";
-const CLASSES_PRESENTATION_CLASS_KEY = "nexus_classes_presentation_class_v1";
+const CLASSES_STORAGE_KEYS = Object.freeze({
+  mode: "nexus_classes_mode_v1",
+  adminTab: "nexus_classes_admin_tab_v1",
+  sessionFilter: "nexus_classes_session_filter_v1",
+  presentationClass: "nexus_classes_presentation_class_v1",
+});
+const PRESENTATION_POINT_SYNC_DEBOUNCE_MS = 650;
+const PRESENTATION_POINT_SYNC_RETRY_MS = 2500;
+const PRESENTATION_TIMER_PRESETS = Object.freeze([30, 60, 120]);
+const PRESENTATION_GAME_MODES = Object.freeze(["wheel", "duel", "quiz", "challenge", "timer"]);
+const PRESENTATION_CHALLENGE_BANK = Object.freeze([
+  "Debug nhanh: tìm 1 lỗi trong đoạn code đang chiếu trong 45 giây.",
+  "Ghép cặp: 1 bạn đọc đề, 1 bạn giải thích ý tưởng trước lớp.",
+  "Mini quiz: trả lời đúng 3 câu liên tiếp để nhận điểm cộng.",
+  "Code relay: mỗi bạn viết 1 dòng để hoàn thành hàm.",
+  "Đố nhanh: nêu 2 cách khác nhau để giải cùng 1 bài toán.",
+  "Refactor mini: rút gọn 1 đoạn code mà vẫn giữ đúng kết quả.",
+]);
 const APP_ROUTES = new Set([
   "dashboard",
   "expenses",
   "goals",
+  "classes",
   "video-plan",
   "weekly-review",
   "accounts",
   "settings",
-  "classes",
 ]);
-
-function normalizeClassesListTab(value = "") {
-  return String(value || "").trim() === "completed" ? "completed" : "active";
-}
-
-function loadClassesListTabState() {
-  try {
-    return normalizeClassesListTab(localStorage.getItem(CLASSES_LIST_TAB_KEY));
-  } catch (err) {
-    console.warn("Không thá»’ ?á»c tab l:p há»c", err);
-    return "active";
-  }
-}
-
-function persistClassesListTab(value = "") {
-  const tab = normalizeClassesListTab(value);
-  try {
-    localStorage.setItem(CLASSES_LIST_TAB_KEY, tab);
-  } catch (err) {
-    console.warn("Không thá»’ lÆ°u tab l:p há»c", err);
-  }
-  return tab;
-}
-
-function normalizeClassesMode(value = "") {
-  return String(value || "").trim() === "presentation" ? "presentation" : "admin";
-}
-
-function loadClassesModeState() {
-  try {
-    return normalizeClassesMode(localStorage.getItem(CLASSES_MODE_KEY));
-  } catch (err) {
-    console.warn("Không thể đọc chế độ lớp học", err);
-    return "admin";
-  }
-}
-
-function persistClassesMode(value = "") {
-  const mode = normalizeClassesMode(value);
-  try {
-    localStorage.setItem(CLASSES_MODE_KEY, mode);
-  } catch (err) {
-    console.warn("Không thể lưu chế độ lớp học", err);
-  }
-  return mode;
-}
-
-function loadPresentationClassState() {
-  try {
-    return String(localStorage.getItem(CLASSES_PRESENTATION_CLASS_KEY) || "").trim();
-  } catch (err) {
-    console.warn("Không thể đọc lớp trình chiếu", err);
-    return "";
-  }
-}
-
-function persistPresentationClass(value = "") {
-  const classId = String(value || "").trim();
-  try {
-    if (classId) {
-      localStorage.setItem(CLASSES_PRESENTATION_CLASS_KEY, classId);
-    } else {
-      localStorage.removeItem(CLASSES_PRESENTATION_CLASS_KEY);
-    }
-  } catch (err) {
-    console.warn("Không thể lưu lớp trình chiếu", err);
-  }
-  return classId;
-}
 
 const state = {
   currentUser: null,
@@ -236,16 +192,6 @@ const state = {
     weekKey: "",
     monthKey: getCurrentYm(),
   },
-  classes: [],
-  classesMode: loadClassesModeState(),
-  classesListTab: loadClassesListTabState(),
-  classSelectedId: "",
-  classPresentationId: loadPresentationClassState(),
-  classStudents: [],
-  classSessions: [],
-  classSelectedSessionId: "",
-  classRandomResult: null,
-  classRandomHistory: [],
   weeklyGoals: {
     weekKey: "",
     plan: {
@@ -261,6 +207,12 @@ const state = {
   },
   expenseAiSuggestion: null,
   expenseAiRequestId: 0,
+  expenseAiHistory: {
+    loadedAt: 0,
+    monthsAnchor: "",
+    items: [],
+    loadingPromise: null,
+  },
   videoAi: {
     loading: false,
     cooldownUntil: 0,
@@ -284,9 +236,29 @@ const state = {
   incTotal: 0,
   pendingDeleteExpenseId: null,
   pendingDeleteIncomeId: null,
-  pendingDeleteClassId: null,
   aiTimer: null,
   aiCooldownUiTimer: null,
+  classesMode: "admin",
+  classesAdminTab: "overview",
+  classSessionFilter: "upcoming",
+  classes: [],
+  classSelectedId: "",
+  classStudents: [],
+  classSessions: [],
+  classSelectedSessionId: "",
+  presentationClassId: "",
+  presentationSelectedSessionId: "",
+  presentationPointsDeltaBySession: {},
+  presentationPendingGameHistoryBySession: {},
+  presentationGameBySession: {},
+  presentationSync: {
+    pendingOps: 0,
+    lastSyncedAt: null,
+    hasError: false,
+    isSyncing: false,
+  },
+  presentationAudioEnabled: false,
+  classesPrefsHydrated: false,
 };
 
 const bindState = {
@@ -304,6 +276,8 @@ let aiServicesModule = null;
 let dashboardModulePromise = null;
 let weeklyReviewModulePromise = null;
 let classesModulePromise = null;
+let presentationTimerInterval = null;
+let presentationPointFlushTimer = null;
 
 async function ensureDashboardModule() {
   if (dashboardModule) return dashboardModule;
@@ -368,7 +342,7 @@ function multilineToHtml(value) {
 }
 
 function currentRouteId() {
-  return String(location.hash || "").replace("#", "").trim() || "dashboard";
+  return normalizeAppRoute(String(location.hash || "").replace("#", "").trim()) || "dashboard";
 }
 
 function currentHashRouteId() {
@@ -379,7 +353,16 @@ function normalizeAppRoute(routeId = "", { allowAuth = false } = {}) {
   const route = String(routeId || "").trim();
   if (!route) return "";
   if (route === "auth") return allowAuth ? "auth" : "";
-  return APP_ROUTES.has(route) ? route : "";
+  if (!APP_ROUTES.has(route)) return "";
+  if (isRouteEnabled(route)) return route;
+  return "";
+}
+
+function isRouteEnabled(routeId = "") {
+  const key = String(routeId || "").trim();
+  if (!key) return false;
+  if (!Object.prototype.hasOwnProperty.call(ENABLED_ROUTES || {}, key)) return true;
+  return ENABLED_ROUTES[key] !== false;
 }
 
 function readStorageSafe(key = "") {
@@ -392,6 +375,58 @@ function readStorageSafe(key = "") {
 
 function getStoredLastRoute() {
   return normalizeAppRoute(readStorageSafe(LAST_ROUTE_KEY));
+}
+
+function syncClassesPresentationShell() {
+  const active = isRouteActive("classes") && state.classesMode === "presentation";
+  document.body.classList.toggle("classes-presentation-shell", !!active);
+  if (!active) {
+    stopPresentationTimer();
+  }
+}
+
+function normalizeClassesMode(value = "") {
+  return String(value || "").trim() === "presentation" ? "presentation" : "admin";
+}
+
+function normalizeClassesAdminTab(value = "") {
+  const tab = String(value || "").trim();
+  if (tab === "sessions") return "sessions";
+  if (tab === "students") return "students";
+  if (tab === "create") return "create";
+  return "overview";
+}
+
+function normalizeClassSessionFilter(value = "") {
+  const filter = String(value || "").trim();
+  if (filter === "past") return "past";
+  if (filter === "all") return "all";
+  return "upcoming";
+}
+
+function persistClassUiPref(key, value) {
+  const storageKey = CLASSES_STORAGE_KEYS[key];
+  if (!storageKey) return;
+  try {
+    localStorage.setItem(storageKey, String(value || ""));
+  } catch (err) {
+    console.warn("persistClassUiPref error", err);
+  }
+}
+
+function hydrateClassesUiPrefsOnce() {
+  if (state.classesPrefsHydrated) return;
+  state.classesPrefsHydrated = true;
+  state.classesMode = normalizeClassesMode(readStorageSafe(CLASSES_STORAGE_KEYS.mode) || state.classesMode);
+  state.classesAdminTab = normalizeClassesAdminTab(
+    readStorageSafe(CLASSES_STORAGE_KEYS.adminTab) || state.classesAdminTab
+  );
+  state.classSessionFilter = normalizeClassSessionFilter(
+    readStorageSafe(CLASSES_STORAGE_KEYS.sessionFilter) || state.classSessionFilter
+  );
+  state.presentationClassId = String(
+    readStorageSafe(CLASSES_STORAGE_KEYS.presentationClass) || state.presentationClassId || ""
+  ).trim();
 }
 
 function hasAuthWarmHint() {
@@ -408,10 +443,6 @@ function isWeeklyReviewRouteActive() {
 
 function isVideoPlanRouteActive() {
   return isRouteActive("video-plan");
-}
-
-function isClassesRouteActive() {
-  return isRouteActive("classes");
 }
 
 function isObject(value) {
@@ -713,6 +744,82 @@ function setWeeklyGoalsSaveState(next = {}) {
   }
 }
 
+function openGoalComposerPanel() {
+  const panel = byId("goalComposerPanel");
+  if (!panel) return;
+  bootstrap.Offcanvas.getOrCreateInstance(panel)?.show();
+}
+
+function closeGoalComposerPanel() {
+  const panel = byId("goalComposerPanel");
+  if (!panel) return;
+  bootstrap.Offcanvas.getOrCreateInstance(panel)?.hide();
+}
+
+function openGoalAdvancedPanel() {
+  const panel = byId("goalAdvancedPanel");
+  if (!panel) return;
+  bootstrap.Offcanvas.getOrCreateInstance(panel)?.show();
+}
+
+function resetGoalComposerForm({ preserveAi = false } = {}) {
+  setInputValue("goalTitle", "");
+  setInputValue("goalPeriod", "month");
+  setInputValue("goalTarget", "1");
+  setInputValue("goalUnit", "lần");
+  setInputValue("goalArea", "ca-nhan");
+  setInputValue("goalDueDate", "");
+  setInputValue("goalPriority", "medium");
+  setInputValue("goalNote", "");
+
+  if (!preserveAi) {
+    state.goalAi.options = [];
+    state.goalAi.inputSnapshot = null;
+    renderGoalAiSuggestions();
+  }
+}
+
+function renderGoalsRoute() {
+  const { activeGoals, completedGoals } = partitionGoals(state.goals);
+  const sortedActiveGoals = sortActiveGoals(activeGoals);
+  const sortedCompletedGoals = sortCompletedGoals(completedGoals);
+  const overview = buildGoalsOverview(state.goals, new Date());
+  const activeTableWrap = byId("goalsActiveTableWrap");
+  const emptyState = byId("goalsEmptyState");
+  const activeCountBadge = byId("goalsActiveCountBadge");
+  const completedCountBadge = byId("goalsCompletedCount");
+
+  renderGoalsSummaryStrip(byId("goalsSummaryStrip"), overview);
+  renderGoalsTable(byId("goalsActiveTableBody"), sortedActiveGoals, { mode: "active" });
+  renderGoalsTable(byId("goalsCompletedTableBody"), sortedCompletedGoals, { mode: "completed" });
+  renderGoalsSupportHabits(byId("goalsSupportHabits"), state.habits, state.habitProgress);
+  renderHabitsTable(byId("habitsTableBody"), state.habits, state.habitProgress);
+  renderWeeklyGoalsPanel();
+
+  if (activeCountBadge) {
+    activeCountBadge.textContent = formatTemplate("{{count}} đang chạy", {
+      count: sortedActiveGoals.length,
+    });
+  }
+
+  if (completedCountBadge) {
+    completedCountBadge.textContent = String(sortedCompletedGoals.length);
+  }
+
+  if (!sortedActiveGoals.length) {
+    renderGoalsEmptyState(emptyState);
+    if (emptyState) emptyState.classList.remove("d-none");
+    if (activeTableWrap) activeTableWrap.classList.add("d-none");
+    return;
+  }
+
+  if (emptyState) {
+    emptyState.classList.add("d-none");
+    emptyState.innerHTML = "";
+  }
+  if (activeTableWrap) activeTableWrap.classList.remove("d-none");
+}
+
 async function flushSettingsSave() {
   const uid = state.currentUser?.uid;
   if (!uid || !state.settingsSavePendingPatch) return;
@@ -949,19 +1056,6 @@ function localizeStaticVietnamese() {
   if (quickWeeklyReview) {
     quickWeeklyReview.textContent = t("cta.weeklyReview", "Tổng kết tuần");
   }
-  setText("classesPageTitle", "classes.title", "Quản lý lớp học");
-  setText(
-    "classesPageSubtitle",
-    "classes.subtitle",
-    "Theo dõi lịch 14 buổi, học sinh và ghi chú từng buổi trong một màn hình."
-  );
-  setText("classesListTitle", "classes.listTitle", "Danh sách lớp");
-  setText("classesDetailTitle", "classes.detailTitle", "Chi tiết lớp");
-  setText("classesStudentsTitle", "classes.studentsTitle", "Học sinh");
-  setText("classesSessionsTitle", "classes.sessionsTitle", "Lịch 14 buổi");
-  setText("classesSessionEditorTitle", "classes.sessionEditorTitle", "Ghi chú buổi học");
-  setText("classesReviewTableTitle", "classes.reviewTableTitle", "Nhận xét từng học sinh");
-  setText("dashClassTitle", "dashboard.classes.title", "Buổi học sắp tới");
 
   updateNavbarStats(state.expTotal, state.incTotal);
   document.documentElement.setAttribute("data-i18n-ready", "true");
@@ -1144,6 +1238,12 @@ async function loadFinance(uid) {
   });
 }
 
+async function loadClassesOverviewForDashboard(uid) {
+  const classes = await listClassesOverview(uid);
+  state.classes = Array.isArray(classes) ? classes : [];
+  renderDashboardCenter();
+}
+
 async function loadGoals(uid) {
   const weekKey = getCurrentGoalsWeekKey();
   const [{ goals, habits, todayLogs, habitProgress }, weeklyGoals] = await Promise.all([
@@ -1166,12 +1266,673 @@ async function loadGoals(uid) {
     },
   };
 
-  renderGoalsTable(byId("goalsTableBody"), state.goals);
-  renderHabitsTable(byId("habitsTableBody"), state.habits, state.habitProgress);
-  renderGoalsDailyFocus(byId("goalsDailyFocus"), state.habits, state.habitProgress);
-  renderWeeklyGoalsPanel();
+  renderGoalsRoute();
   renderGoalsSummary(byId("dashboardGoalsSummary"), state.goals);
   renderDashboardCenter();
+}
+
+function pickDefaultClassId(list = [], preferredId = "") {
+  const classes = Array.isArray(list) ? list : [];
+  if (!classes.length) return "";
+  const preferred = String(preferredId || "").trim();
+  if (preferred && classes.some((item) => String(item?.id || "").trim() === preferred)) {
+    return preferred;
+  }
+  const active = classes.find((item) => String(item?.status || "active").trim() !== "completed");
+  return String(active?.id || classes[0]?.id || "").trim();
+}
+
+function resetClassCreateForm() {
+  setInputValue("classCreateCode", "");
+  setInputValue("classCreateSubject", "");
+  setInputValue("classCreateLevel", "");
+  setInputValue("classCreateStartDate", "");
+  setInputValue("classCreateWeekday", "1");
+  setInputValue("classCreateStartTime", "08:00");
+  setInputValue("classCreateStatus", "active");
+  setInputValue("classCreateDescription", "");
+}
+
+function normalizePresentationTimerPreset(value) {
+  const preset = Number(value || 0);
+  return PRESENTATION_TIMER_PRESETS.includes(preset) ? preset : 60;
+}
+
+function formatPresentationTimerLabel(totalSeconds = 0) {
+  const safe = Math.max(0, Math.trunc(Number(totalSeconds || 0)));
+  const mm = Math.floor(safe / 60);
+  const ss = safe % 60;
+  return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+function normalizePresentationGameMode(value = "") {
+  const mode = String(value || "").trim();
+  return PRESENTATION_GAME_MODES.includes(mode) ? mode : "wheel";
+}
+
+function createDefaultPresentationGameState() {
+  const preset = normalizePresentationTimerPreset(60);
+  return {
+    activeGame: "wheel",
+    studentQuery: "",
+    wheelLastPickedId: "",
+    wheelResultText: "Chưa quay tên lần nào.",
+    wheelHistory: [],
+    duelPairIds: [],
+    quizAnswer: "A",
+    quizWinnerIds: [],
+    challengeText: "",
+    challengeWinnerIds: [],
+    challengeIndex: -1,
+    timerWinnerIds: [],
+    timerPresetSec: preset,
+    timerRemainingSec: preset,
+    timerRunning: false,
+  };
+}
+
+function ensurePresentationSyncState() {
+  if (!state.presentationSync || typeof state.presentationSync !== "object") {
+    state.presentationSync = {
+      pendingOps: 0,
+      lastSyncedAt: null,
+      hasError: false,
+      isSyncing: false,
+    };
+  }
+  state.presentationSync.pendingOps = Math.max(0, Number(state.presentationSync.pendingOps || 0));
+  state.presentationSync.hasError = !!state.presentationSync.hasError;
+  state.presentationSync.isSyncing = !!state.presentationSync.isSyncing;
+  return state.presentationSync;
+}
+
+function ensurePresentationGameState(sessionId = "") {
+  const sid = String(sessionId || "").trim() || "__default__";
+  if (!state.presentationGameBySession || typeof state.presentationGameBySession !== "object") {
+    state.presentationGameBySession = {};
+  }
+  const current = state.presentationGameBySession[sid];
+  const fallback = createDefaultPresentationGameState();
+  const normalizedPreset = normalizePresentationTimerPreset(current?.timerPresetSec || fallback.timerPresetSec);
+  const remaining = Number(current?.timerRemainingSec || normalizedPreset);
+  state.presentationGameBySession[sid] = {
+    ...fallback,
+    ...(current && typeof current === "object" ? current : {}),
+    activeGame: normalizePresentationGameMode(current?.activeGame || fallback.activeGame),
+    timerPresetSec: normalizedPreset,
+    timerRemainingSec: Number.isFinite(remaining) ? Math.max(0, Math.trunc(remaining)) : normalizedPreset,
+    timerRunning: !!current?.timerRunning,
+    wheelHistory: Array.isArray(current?.wheelHistory) ? current.wheelHistory : [],
+    quizWinnerIds: Array.isArray(current?.quizWinnerIds) ? current.quizWinnerIds : [],
+    challengeWinnerIds: Array.isArray(current?.challengeWinnerIds) ? current.challengeWinnerIds : [],
+    timerWinnerIds: Array.isArray(current?.timerWinnerIds) ? current.timerWinnerIds : [],
+    duelPairIds: Array.isArray(current?.duelPairIds) ? current.duelPairIds : [],
+  };
+  return state.presentationGameBySession[sid];
+}
+
+function getPresentationGameStateForVm(sessionId = "") {
+  const game = ensurePresentationGameState(sessionId);
+  return {
+    ...game,
+    timerLabel: formatPresentationTimerLabel(game.timerRemainingSec),
+  };
+}
+
+function stopPresentationTimer() {
+  if (presentationTimerInterval) {
+    clearInterval(presentationTimerInterval);
+    presentationTimerInterval = null;
+  }
+  const sessionId = String(state.presentationSelectedSessionId || "").trim();
+  if (!sessionId) return;
+  const game = ensurePresentationGameState(sessionId);
+  game.timerRunning = false;
+}
+
+function resetPresentationRuntimeState({ keepAudio = true } = {}) {
+  stopPresentationTimer();
+  if (presentationPointFlushTimer) {
+    clearTimeout(presentationPointFlushTimer);
+    presentationPointFlushTimer = null;
+  }
+  state.presentationSelectedSessionId = "";
+  state.presentationPointsDeltaBySession = {};
+  state.presentationPendingGameHistoryBySession = {};
+  state.presentationGameBySession = {};
+  state.presentationSync = {
+    pendingOps: 0,
+    lastSyncedAt: null,
+    hasError: false,
+    isSyncing: false,
+  };
+  if (!keepAudio) {
+    state.presentationAudioEnabled = false;
+  }
+}
+
+function getPresentationContext() {
+  const vm = buildClassesVmSnapshot();
+  const classId = String(vm?.presentation?.selectedClassId || vm?.selectedClassId || state.classSelectedId || "").trim();
+  const session = vm?.presentation?.session || vm?.selectedSession || null;
+  return {
+    vm,
+    classId,
+    sessionId: String(session?.id || "").trim(),
+    session,
+  };
+}
+
+function recomputePresentationPendingOps() {
+  let count = 0;
+  const pointQueue = state.presentationPointsDeltaBySession || {};
+  Object.values(pointQueue).forEach((patch) => {
+    Object.values(patch && typeof patch === "object" ? patch : {}).forEach((value) => {
+      const num = Math.abs(Math.trunc(Number(value || 0)));
+      if (Number.isFinite(num) && num > 0) count += num;
+    });
+  });
+  const historyQueue = state.presentationPendingGameHistoryBySession || {};
+  Object.values(historyQueue).forEach((items) => {
+    if (Array.isArray(items)) count += items.length;
+  });
+  ensurePresentationSyncState().pendingOps = count;
+  return count;
+}
+
+function mergePointQueuePatch(sessionId = "", studentId = "", delta = 0) {
+  const sid = String(sessionId || "").trim();
+  const studentKey = String(studentId || "").trim();
+  const safeDelta = Math.trunc(Number(delta || 0));
+  if (!sid || !studentKey || !safeDelta) return;
+
+  if (!state.presentationPointsDeltaBySession || typeof state.presentationPointsDeltaBySession !== "object") {
+    state.presentationPointsDeltaBySession = {};
+  }
+  const patch = {
+    ...(state.presentationPointsDeltaBySession[sid] || {}),
+  };
+  const next = Math.trunc(Number(patch[studentKey] || 0)) + safeDelta;
+  if (!next) {
+    delete patch[studentKey];
+  } else {
+    patch[studentKey] = next;
+  }
+  if (!Object.keys(patch).length) {
+    delete state.presentationPointsDeltaBySession[sid];
+  } else {
+    state.presentationPointsDeltaBySession[sid] = patch;
+  }
+}
+
+function applyLocalSessionPointDelta(sessionId = "", studentId = "", delta = 0) {
+  const sid = String(sessionId || "").trim();
+  const studentKey = String(studentId || "").trim();
+  const safeDelta = Math.trunc(Number(delta || 0));
+  if (!sid || !studentKey || !safeDelta) return;
+
+  const session = (Array.isArray(state.classSessions) ? state.classSessions : []).find(
+    (item) => String(item?.id || "").trim() === sid
+  );
+  if (!session) return;
+  const current = session?.pointsByStudent && typeof session.pointsByStudent === "object" ? session.pointsByStudent : {};
+  const next = Math.max(0, Math.trunc(Number(current[studentKey] || 0)) + safeDelta);
+  session.pointsByStudent = {
+    ...current,
+  };
+  if (!next) {
+    delete session.pointsByStudent[studentKey];
+  } else {
+    session.pointsByStudent[studentKey] = next;
+  }
+}
+
+function enqueuePresentationHistory(sessionId = "", entry = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return;
+  if (!state.presentationPendingGameHistoryBySession || typeof state.presentationPendingGameHistoryBySession !== "object") {
+    state.presentationPendingGameHistoryBySession = {};
+  }
+  const list = Array.isArray(state.presentationPendingGameHistoryBySession[sid])
+    ? state.presentationPendingGameHistoryBySession[sid]
+    : [];
+  state.presentationPendingGameHistoryBySession[sid] = [...list, entry];
+}
+
+function appendLocalGameHistory(sessionId = "", entry = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return;
+  const session = (Array.isArray(state.classSessions) ? state.classSessions : []).find(
+    (item) => String(item?.id || "").trim() === sid
+  );
+  if (!session) return;
+  const current = Array.isArray(session?.gameHistory) ? session.gameHistory : [];
+  session.gameHistory = [...current, entry].slice(-80);
+}
+
+function appendPresentationRandomHistory(sessionId = "", picked = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return;
+  const game = ensurePresentationGameState(sid);
+  const studentId = String(picked?.studentId || picked?.id || "").trim();
+  if (!studentId) return;
+  const name = String(picked?.name || "").trim() || "Không rõ tên";
+  const history = Array.isArray(game.wheelHistory) ? [...game.wheelHistory] : [];
+  history.unshift({
+    studentId,
+    name,
+    pickedAt: new Date().toISOString(),
+  });
+  game.wheelHistory = history.slice(0, 30);
+}
+
+function createPresentationGameHistoryEntry({
+  type = "custom",
+  title = "",
+  winnerIds = [],
+  pointsAwarded = 0,
+  meta = {},
+} = {}) {
+  const safeWinnerIds = Array.from(
+    new Set(
+      (Array.isArray(winnerIds) ? winnerIds : [])
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+    )
+  );
+  const now = new Date();
+  return {
+    id: `gh_${now.getTime()}_${Math.random().toString(36).slice(2, 8)}`,
+    type: String(type || "custom").trim() || "custom",
+    title: String(title || "").trim(),
+    winnerIds: safeWinnerIds,
+    pointsAwarded: Math.max(0, Math.trunc(Number(pointsAwarded || 0))),
+    createdAt: now.toISOString(),
+    meta: meta && typeof meta === "object" ? meta : {},
+  };
+}
+
+function applyLocalAttendanceStatus(sessionId = "", studentId = "", nextStatus = "present") {
+  const sid = String(sessionId || "").trim();
+  const studentKey = String(studentId || "").trim();
+  if (!sid || !studentKey) return false;
+  const session = (Array.isArray(state.classSessions) ? state.classSessions : []).find(
+    (item) => String(item?.id || "").trim() === sid
+  );
+  if (!session) return false;
+  const attendance = session?.attendance && typeof session.attendance === "object" ? session.attendance : {};
+  session.attendance = {
+    ...attendance,
+    [studentKey]: nextStatus === "absent" ? "absent" : "present",
+  };
+  return true;
+}
+
+function applyLocalUsedToggle(sessionId = "", studentId = "") {
+  const sid = String(sessionId || "").trim();
+  const studentKey = String(studentId || "").trim();
+  if (!sid || !studentKey) return false;
+  const session = (Array.isArray(state.classSessions) ? state.classSessions : []).find(
+    (item) => String(item?.id || "").trim() === sid
+  );
+  if (!session) return false;
+  const set = new Set(
+    (Array.isArray(session?.usedStudentIds) ? session.usedStudentIds : [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean)
+  );
+  if (set.has(studentKey)) set.delete(studentKey);
+  else set.add(studentKey);
+  session.usedStudentIds = Array.from(set);
+  return true;
+}
+
+function resetLocalUsedStudents(sessionId = "") {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return false;
+  const session = (Array.isArray(state.classSessions) ? state.classSessions : []).find(
+    (item) => String(item?.id || "").trim() === sid
+  );
+  if (!session) return false;
+  session.usedStudentIds = [];
+  return true;
+}
+
+function resetLocalSessionPoints(sessionId = "") {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return false;
+  const session = (Array.isArray(state.classSessions) ? state.classSessions : []).find(
+    (item) => String(item?.id || "").trim() === sid
+  );
+  if (!session) return false;
+  session.pointsByStudent = {};
+  session.highlightStudentIds = [];
+  return true;
+}
+
+function queuePresentationPointDelta(sessionId = "", studentId = "", delta = 0) {
+  const sid = String(sessionId || "").trim();
+  const studentKey = String(studentId || "").trim();
+  const safeDelta = Math.trunc(Number(delta || 0));
+  if (!sid || !studentKey || !safeDelta) return false;
+
+  mergePointQueuePatch(sid, studentKey, safeDelta);
+  applyLocalSessionPointDelta(sid, studentKey, safeDelta);
+  const syncState = ensurePresentationSyncState();
+  syncState.hasError = false;
+  recomputePresentationPendingOps();
+  schedulePresentationPointFlush();
+  return true;
+}
+
+function queuePresentationGameHistory(sessionId = "", entry = {}) {
+  const sid = String(sessionId || "").trim();
+  if (!sid || !entry || typeof entry !== "object") return false;
+  enqueuePresentationHistory(sid, entry);
+  appendLocalGameHistory(sid, entry);
+  const syncState = ensurePresentationSyncState();
+  syncState.hasError = false;
+  recomputePresentationPendingOps();
+  schedulePresentationPointFlush();
+  return true;
+}
+
+function playPresentationBeep(type = "ok") {
+  if (!state.presentationAudioEnabled) return;
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.type = "sine";
+    osc.frequency.value = type === "error" ? 240 : type === "warn" ? 360 : 520;
+    gain.gain.value = 0.04;
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+    osc.start();
+    osc.stop(audioContext.currentTime + 0.12);
+    osc.onended = () => {
+      audioContext.close().catch(() => {});
+    };
+  } catch {
+    // ignore audio errors
+  }
+}
+
+function schedulePresentationPointFlush() {
+  if (presentationPointFlushTimer) {
+    clearTimeout(presentationPointFlushTimer);
+    presentationPointFlushTimer = null;
+  }
+  presentationPointFlushTimer = setTimeout(() => {
+    presentationPointFlushTimer = null;
+    void flushPresentationPointQueue();
+  }, PRESENTATION_POINT_SYNC_DEBOUNCE_MS);
+}
+
+function mergePatchBack(target = {}, source = {}) {
+  const out = { ...(target || {}) };
+  Object.entries(source && typeof source === "object" ? source : {}).forEach(([sessionId, patch]) => {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
+    const prev = out[sid] && typeof out[sid] === "object" ? out[sid] : {};
+    const next = { ...prev };
+    Object.entries(patch && typeof patch === "object" ? patch : {}).forEach(([studentId, value]) => {
+      const key = String(studentId || "").trim();
+      const delta = Math.trunc(Number(value || 0));
+      if (!key || !delta) return;
+      const merged = Math.trunc(Number(next[key] || 0)) + delta;
+      if (!merged) delete next[key];
+      else next[key] = merged;
+    });
+    if (!Object.keys(next).length) delete out[sid];
+    else out[sid] = next;
+  });
+  return out;
+}
+
+function mergeHistoryBack(target = {}, source = {}) {
+  const out = { ...(target || {}) };
+  Object.entries(source && typeof source === "object" ? source : {}).forEach(([sessionId, list]) => {
+    const sid = String(sessionId || "").trim();
+    if (!sid || !Array.isArray(list) || !list.length) return;
+    out[sid] = [...(Array.isArray(out[sid]) ? out[sid] : []), ...list];
+  });
+  return out;
+}
+
+async function flushPresentationPointQueue({ force = false } = {}) {
+  if (presentationPointFlushTimer) {
+    clearTimeout(presentationPointFlushTimer);
+    presentationPointFlushTimer = null;
+  }
+
+  const syncState = ensurePresentationSyncState();
+  if (syncState.isSyncing && !force) return false;
+
+  const uid = state.currentUser?.uid;
+  const classId = String(state.presentationClassId || state.classSelectedId || "").trim();
+  if (!uid || !classId) return false;
+  if (
+    typeof classesModule?.addSessionPointsFlow !== "function" ||
+    typeof classesModule?.appendSessionGameHistoryFlow !== "function"
+  ) {
+    return false;
+  }
+
+  const pointQueue = {};
+  Object.entries(state.presentationPointsDeltaBySession || {}).forEach(([sessionId, patch]) => {
+    const sid = String(sessionId || "").trim();
+    if (!sid || !patch || typeof patch !== "object") return;
+    const cleanPatch = {};
+    Object.entries(patch).forEach(([studentId, delta]) => {
+      const key = String(studentId || "").trim();
+      const safeDelta = Math.trunc(Number(delta || 0));
+      if (!key || !safeDelta) return;
+      cleanPatch[key] = safeDelta;
+    });
+    if (Object.keys(cleanPatch).length) pointQueue[sid] = cleanPatch;
+  });
+  const historyQueue = {};
+  Object.entries(state.presentationPendingGameHistoryBySession || {}).forEach(([sessionId, list]) => {
+    const sid = String(sessionId || "").trim();
+    if (!sid || !Array.isArray(list) || !list.length) return;
+    historyQueue[sid] = [...list];
+  });
+
+  if (!Object.keys(pointQueue).length && !Object.keys(historyQueue).length) {
+    recomputePresentationPendingOps();
+    if (syncState.isSyncing || syncState.hasError) {
+      syncState.isSyncing = false;
+      syncState.hasError = false;
+      renderClassesRoute();
+    }
+    return false;
+  }
+
+  syncState.isSyncing = true;
+  syncState.hasError = false;
+  renderClassesRoute();
+
+  try {
+    for (const [sessionId, patch] of Object.entries(pointQueue)) {
+      await classesModule.addSessionPointsFlow(uid, classId, sessionId, patch, { touchHighlightLegacy: true });
+      delete state.presentationPointsDeltaBySession[sessionId];
+    }
+
+    for (const [sessionId, list] of Object.entries(historyQueue)) {
+      for (const entry of list) {
+        await classesModule.appendSessionGameHistoryFlow(uid, classId, sessionId, entry);
+      }
+      delete state.presentationPendingGameHistoryBySession[sessionId];
+    }
+
+    syncState.lastSyncedAt = new Date().toISOString();
+    syncState.hasError = false;
+    return true;
+  } catch (err) {
+    console.error("presentation sync error", err);
+    syncState.hasError = true;
+    state.presentationPointsDeltaBySession = mergePatchBack(state.presentationPointsDeltaBySession, pointQueue);
+    state.presentationPendingGameHistoryBySession = mergeHistoryBack(
+      state.presentationPendingGameHistoryBySession,
+      historyQueue
+    );
+    if (!force) {
+      setTimeout(() => {
+        void flushPresentationPointQueue();
+      }, PRESENTATION_POINT_SYNC_RETRY_MS);
+    }
+    return false;
+  } finally {
+    syncState.isSyncing = false;
+    recomputePresentationPendingOps();
+    renderClassesRoute();
+  }
+}
+
+function startPresentationTimer(sessionId = "") {
+  const sid = String(sessionId || state.presentationSelectedSessionId || "").trim();
+  if (!sid) return;
+  const game = ensurePresentationGameState(sid);
+  if (game.timerRunning) return;
+  if (!(Number(game.timerRemainingSec || 0) > 0)) {
+    game.timerRemainingSec = normalizePresentationTimerPreset(game.timerPresetSec);
+  }
+  game.timerRunning = true;
+  if (presentationTimerInterval) {
+    clearInterval(presentationTimerInterval);
+    presentationTimerInterval = null;
+  }
+  presentationTimerInterval = setInterval(() => {
+    const activeSid = String(state.presentationSelectedSessionId || "").trim();
+    if (!activeSid) return;
+    const timerGame = ensurePresentationGameState(activeSid);
+    if (!timerGame.timerRunning) return;
+    timerGame.timerRemainingSec = Math.max(0, Number(timerGame.timerRemainingSec || 0) - 1);
+    if (timerGame.timerRemainingSec <= 0) {
+      timerGame.timerRunning = false;
+      stopPresentationTimer();
+      showToast("Hết giờ hoạt động.", "info");
+      playPresentationBeep("warn");
+    }
+    renderClassesRoute();
+  }, 1000);
+  renderClassesRoute();
+}
+
+function buildClassesVmSnapshot() {
+  if (typeof classesModule?.buildClassesPageVM !== "function") return null;
+  const syncState = ensurePresentationSyncState();
+  const build = (presentationSessionId = "") =>
+    classesModule.buildClassesPageVM({
+      classes: state.classes,
+      mode: state.classesMode,
+      adminTab: state.classesAdminTab,
+      sessionFilter: state.classSessionFilter,
+      selectedClassId: state.classSelectedId,
+      presentationClassId: state.presentationClassId,
+      presentationSelectedSessionId: presentationSessionId,
+      students: state.classStudents,
+      sessions: state.classSessions,
+      selectedSessionId: state.classSelectedSessionId,
+      pointsDeltaBySession: state.presentationPointsDeltaBySession,
+      syncState,
+      gameState: getPresentationGameStateForVm(presentationSessionId),
+    });
+
+  const preferredSessionId = String(
+    state.presentationSelectedSessionId || state.classSelectedSessionId || ""
+  ).trim();
+  let vm = build(preferredSessionId);
+  const resolvedSessionId = String(vm?.presentation?.selectedSessionId || "").trim();
+  if (resolvedSessionId && resolvedSessionId !== preferredSessionId) {
+    vm = build(resolvedSessionId);
+  }
+
+  return vm;
+}
+
+function renderClassesRoute() {
+  if (typeof classesModule?.buildClassesPageVM !== "function") return;
+  if (typeof classesModule?.renderClassesPage !== "function") return;
+
+  const vm = buildClassesVmSnapshot();
+  if (!vm) return;
+
+  state.classesMode = normalizeClassesMode(vm.mode || state.classesMode);
+  state.classesAdminTab = normalizeClassesAdminTab(vm.adminTab || state.classesAdminTab);
+  state.classSessionFilter = normalizeClassSessionFilter(vm.sessionFilter || state.classSessionFilter);
+  state.classSelectedId = String(vm.selectedClassId || "").trim();
+  state.classSelectedSessionId = String(vm.selectedSessionId || "").trim();
+  state.presentationSelectedSessionId = String(vm?.presentation?.selectedSessionId || "").trim();
+  if (state.presentationSelectedSessionId) {
+    ensurePresentationGameState(state.presentationSelectedSessionId);
+  }
+  const vmPresentationClassId = String(vm?.presentation?.selectedClassId || "").trim();
+  if (vmPresentationClassId) {
+    state.presentationClassId = vmPresentationClassId;
+  }
+  persistClassUiPref("mode", state.classesMode);
+  persistClassUiPref("adminTab", state.classesAdminTab);
+  persistClassUiPref("sessionFilter", state.classSessionFilter);
+  persistClassUiPref("presentationClass", state.presentationClassId);
+
+  classesModule.renderClassesPage(vm);
+  const audioToggleBtn = byId("presentationAudioToggle");
+  if (audioToggleBtn) {
+    const isAudioOn = !!state.presentationAudioEnabled;
+    audioToggleBtn.textContent = isAudioOn ? "Âm thanh: Bật" : "Âm thanh: Tắt";
+    audioToggleBtn.classList.toggle("btn-outline-success", isAudioOn);
+    audioToggleBtn.classList.toggle("btn-outline-dark", !isAudioOn);
+  }
+  syncClassesPresentationShell();
+}
+
+async function loadClasses(uid, options = {}) {
+  if (!uid) return;
+  hydrateClassesUiPrefsOnce();
+  await ensureClassesModule();
+  const previousSelectedClassId = String(state.classSelectedId || "").trim();
+
+  const classesList = await classesModule.loadClassesOverview(uid);
+  state.classes = Array.isArray(classesList) ? classesList : [];
+
+  const preferredClassId = String(
+    options?.classId || state.classSelectedId || state.presentationClassId || ""
+  ).trim();
+  const selectedClassId = pickDefaultClassId(state.classes, preferredClassId);
+  state.classSelectedId = selectedClassId;
+
+  const hasPresentationClass = state.classes.some(
+    (item) => String(item?.id || "").trim() === String(state.presentationClassId || "").trim()
+  );
+  if (!hasPresentationClass || options?.syncPresentationClass) {
+    state.presentationClassId = selectedClassId;
+  }
+  if (selectedClassId !== previousSelectedClassId) {
+    stopPresentationTimer();
+    state.presentationSelectedSessionId = "";
+  }
+
+  if (!selectedClassId) {
+    state.classStudents = [];
+    state.classSessions = [];
+    state.classSelectedSessionId = "";
+    resetPresentationRuntimeState({ keepAudio: true });
+    renderClassesRoute();
+    return;
+  }
+
+  const detail = await classesModule.loadClassDetail(uid, selectedClassId, {
+    autoCompletePastSessions: options?.autoCompletePastSessions !== false,
+  });
+  state.classStudents = Array.isArray(detail?.students) ? detail.students : [];
+  state.classSessions = Array.isArray(detail?.sessions) ? detail.sessions : [];
+  if (options?.sessionId !== undefined) {
+    state.classSelectedSessionId = String(options.sessionId || "").trim();
+    state.presentationSelectedSessionId = String(options.sessionId || "").trim();
+  }
+  renderClassesRoute();
 }
 
 async function loadMotivation(uid) {
@@ -1179,136 +1940,6 @@ async function loadMotivation(uid) {
   state.motivation = summary || buildDefaultMotivationSummary();
 
   renderMotivationDetails(state.motivation);
-  renderDashboardCenter();
-}
-
-async function renderClassesPage() {
-  const module = await ensureClassesModule();
-  if (!module?.buildClassesPageVM || !module?.renderClassesPage) return;
-
-  const vm = module.buildClassesPageVM({
-    classes: state.classes,
-    mode: state.classesMode,
-    listTab: state.classesListTab,
-    selectedClassId: state.classSelectedId,
-    presentationClassId: state.classPresentationId,
-    students: state.classStudents,
-    sessions: state.classSessions,
-    selectedSessionId: state.classSelectedSessionId,
-    classRandomResult: state.classRandomResult,
-    classRandomHistory: state.classRandomHistory,
-  });
-
-  state.classesMode = normalizeClassesMode(vm?.mode || state.classesMode);
-  state.classesListTab = normalizeClassesListTab(vm?.listTab || state.classesListTab);
-  state.classSelectedId = String(vm?.selectedClass?.id || "").trim();
-  state.classPresentationId = persistPresentationClass(String(vm?.presentation?.selectedClass?.id || ""));
-  state.classSelectedSessionId = String(vm?.selectedSessionId || "").trim();
-  module.renderClassesPage(vm);
-}
-
-function classesInCurrentTab(classes = state.classes, listTab = state.classesListTab) {
-  const tab = normalizeClassesListTab(listTab);
-  if (tab === "completed") {
-    return (Array.isArray(classes) ? classes : []).filter(
-      (item) => String(item?.status || "").trim() === "completed"
-    );
-  }
-  return (Array.isArray(classes) ? classes : []).filter(
-    (item) => String(item?.status || "active").trim() === "active"
-  );
-}
-
-function classesInCurrentMode(classes = state.classes) {
-  if (state.classesMode === "presentation") {
-    return (Array.isArray(classes) ? classes : []).filter(
-      (item) => String(item?.status || "active").trim() === "active"
-    );
-  }
-  return classesInCurrentTab(classes, state.classesListTab);
-}
-
-function classExists(classId = "", classes = state.classes) {
-  const id = String(classId || "").trim();
-  return !!id && (Array.isArray(classes) ? classes : []).some((item) => String(item?.id || "") === id);
-}
-
-function resolveNextSessionNoForStudent() {
-  const selectedClass = state.classes.find((item) => String(item?.id || "") === String(state.classSelectedId || ""));
-  const classNext = Math.max(1, Number(selectedClass?.nextSessionNo || 1));
-  const firstPlanned = state.classSessions.find((item) => String(item?.status || "planned") === "planned");
-  const plannedNext = Math.max(1, Number(firstPlanned?.sessionNo || classNext || 1));
-  return Math.max(classNext, plannedNext);
-}
-
-function normalizePickPercentInput(value = 0) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  return Math.max(0, Math.min(100, num));
-}
-
-async function loadClasses(uid, options = {}) {
-  if (!uid) return;
-
-  const module = await ensureClassesModule();
-  if (!module?.loadClassesOverview || !module?.loadClassDetail) return;
-
-  if (options?.listTab) {
-    state.classesListTab = persistClassesListTab(options.listTab);
-  }
-
-  const classes = await module.loadClassesOverview(uid, {});
-  state.classes = Array.isArray(classes) ? classes : [];
-  const scopedClasses = classesInCurrentMode(state.classes);
-
-  const forceClassId = String(options?.forceClassId || "").trim();
-  const preserveSelection = options?.preserveSelection !== false;
-  const previousSessionId = preserveSelection ? String(state.classSelectedSessionId || "").trim() : "";
-  const previousClassId = String(state.classSelectedId || "").trim();
-
-  let selectedClassId = "";
-  if (forceClassId) {
-    selectedClassId = forceClassId;
-  } else if (state.classesMode === "presentation") {
-    selectedClassId = preserveSelection
-      ? String(state.classPresentationId || state.classSelectedId || "").trim()
-      : String(state.classPresentationId || "").trim();
-  } else {
-    selectedClassId = preserveSelection ? String(state.classSelectedId || "").trim() : "";
-  }
-
-  if (!selectedClassId && scopedClasses.length) {
-    selectedClassId = String(scopedClasses[0]?.id || "").trim();
-  }
-  if (selectedClassId && !classExists(selectedClassId, scopedClasses)) {
-    selectedClassId = String(scopedClasses[0]?.id || "").trim();
-  }
-
-  state.classSelectedId = selectedClassId;
-  if (state.classesMode === "presentation") {
-    state.classPresentationId = persistPresentationClass(selectedClassId);
-  }
-  state.classStudents = [];
-  state.classSessions = [];
-  state.classSelectedSessionId = "";
-  if (!preserveSelection || selectedClassId !== previousClassId) {
-    state.classRandomResult = null;
-    state.classRandomHistory = [];
-  }
-
-  if (selectedClassId) {
-    const detail = await module.loadClassDetail(uid, selectedClassId, { ensureSessions: true });
-    if (detail?.classItem?.id) {
-      state.classes = state.classes.map((item) =>
-        String(item?.id || "") === String(detail.classItem.id) ? detail.classItem : item
-      );
-    }
-    state.classStudents = Array.isArray(detail?.students) ? detail.students : [];
-    state.classSessions = Array.isArray(detail?.sessions) ? detail.sessions : [];
-    state.classSelectedSessionId = previousSessionId;
-  }
-
-  await renderClassesPage();
   renderDashboardCenter();
 }
 
@@ -1607,12 +2238,10 @@ async function refreshAll(uid) {
     await Promise.all([
       loadAccountsRuntime(uid, state),
       loadFinance(uid),
-      loadGoals(uid),
-      loadVideo(uid),
-      loadMotivation(uid),
-      loadClasses(uid, { preserveSelection: true }),
+      loadClassesOverviewForDashboard(uid),
       loadBalancesRuntime(uid, state, renderDashboardCenter),
     ]);
+    void ensureExpenseAiHistory(uid, { force: true }).catch(() => []);
     await refreshWeeklyReviewIfVisible(uid);
   } catch (err) {
     console.error("refreshAll error", err);
@@ -1624,7 +2253,12 @@ async function refreshAll(uid) {
 
 async function refreshAfterTransaction(uid) {
   if (!uid) return;
-  await Promise.all([loadFinance(uid), loadBalancesRuntime(uid, state, renderDashboardCenter)]);
+  invalidateExpenseAiHistoryCache();
+  await Promise.all([
+    loadFinance(uid),
+    loadBalancesRuntime(uid, state, renderDashboardCenter, { forceRefresh: true }),
+  ]);
+  void ensureExpenseAiHistory(uid, { force: true }).catch(() => []);
   await refreshWeeklyReviewIfVisible(uid);
 }
 
@@ -1659,15 +2293,6 @@ function resetAppView() {
     weekKey: "",
     monthKey: getCurrentYm(),
   };
-  state.classes = [];
-  state.classesMode = loadClassesModeState();
-  state.classSelectedId = "";
-  state.classPresentationId = loadPresentationClassState();
-  state.classStudents = [];
-  state.classSessions = [];
-  state.classSelectedSessionId = "";
-  state.classRandomResult = null;
-  state.classRandomHistory = [];
   state.weeklyGoals = {
     weekKey: "",
     plan: {
@@ -1683,6 +2308,12 @@ function resetAppView() {
   };
   state.expenseAiSuggestion = null;
   state.expenseAiRequestId = 0;
+  state.expenseAiHistory = {
+    loadedAt: 0,
+    monthsAnchor: "",
+    items: [],
+    loadingPromise: null,
+  };
   state.pendingVideoFocusTaskId = "";
   state.videoAi = {
     loading: false,
@@ -1717,15 +2348,25 @@ function resetAppView() {
   state.incTotal = 0;
   state.pendingDeleteExpenseId = null;
   state.pendingDeleteIncomeId = null;
-  state.pendingDeleteClassId = null;
+  state.classesMode = "admin";
+  state.classesAdminTab = "overview";
+  state.classSessionFilter = "upcoming";
+  state.classes = [];
+  state.classSelectedId = "";
+  state.classStudents = [];
+  state.classSessions = [];
+  state.classSelectedSessionId = "";
+  state.presentationClassId = "";
+  resetPresentationRuntimeState({ keepAudio: false });
+  state.classesPrefsHydrated = false;
 
   updateNavbarStats(0, 0);
   updateDashboardFinance({ expTotal: 0, incTotal: 0 });
 
   applyExpenseFiltersAndRender([], state.expenseFilters);
   applyIncomeFiltersAndRender([], state.incomeFilters);
-  renderGoalsTable(byId("goalsTableBody"), []);
-  renderHabitsTable(byId("habitsTableBody"), [], {});
+  resetGoalComposerForm();
+  renderGoalsRoute();
   renderGoalsSummary(byId("dashboardGoalsSummary"), []);
   renderVideoBoard([]);
   renderVideoCalendarWithTasks([]);
@@ -1736,25 +2377,12 @@ function resetAppView() {
   renderGoalAiSuggestions();
   setGoalAiButtonsState();
   renderWeeklyGoalsPanel();
+  renderClassesRoute();
+  syncClassesPresentationShell();
   resetExpenseAiHint();
   renderMotivationDetails(state.motivation);
   if (weeklyReviewModule?.renderWeeklyReviewPage) {
     weeklyReviewModule.renderWeeklyReviewPage(null);
-  }
-  if (classesModule?.renderClassesPage && classesModule?.buildClassesPageVM) {
-    const emptyVm = classesModule.buildClassesPageVM({
-      classes: [],
-      mode: state.classesMode,
-      listTab: state.classesListTab,
-      selectedClassId: "",
-      presentationClassId: state.classPresentationId,
-      students: [],
-      sessions: [],
-      selectedSessionId: "",
-      classRandomResult: null,
-      classRandomHistory: [],
-    });
-    classesModule.renderClassesPage(emptyVm);
   }
 
   const balance = byId("balanceList");
@@ -1791,7 +2419,6 @@ function openConfirmDelete(type, id) {
   clearPendingDeleteState();
   if (type === "expense") state.pendingDeleteExpenseId = id;
   if (type === "income") state.pendingDeleteIncomeId = id;
-  if (type === "class") state.pendingDeleteClassId = id;
 
   const title = byId("confirmDeleteTitle");
   const text = byId("confirmDeleteText");
@@ -1801,20 +2428,11 @@ function openConfirmDelete(type, id) {
       title.textContent = t("expenses.deleteTitle", "Xóa khoản chi?");
     } else if (type === "income") {
       title.textContent = t("incomes.deleteTitle", "Xóa khoản thu?");
-    } else if (type === "class") {
-      title.textContent = t("classes.confirmDeleteTitle", "Xóa lớp học?");
     } else {
       title.textContent = t("common.delete", "Xóa");
     }
   }
-
-  if (text) {
-    if (type === "class") {
-      text.textContent = t("classes.confirmDelete", "Bạn chắc chắn muốn xóa lớp học này?");
-    } else {
-      text.textContent = t("common.deleteConfirmText", "Hành động này không thể hoàn tác.");
-    }
-  }
+  if (text) text.textContent = t("common.deleteConfirmText", "Hành động này không thể hoàn tác.");
 
   bootstrap.Offcanvas.getOrCreateInstance(byId("confirmDeleteModal"))?.show();
 }
@@ -1822,20 +2440,6 @@ function openConfirmDelete(type, id) {
 function clearPendingDeleteState() {
   state.pendingDeleteExpenseId = null;
   state.pendingDeleteIncomeId = null;
-  state.pendingDeleteClassId = null;
-}
-
-async function handleConfirmDeleteClass(uid, classId) {
-  const module = await ensureClassesModule();
-  if (!module?.deleteClassById) {
-    throw new Error(t("toast.classDeleteFail", "Không thể xóa lớp học"));
-  }
-
-  await module.deleteClassById(uid, classId);
-  showToast(t("toast.classDeleted", "Đã xóa lớp học."), "success");
-  state.classSelectedId = "";
-  state.classSelectedSessionId = "";
-  await loadClasses(uid, { preserveSelection: false });
 }
 
 async function handleConfirmDelete() {
@@ -1846,14 +2450,13 @@ async function handleConfirmDelete() {
     let needRefreshTransactions = false;
     if (state.pendingDeleteExpenseId) {
       await deleteExpense(uid, state.pendingDeleteExpenseId);
+      invalidateExpenseAiHistoryCache();
       showToast(t("toast.expenseDeleted", "Äã xóa khoáº£n chi."), "success");
       needRefreshTransactions = true;
     } else if (state.pendingDeleteIncomeId) {
       await deleteIncome(uid, state.pendingDeleteIncomeId);
       showToast(t("toast.incomeDeleted", "Äã xóa khoáº£n thu."), "success");
       needRefreshTransactions = true;
-    } else if (state.pendingDeleteClassId) {
-      await handleConfirmDeleteClass(uid, state.pendingDeleteClassId);
     }
 
     bootstrap.Offcanvas.getOrCreateInstance(byId("confirmDeleteModal"))?.hide();
@@ -1868,28 +2471,244 @@ async function handleConfirmDelete() {
   }
 }
 
-function buildExpenseAiHistorySamples(allowedCategories = [], limitCount = 30) {
+function toAiHistoryMs(value) {
+  if (!value) return 0;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime();
+  if (typeof value?.toDate === "function") {
+    const dt = value.toDate();
+    return Number.isNaN(dt.getTime()) ? 0 : dt.getTime();
+  }
+  if (Number.isFinite(Number(value?.seconds || 0))) {
+    return Number(value.seconds) * 1000;
+  }
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? 0 : dt.getTime();
+}
+
+function stripAiAccents(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeAiKeyPart(value = "") {
+  return stripAiAccents(String(value || "").toLowerCase())
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeAiText(value = "") {
+  return normalizeAiKeyPart(value)
+    .split(" ")
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2);
+}
+
+function overlapAiTokenCount(baseTokens = [], sampleTokens = []) {
+  if (!baseTokens.length || !sampleTokens.length) return 0;
+  const sampleSet = new Set(sampleTokens);
+  let overlap = 0;
+  baseTokens.forEach((token) => {
+    if (sampleSet.has(token)) overlap += 1;
+  });
+  return overlap;
+}
+
+function buildExpenseAiMonthKeys(anchorYm = "", months = AI_EXPENSE_HISTORY_MONTHS) {
+  const safeAnchor = isValidYm(anchorYm) ? anchorYm : getCurrentYm();
+  const total = Math.min(24, Math.max(1, Number(months || AI_EXPENSE_HISTORY_MONTHS)));
+  const out = [];
+  for (let i = 0; i < total; i += 1) {
+    out.push(shiftYm(safeAnchor, -i));
+  }
+  return out;
+}
+
+function getExpenseAiModeWeight(mode = "") {
+  const key = String(mode || "").trim();
+  if (key === "manual-apply") return 1.4;
+  if (key === "manual-label") return 1.4;
+  if (key === "auto-label") return 1.3;
+  if (key === "generate") return 1.18;
+  return 1;
+}
+
+function invalidateExpenseAiHistoryCache() {
+  state.expenseAiHistory = {
+    loadedAt: 0,
+    monthsAnchor: "",
+    items: [],
+    loadingPromise: null,
+  };
+}
+
+async function ensureExpenseAiHistory(uid, { force = false } = {}) {
+  if (!uid) return [];
+
+  const anchorYm = isValidYm(getMonthValue()) ? getMonthValue() : getCurrentYm();
+  const nowMs = Date.now();
+  const cache = state.expenseAiHistory || {};
+  const hasFreshCache =
+    !force &&
+    cache?.monthsAnchor === anchorYm &&
+    Array.isArray(cache?.items) &&
+    cache.items.length > 0 &&
+    nowMs - Number(cache?.loadedAt || 0) <= AI_EXPENSE_HISTORY_CACHE_TTL_MS;
+  if (hasFreshCache) return cache.items;
+  if (!force && cache?.loadingPromise) return cache.loadingPromise;
+
+  const monthKeys = buildExpenseAiMonthKeys(anchorYm, AI_EXPENSE_HISTORY_MONTHS);
+  const loadingPromise = Promise.all([
+    Promise.all(monthKeys.map((ym) => listExpensesByMonth(uid, ym).catch(() => []))),
+    listAppliedAiSuggestions(uid, { type: "expense-label", limitCount: 160 }).catch(() => []),
+  ])
+    .then(([monthlyExpenseLists, appliedSuggestions]) => {
+      const fromExpenses = (Array.isArray(monthlyExpenseLists) ? monthlyExpenseLists.flat() : [])
+        .map((item) => ({
+          name: String(item?.name || "").trim(),
+          note: String(item?.note || "").trim(),
+          category: String(item?.category || "").trim(),
+          appliedAt: item?.date || item?.updatedAt || item?.createdAt || null,
+          source: "expense",
+          mode: "manual-label",
+          weight: 1,
+        }))
+        .filter((item) => item.name && item.category);
+
+      const fromAiFeedback = (Array.isArray(appliedSuggestions) ? appliedSuggestions : [])
+        .map((item) => {
+          const inputSnapshot = item?.inputSnapshot && typeof item.inputSnapshot === "object" ? item.inputSnapshot : {};
+          const appliedOutput = item?.appliedOutput && typeof item.appliedOutput === "object" ? item.appliedOutput : {};
+          const mode = String(item?.mode || "").trim();
+          return {
+            name: String(inputSnapshot?.name || "").trim(),
+            note: String(inputSnapshot?.note || "").trim(),
+            category: String(appliedOutput?.category || "").trim(),
+            appliedAt: item?.appliedAt || item?.updatedAt || item?.createdAt || null,
+            source: "ai-feedback",
+            mode,
+            weight: getExpenseAiModeWeight(mode),
+          };
+        })
+        .filter((item) => item.name && item.category);
+
+      const bestByKey = new Map();
+      [...fromAiFeedback, ...fromExpenses].forEach((item) => {
+        const key = `${normalizeAiKeyPart(item.name)}|${normalizeAiKeyPart(item.note)}|${String(
+          item.category || ""
+        ).trim()}`;
+        if (!key) return;
+        const current = bestByKey.get(key);
+        const score = Number(item.weight || 1) + Math.min(1, toAiHistoryMs(item.appliedAt) / 10 ** 13);
+        const currentScore = current
+          ? Number(current.weight || 1) + Math.min(1, toAiHistoryMs(current.appliedAt) / 10 ** 13)
+          : -1;
+        if (!current || score >= currentScore) {
+          bestByKey.set(key, item);
+        }
+      });
+
+      const merged = Array.from(bestByKey.values()).sort((a, b) => {
+        const byTime = toAiHistoryMs(b?.appliedAt) - toAiHistoryMs(a?.appliedAt);
+        if (byTime !== 0) return byTime;
+        return Number(b?.weight || 1) - Number(a?.weight || 1);
+      });
+
+      state.expenseAiHistory = {
+        loadedAt: Date.now(),
+        monthsAnchor: anchorYm,
+        items: merged,
+        loadingPromise: null,
+      };
+      return merged;
+    })
+    .catch((err) => {
+      console.error("ensureExpenseAiHistory error", err);
+      const fallback = Array.isArray(state.expenseAiHistory?.items) ? state.expenseAiHistory.items : [];
+      state.expenseAiHistory = {
+        loadedAt: state.expenseAiHistory?.loadedAt || 0,
+        monthsAnchor: anchorYm,
+        items: fallback,
+        loadingPromise: null,
+      };
+      return fallback;
+    });
+
+  state.expenseAiHistory = {
+    loadedAt: Number(cache?.loadedAt || 0),
+    monthsAnchor: anchorYm,
+    items: Array.isArray(cache?.items) ? cache.items : [],
+    loadingPromise,
+  };
+  return loadingPromise;
+}
+
+function buildExpenseAiHistorySamples(allowedCategories = [], limitCount = 30, currentText = "") {
   const categorySet = new Set(
     (Array.isArray(allowedCategories) ? allowedCategories : [])
       .map((item) => String(item || "").trim())
       .filter(Boolean)
   );
-  const safeLimit = Math.min(60, Math.max(0, Number(limitCount || 30)));
+  const safeLimit = Math.min(120, Math.max(0, Number(limitCount || 30)));
   if (!safeLimit) return [];
 
-  return (Array.isArray(state.allExpenses) ? state.allExpenses : [])
+  const currentTokens = tokenizeAiText(currentText);
+  const rows = (
+    Array.isArray(state.expenseAiHistory?.items) && state.expenseAiHistory.items.length
+      ? state.expenseAiHistory.items
+      : Array.isArray(state.allExpenses)
+        ? state.allExpenses.map((item) => ({
+            name: String(item?.name || "").trim(),
+            note: String(item?.note || "").trim(),
+            category: String(item?.category || "").trim(),
+            appliedAt: item?.date || item?.updatedAt || item?.createdAt || null,
+            source: "expense",
+            mode: "manual-label",
+            weight: 1,
+          }))
+        : []
+  )
+    .filter((item) => item?.name && item?.category)
+    .filter((item) => !categorySet.size || categorySet.has(String(item?.category || "").trim()))
+    .map((item, index) => {
+      const sampleTokens = tokenizeAiText(`${item?.name || ""} ${item?.note || ""}`);
+      const overlap = overlapAiTokenCount(currentTokens, sampleTokens);
+      const exactName =
+        normalizeAiKeyPart(`${item?.name || ""} ${item?.note || ""}`) &&
+        normalizeAiKeyPart(`${item?.name || ""} ${item?.note || ""}`) ===
+          normalizeAiKeyPart(currentText || "");
+      const recencyWeight = Math.max(0, 0.35 - index * 0.01);
+      const score = overlap * 3 + (exactName ? 2.5 : 0) + Number(item?.weight || 1) + recencyWeight;
+      return {
+        ...item,
+        score,
+        appliedAtMs: toAiHistoryMs(item?.appliedAt),
+      };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.appliedAtMs - a.appliedAtMs;
+    })
+    .slice(0, safeLimit)
     .map((item) => ({
       name: String(item?.name || "").trim(),
       note: String(item?.note || "").trim(),
       category: String(item?.category || "").trim(),
-    }))
-    .filter((item) => item.name && item.category)
-    .filter((item) => !categorySet.size || categorySet.has(item.category))
-    .slice(0, safeLimit);
+      appliedAt: item?.appliedAt || null,
+      source: String(item?.source || "expense"),
+      mode: String(item?.mode || ""),
+      weight: Number(item?.weight || 1),
+    }));
+
+  return rows;
 }
 
 async function suggestCategoryIfNeeded() {
   if (!AI_BACKGROUND_ENABLED) return;
+
+  const uid = ensureUser();
+  if (!uid) return;
 
   const name = (byId("eName")?.value || "").trim();
   if (!name) {
@@ -1902,7 +2721,8 @@ async function suggestCategoryIfNeeded() {
   if (!categoryEl) return;
 
   const categories = Array.from(categoryEl.options).map((option) => option.value);
-  const history = buildExpenseAiHistorySamples(categories, 36);
+  await ensureExpenseAiHistory(uid);
+  const history = buildExpenseAiHistorySamples(categories, 72, `${name} ${note}`.trim());
   const requestId = ++state.expenseAiRequestId;
 
   try {
@@ -1913,6 +2733,7 @@ async function suggestCategoryIfNeeded() {
     const category = String(data?.category || "").trim();
     const confidence = Number(data?.confidence || 0);
     const reason = String(data?.reason || "").trim();
+    const matchType = String(data?.matchType || "").trim();
     if (!category || !categories.includes(category)) {
       resetExpenseAiHint();
       return;
@@ -1922,13 +2743,17 @@ async function suggestCategoryIfNeeded() {
       category,
       confidence: Number.isFinite(confidence) ? confidence : 0,
       reason,
+      matchType,
       inputSnapshot: {
         name,
         note,
       },
     };
 
-    if (suggestion.confidence >= AI_EXPENSE_AUTO_CONFIDENCE) {
+    if (
+      suggestion.confidence >= AI_EXPENSE_AUTO_CONFIDENCE &&
+      suggestion.matchType === "exact_history"
+    ) {
       categoryEl.value = suggestion.category;
       state.expenseAiSuggestion = null;
       renderExpenseAiHint(suggestion, "auto");
@@ -1940,9 +2765,11 @@ async function suggestCategoryIfNeeded() {
           category: suggestion.category,
           confidence: suggestion.confidence,
           reason: suggestion.reason,
+          matchType: suggestion.matchType,
         },
         appliedAt: new Date(),
       });
+      invalidateExpenseAiHistoryCache();
       return;
     }
 
@@ -1958,6 +2785,7 @@ async function suggestCategoryIfNeeded() {
 
 function bindExpenseEvents() {
   byId("addExpenseModal")?.addEventListener("show.bs.offcanvas", () => {
+    const uid = ensureUser();
     fillAccountSelect(byId("eAccount"), state.accounts);
     const dateEl = byId("eDate");
     if (dateEl && !dateEl.value) {
@@ -1974,6 +2802,9 @@ function bindExpenseEvents() {
     clearTimeout(state.aiTimer);
     state.expenseAiRequestId += 1;
     resetExpenseAiHint();
+    if (uid) {
+      void ensureExpenseAiHistory(uid).catch(() => []);
+    }
   });
 
   const queueExpenseAiSuggest = () => {
@@ -1998,15 +2829,17 @@ function bindExpenseEvents() {
     state.expenseAiSuggestion = null;
     await saveAppliedAiSuggestionSafe({
       type: "expense-label",
-      mode: "generate",
+      mode: "manual-apply",
       inputSnapshot: suggestion.inputSnapshot || {},
       appliedOutput: {
         category: suggestion.category,
         confidence: suggestion.confidence,
         reason: suggestion.reason,
+        matchType: suggestion.matchType || "",
       },
       appliedAt: new Date(),
     });
+    invalidateExpenseAiHistoryCache();
   });
 
   byId("btnAddExpense")?.addEventListener("click", async () => {
@@ -2024,6 +2857,7 @@ function bindExpenseEvents() {
 
     try {
       await addExpense(uid, payload);
+      invalidateExpenseAiHistoryCache();
       bootstrap.Offcanvas.getOrCreateInstance(byId("addExpenseModal"))?.hide();
       showToast(t("toast.expenseAdded", "Äã thêm khoáº£n chi."), "success");
       await refreshAfterTransaction(uid);
@@ -2057,6 +2891,7 @@ function bindExpenseEvents() {
 
     try {
       await updateExpense(uid, id, payload);
+      invalidateExpenseAiHistoryCache();
       bootstrap.Offcanvas.getOrCreateInstance(byId("editExpenseModal"))?.hide();
       showToast(t("toast.expenseUpdated", "Äã cáº­p nháº­t khoáº£n chi."), "success");
       await refreshAfterTransaction(uid);
@@ -2624,8 +3459,8 @@ function renderGoalAiSuggestions() {
 
   if (!options.length) {
     root.innerHTML = `<div class="ai-suggestion-empty">${t(
-      "ai.goalCopilot.empty",
-      "Bấm AI gợi ý để nhận bộ mục tiêu cá nhân và mục tiêu tuần có thể áp dụng ngay."
+      "goals.ai.empty",
+      "Bấm AI gợi ý để nhận vài mục tiêu phù hợp và áp dụng trực tiếp vào form."
     )}</div>`;
     return;
   }
@@ -2633,27 +3468,29 @@ function renderGoalAiSuggestions() {
   root.innerHTML = options
     .map((item, index) => {
       const goal = item?.goal || {};
-      const habit = item?.habit || {};
-      const weeklyPlan = item?.weeklyPlan || {};
-      const goalTitle = String(goal?.title || "").trim() || t("ai.goalCopilot.optionUntitled", "Mục tiêu chưa có tên");
-      const habitName = String(habit?.name || "").trim() || t("ai.goalCopilot.habitUntitled", "Thói quen chưa có tên");
+      const goalTitle =
+        String(goal?.title || "").trim() || t("ai.goalCopilot.optionUntitled", "Mục tiêu chưa có tên");
       const reason = String(item?.reason || "").trim();
-      const weeklyFocus = String(weeklyPlan?.focusTheme || "").trim();
-      const weeklyPriorities = Array.isArray(weeklyPlan?.topPriorities)
-        ? weeklyPlan.topPriorities.map((line) => String(line || "").trim()).filter(Boolean).slice(0, 3)
-        : [];
-      const weeklyCommitment = String(weeklyPlan?.actionCommitments || "").trim();
+      const periodLabel = {
+        day: "Ngày",
+        week: "Tuần",
+        month: "Tháng",
+      }[String(goal?.period || "month")] || "Tháng";
+      const priorityLabel = {
+        low: "thấp",
+        medium: "vừa",
+        high: "cao",
+      }[String(goal?.priority || "medium")] || "vừa";
       const safeGoalTitle = escapeHtml(goalTitle);
-      const safeHabitName = escapeHtml(habitName);
       const safeReason = multilineToHtml(reason);
-      const safePeriod = escapeHtml(String(goal?.period || "month"));
-      const safeWeeklyFocus = escapeHtml(weeklyFocus || t("ai.goalCopilot.weeklyFocusFallback", "Chưa có trọng tâm tuần"));
-      const safeWeeklyPriorities = weeklyPriorities.length
-        ? weeklyPriorities.map((line) => `<li>${escapeHtml(line)}</li>`).join("")
-        : `<li>${escapeHtml(t("ai.goalCopilot.weeklyPriorityFallback", "AI chưa gợi ý mục tiêu tuần cụ thể."))}</li>`;
-      const safeWeeklyCommitment = escapeHtml(
-        weeklyCommitment || t("ai.goalCopilot.weeklyCommitFallback", "Bổ sung cam kết hành động trước khi lưu.")
-      );
+      const safePeriod = escapeHtml(periodLabel);
+      const safeTarget = Number(goal?.targetValue || 1);
+      const safeUnit = escapeHtml(String(goal?.unit || "lần").trim() || "lần");
+      const safePriority = escapeHtml(priorityLabel);
+      const safeDueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(goal?.dueDate || "").trim())
+        ? escapeHtml(String(goal?.dueDate || "").trim())
+        : "";
+
       return `
         <article class="ai-suggestion-card">
           <div class="ai-suggestion-index">${t("ai.goalCopilot.optionIndex", "Phương án {{index}}").replace(
@@ -2664,23 +3501,13 @@ function renderGoalAiSuggestions() {
             <strong>${safeGoalTitle}</strong>
             <span class="badge text-bg-light">${safePeriod}</span>
           </div>
-          <div class="small mt-1">${t("ai.goalCopilot.habitLabel", "Thói quen đi kèm")}: ${safeHabitName}</div>
-          <div class="mt-2">
-            <div class="ai-suggestion-block-title">${t("ai.goalCopilot.weeklyFocusLabel", "Trọng tâm tuần")}</div>
-            <div class="ai-suggestion-content">${safeWeeklyFocus}</div>
+          <div class="small mt-2 text-muted">
+            ${safeTarget} ${safeUnit} • Ưu tiên ${safePriority}${safeDueDate ? ` • Hạn ${safeDueDate}` : ""}
           </div>
-          <div class="mt-2">
-            <div class="ai-suggestion-block-title">${t("ai.goalCopilot.weeklyPriorityLabel", "3 mục tiêu tuần")}</div>
-            <ul class="small mb-0 ps-3">${safeWeeklyPriorities}</ul>
-          </div>
-          <div class="mt-2">
-            <div class="ai-suggestion-block-title">${t("ai.goalCopilot.weeklyCommitLabel", "Cam kết hành động")}</div>
-            <div class="ai-suggestion-content">${safeWeeklyCommitment}</div>
-          </div>
-          ${reason ? `<div class="small mt-1 text-muted">${safeReason}</div>` : ""}
+          ${reason ? `<div class="small mt-2 text-muted">${safeReason}</div>` : ""}
           <div class="mt-2">
             <button class="btn btn-sm btn-outline-primary btn-goal-ai-apply" data-index="${index}">
-              ${t("ai.common.apply", "Áp dụng toàn bộ")}
+              ${t("goals.ai.apply", "Áp dụng vào form")}
             </button>
           </div>
         </article>
@@ -2727,28 +3554,13 @@ function readGoalContextInput() {
       priority: byId("goalPriority")?.value || "medium",
       note: (byId("goalNote")?.value || "").trim(),
     },
-    habit: {
-      name: (byId("habitName")?.value || "").trim(),
-      period: byId("habitPeriod")?.value || "day",
-      targetCount: Number(byId("habitTarget")?.value || 1),
-    },
-    weeklyPlan: {
-      focusTheme: (byId("weeklyFocusTheme")?.value || "").trim(),
-      topPriorities: [
-        (byId("weeklyGoal1")?.value || "").trim(),
-        (byId("weeklyGoal2")?.value || "").trim(),
-        (byId("weeklyGoal3")?.value || "").trim(),
-      ].filter(Boolean),
-      actionCommitments: (byId("weeklyActionPlan")?.value || "").trim(),
-      weekKey: String(state.weeklyGoals?.weekKey || getCurrentGoalsWeekKey()).trim(),
-    },
+    habit: {},
+    weeklyPlan: {},
   };
 }
 
 function applyGoalBundle(option = {}) {
   const goal = option?.goal || {};
-  const habit = option?.habit || {};
-  const weeklyPlan = option?.weeklyPlan || {};
   setInputValue("goalTitle", String(goal?.title || "").trim());
   setInputValue("goalArea", String(goal?.area || "ca-nhan"));
   setInputValue("goalPeriod", String(goal?.period || "month"));
@@ -2759,23 +3571,7 @@ function applyGoalBundle(option = {}) {
   }
   setInputValue("goalPriority", String(goal?.priority || "medium"));
   setInputValue("goalNote", String(goal?.note || "").trim());
-
-  setInputValue("habitName", String(habit?.name || "").trim());
-  setInputValue("habitPeriod", String(habit?.period || "day"));
-  setInputValue("habitTarget", String(Number(habit?.targetCount || 1)));
-
-  const topPriorities = Array.isArray(weeklyPlan?.topPriorities)
-    ? weeklyPlan.topPriorities.map((line) => String(line || "").trim()).filter(Boolean)
-    : [];
-  setInputValue("weeklyFocusTheme", String(weeklyPlan?.focusTheme || "").trim());
-  setInputValue("weeklyGoal1", String(topPriorities[0] || ""));
-  setInputValue("weeklyGoal2", String(topPriorities[1] || ""));
-  setInputValue("weeklyGoal3", String(topPriorities[2] || ""));
-  setInputValue("weeklyActionPlan", String(weeklyPlan?.actionCommitments || "").trim());
-  const weeklyStatus = byId("goalsWeeklyStatus");
-  if (weeklyStatus) {
-    weeklyStatus.textContent = t("goals.weekly.unsaved", "Bạn đang có thay đổi chưa lưu cho mục tiêu tuần");
-  }
+  openGoalComposerPanel();
 }
 
 async function handleGoalAiAction(mode = "generate") {
@@ -2811,7 +3607,7 @@ async function handleGoalAiAction(mode = "generate") {
 
     state.goalAi.options = Array.isArray(res?.options) ? res.options.slice(0, 3) : [];
     renderGoalAiSuggestions();
-    showToast(t("toast.goalAiReady", "AI ?ã táº¡o 3 phÆ°Æ¡ng án má»¥c tiêu cá nhân và má»¥c tiêu tuáº§n."), "success");
+    showToast(t("toast.goalAiReady", "AI đã tạo 3 gợi ý mục tiêu."), "success");
   } catch (err) {
     console.error("handleGoalAiAction error", err);
     state.goalAi.options = [];
@@ -2850,11 +3646,6 @@ async function bindDashboardEvents() {
         location.hash = "#video-plan";
       }
     },
-    onOpenClasses: () => {
-      if (location.hash !== "#classes") {
-        location.hash = "#classes";
-      }
-    },
   });
 
   window.addEventListener("nexus:balances-updated", (event) => {
@@ -2883,357 +3674,18 @@ async function bindWeeklyReviewModule() {
   });
 }
 
-async function bindClassesModule() {
-  if (bindState.classes) return;
-  const module = await ensureClassesModule();
-  if (!module?.bindClassesEvents) return;
-
-  bindState.classes = true;
-  module.bindClassesEvents({
-    onChangeMode: async (mode) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      state.classesMode = persistClassesMode(mode);
-      state.classSelectedSessionId = "";
-      state.classRandomResult = null;
-      state.classRandomHistory = [];
-      await loadClasses(uid, { preserveSelection: false });
-    },
-    onChangeListTab: async (listTab) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      state.classesListTab = persistClassesListTab(listTab);
-      state.classSelectedId = "";
-      state.classSelectedSessionId = "";
-      await loadClasses(uid, { preserveSelection: false });
-    },
-    onResetClassForm: async () => {
-      state.classSelectedId = "";
-      state.classSelectedSessionId = "";
-      state.classStudents = [];
-      state.classSessions = [];
-      const uid = ensureUser();
-      if (!uid) {
-        await renderClassesPage();
-        return;
-      }
-      await loadClasses(uid, { preserveSelection: false });
-    },
-    onSelectPresentationClass: async (classId) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      state.classesMode = persistClassesMode("presentation");
-      state.classPresentationId = persistPresentationClass(classId);
-      state.classRandomResult = null;
-      state.classRandomHistory = [];
-      await loadClasses(uid, {
-        forceClassId: classId,
-        preserveSelection: false,
-      });
-    },
-    onSelectClass: async (classId) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      await loadClasses(uid, {
-        forceClassId: classId,
-        preserveSelection: false,
-      });
-    },
-    onSelectSession: async (sessionId) => {
-      state.classSelectedSessionId = String(sessionId || "").trim();
-      await renderClassesPage();
-    },
-    onAddClass: async (payload = {}) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      try {
-        const slots = module.parseClassSlotsInput(payload?.slotsText || "");
-        const created = await module.createClassWithSessions(uid, {
-          code: payload?.code,
-          title: payload?.title,
-          startDate: payload?.startDate,
-          slots,
-          description: payload?.description || "",
-          status: payload?.status || "active",
-        });
-        showToast(t("toast.classAdded", "? to lp mi."), "success");
-        state.classesListTab = persistClassesListTab("active");
-        await loadClasses(uid, {
-          forceClassId: String(created?.id || ""),
-          preserveSelection: false,
-          listTab: "active",
-        });
-      } catch (err) {
-        console.error("add class error", err);
-        showToast(err?.message || t("toast.classCreateFail", "Khng th to lp hc"), "error");
-      }
-    },
-    onSaveClass: async (payload = {}) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(payload?.classId || state.classSelectedId || "").trim();
-      if (!classId) {
-        showToast(t("toast.classUpdateFail", "Khng th cp nht lp hc"), "error");
-        return;
-      }
-
-      try {
-        const slots = module.parseClassSlotsInput(payload?.slotsText || "");
-        await module.updateClassInfo(uid, classId, {
-          code: payload?.code,
-          title: payload?.title,
-          startDate: payload?.startDate,
-          slots,
-          description: payload?.description || "",
-          status: payload?.status || "active",
-        });
-        showToast(t("toast.classUpdated", "? cp nht lp hc."), "success");
-        const nextTab = String(payload?.status || "").trim() === "completed" ? "completed" : state.classesListTab;
-        await loadClasses(uid, {
-          forceClassId: classId,
-          preserveSelection: true,
-          listTab: nextTab,
-        });
-      } catch (err) {
-        console.error("save class error", err);
-        showToast(err?.message || t("toast.classUpdateFail", "Khng th cp nht lp hc"), "error");
-      }
-    },
-    onDeleteClass: async (payload = {}) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(payload?.classId || state.classSelectedId || "").trim();
-      if (!classId) return;
-      openConfirmDelete("class", classId);
-    },
-    onReopenClass: async () => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(state.classSelectedId || "").trim();
-      if (!classId) return;
-
-      try {
-        await module.reopenCompletedClass(uid, classId);
-        state.classesListTab = persistClassesListTab("active");
-        showToast(t("toast.classReopened", "? m li lp hc."), "success");
-        await loadClasses(uid, {
-          forceClassId: classId,
-          preserveSelection: false,
-          listTab: "active",
-        });
-      } catch (err) {
-        console.error("reopen class error", err);
-        showToast(err?.message || t("toast.classReopenFail", "Khng th m li lp hc"), "error");
-      }
-    },
-    onAddStudent: async ({ name } = {}) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(state.classSelectedId || "").trim();
-      if (!classId) {
-        showToast(t("classes.selectClassFirst", "Vui lng chn lp trc khi thm hc sinh."), "info");
-        return;
-      }
-
-      try {
-        await module.addStudentToClass(uid, classId, {
-          name: String(name || "").trim(),
-          joinedFromSessionNo: resolveNextSessionNoForStudent(),
-        });
-        const input = byId("classStudentName");
-        if (input) input.value = "";
-        showToast(t("toast.classStudentAdded", "? thm hc sinh vo lp."), "success");
-        await loadClasses(uid, {
-          forceClassId: classId,
-          preserveSelection: true,
-        });
-      } catch (err) {
-        console.error("add student error", err);
-        showToast(err?.message || t("toast.classStudentAddFail", "Khng th thm hc sinh"), "error");
-      }
-    },
-    onRemoveStudent: async (studentId) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(state.classSelectedId || "").trim();
-      const sid = String(studentId || "").trim();
-      if (!classId || !sid) return;
-
-      try {
-        await module.deactivateStudentFromNextSession(uid, classId, sid, resolveNextSessionNoForStudent());
-        showToast(t("toast.classStudentRemoved", "? cp nht trng thi hc sinh t bui k."), "success");
-        await loadClasses(uid, {
-          forceClassId: classId,
-          preserveSelection: true,
-        });
-      } catch (err) {
-        console.error("remove student error", err);
-        showToast(err?.message || t("toast.classStudentUpdateFail", "Khng th cp nht hc sinh"), "error");
-      }
-    },
-    onReactivateStudent: async (studentId) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(state.classSelectedId || "").trim();
-      const sid = String(studentId || "").trim();
-      if (!classId || !sid) return;
-
-      try {
-        await module.reactivateStudent(uid, classId, sid, resolveNextSessionNoForStudent());
-        showToast(t("toast.classStudentReactivated", "? kch hot li hc sinh t bui k."), "success");
-        await loadClasses(uid, {
-          forceClassId: classId,
-          preserveSelection: true,
-        });
-      } catch (err) {
-        console.error("reactivate student error", err);
-        showToast(err?.message || t("toast.classStudentUpdateFail", "Khng th cp nht hc sinh"), "error");
-      }
-    },
-    onSaveSession: async (payload = {}) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(state.classSelectedId || "").trim();
-      const sessionId = String(payload?.sessionId || state.classSelectedSessionId || "").trim();
-      if (!classId || !sessionId) {
-        showToast(t("toast.classSessionSaveFail", "Khng th lu bui hc"), "error");
-        return;
-      }
-
-      try {
-        await module.saveClassSessionData(uid, classId, sessionId, {
-          status: payload?.status,
-          teachingPlan: payload?.teachingPlan,
-          teachingResultNote: payload?.teachingResultNote,
-          reviews: payload?.reviews || {},
-        });
-        showToast(t("toast.classSessionSaved", "? lu ghi ch v nhn xt bui hc."), "success");
-        await loadClasses(uid, {
-          forceClassId: classId,
-          preserveSelection: true,
-        });
-      } catch (err) {
-        console.error("save class session error", err);
-        showToast(err?.message || t("toast.classSessionSaveFail", "Khng th lu bui hc"), "error");
-      }
-    },
-    onShiftSessionNextWeek: async (payload = {}) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(state.classSelectedId || "").trim();
-      const sessionId = String(payload?.sessionId || state.classSelectedSessionId || "").trim();
-      if (!classId || !sessionId) {
-        showToast(t("toast.classSessionShiftFail", "Khng th di bui hc"), "error");
-        return;
-      }
-
-      try {
-        await module.shiftSessionToNextWeek(uid, classId, sessionId, payload?.rescheduleReason || "");
-        showToast(t("toast.classSessionShifted", "? di bui hc v cp nht lch chui k tip."), "success");
-        await loadClasses(uid, {
-          forceClassId: classId,
-          preserveSelection: true,
-        });
-      } catch (err) {
-        console.error("shift class session error", err);
-        showToast(err?.message || t("toast.classSessionShiftFail", "Khng th di bui hc"), "error");
-      }
-    },
-    onAwardStar: async (studentId) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(state.classSelectedId || "").trim();
-      const sid = String(studentId || "").trim();
-      if (!classId || !sid) return;
-
-      try {
-        await module.awardStarToStudent(uid, classId, sid, 1);
-        showToast(t("toast.classStarAwarded", "Đã cộng 1⭐ cho học sinh."), "success");
-        await loadClasses(uid, {
-          forceClassId: classId,
-          preserveSelection: true,
-        });
-      } catch (err) {
-        console.error("award student star error", err);
-        showToast(err?.message || t("toast.classStarAwardFail", "Không thể cộng sao cho học sinh."), "error");
-      }
-    },
-    onRedeemStars: async (studentId) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(state.classSelectedId || "").trim();
-      const sid = String(studentId || "").trim();
-      if (!classId || !sid) return;
-
-      try {
-        await module.redeemStarsForStudent(uid, classId, sid, 5);
-        showToast(t("toast.classStarsRedeemed", "Đã quy đổi sao thành điểm và reset sao."), "success");
-        await loadClasses(uid, {
-          forceClassId: classId,
-          preserveSelection: true,
-        });
-      } catch (err) {
-        console.error("redeem student stars error", err);
-        showToast(
-          err?.message || t("toast.classStarsRedeemFail", "Không thể quy đổi sao thành điểm."),
-          "error"
-        );
-      }
-    },
-    onUpdateStudentPickPercent: async (studentId, pickPercent) => {
-      const uid = ensureUser();
-      if (!uid) return;
-      const classId = String(state.classSelectedId || "").trim();
-      const sid = String(studentId || "").trim();
-      if (!classId || !sid) return;
-
-      try {
-        await module.updateStudentPickPercentValue(uid, classId, sid, normalizePickPercentInput(pickPercent));
-        state.classStudents = state.classStudents.map((item) =>
-          String(item?.id || "") === sid
-            ? { ...item, pickPercent: normalizePickPercentInput(pickPercent) }
-            : item
-        );
-        await renderClassesPage();
-      } catch (err) {
-        console.error("update student pick percent error", err);
-        showToast(
-          err?.message || t("toast.classPickPercentSaveFail", "Không thể cập nhật % random học sinh."),
-          "error"
-        );
-      }
-    },
-    onRandomPick: async () => {
-      const result = module.pickRandomStudentByPercent(state.classStudents || []);
-      if (!result?.student) {
-        showToast(t("toast.classRandomEmpty", "Lớp hiện không có học sinh đang hoạt động để random."), "info");
-        return;
-      }
-
-      const now = new Date();
-      const name = String(result.student?.name || "").trim();
-      state.classRandomResult = {
-        studentId: String(result.student?.id || "").trim(),
-        name,
-        at: now.toISOString(),
-        atLabel: now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
-      };
-      state.classRandomHistory = [state.classRandomResult, ...(state.classRandomHistory || [])].slice(0, 5);
-      await renderClassesPage();
-      showToast(
-        formatTemplate(t("toast.classRandomPicked", "Đã random: {{name}}"), { name }),
-        "success"
-      );
-    },
-  });
-}
-
 function bindRouteSyncEvents() {
   if (bindState.routeSync) return;
   bindState.routeSync = true;
+  let previousRouteId = currentRouteId();
 
   const handleRouteChange = (forcedRouteId = "") => {
     const routeId = String(forcedRouteId || currentRouteId()).trim() || "dashboard";
+    if (previousRouteId === "classes" && routeId !== "classes") {
+      stopPresentationTimer();
+      void flushPresentationPointQueue({ force: true });
+    }
+    previousRouteId = routeId;
     void preloadRouteModule(routeId);
 
     if (routeId === "video-plan") {
@@ -3248,15 +3700,23 @@ function bindRouteSyncEvents() {
     const uid = state.currentUser?.uid;
     if (!uid) return;
 
+    if (routeId === "classes") {
+      void bindClassesModule().then(() =>
+        loadClasses(uid, {
+          classId: state.classSelectedId || state.presentationClassId || "",
+          sessionId: state.classSelectedSessionId || "",
+          syncPresentationClass: false,
+        })
+      );
+      syncClassesPresentationShell();
+      return;
+    }
+
+    syncClassesPresentationShell();
+
     if (routeId === "dashboard") {
       void bindDashboardEvents().then(() => {
         renderDashboardCenter();
-      });
-    }
-
-    if (routeId === "classes") {
-      void bindClassesModule().then(() => {
-        void loadClasses(uid, { preserveSelection: true });
       });
     }
 
@@ -3277,12 +3737,82 @@ function bindRouteSyncEvents() {
   window.addEventListener("nexus:route-changed", (event) => {
     handleRouteChange(event?.detail?.routeId);
   });
+
+  window.addEventListener("beforeunload", () => {
+    void flushPresentationPointQueue({ force: true });
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      void flushPresentationPointQueue({ force: true });
+    }
+  });
 }
 
 function bindGoalEvents() {
   renderGoalAiSuggestions();
   setGoalAiButtonsState();
-  renderWeeklyGoalsPanel();
+  renderGoalsRoute();
+
+  const handleGoalAction = async (row, btn) => {
+    if (!btn || !row?.dataset?.id) return;
+
+    const uid = ensureUser();
+    if (!uid) return;
+
+    const goalId = row.dataset.id;
+    const goal = state.goals.find((item) => item.id === goalId);
+    if (!goal) return;
+
+    try {
+      if (btn.classList.contains("btn-goal-save")) {
+        const current = row.querySelector(".goal-current-input")?.value;
+        await saveGoalProgress(uid, goal.id, current, goal.targetValue);
+        showToast(t("toast.goalProgressUpdated", "Đã cập nhật tiến độ mục tiêu."), "success");
+      } else if (btn.classList.contains("btn-goal-done")) {
+        await markGoalDone(uid, goal.id);
+        showToast(t("toast.goalDoneXp", "Đã hoàn thành mục tiêu."), "success");
+      } else if (btn.classList.contains("btn-goal-del")) {
+        await removeGoal(uid, goal.id);
+        showToast(t("toast.goalDeleted", "Đã xóa mục tiêu."), "success");
+      } else {
+        return;
+      }
+
+      await refreshGoalsAndMotivation(uid);
+    } catch (err) {
+      console.error("goal action error", err);
+      showToast(err?.message || t("toast.goalUpdateFail", "Không thể cập nhật mục tiêu"), "error");
+    }
+  };
+
+  byId("btnOpenGoalComposer")?.addEventListener("click", openGoalComposerPanel);
+  byId("btnOpenGoalAdvanced")?.addEventListener("click", openGoalAdvancedPanel);
+
+  byId("goalsEmptyState")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-goal-open-composer]");
+    if (!btn) return;
+    openGoalComposerPanel();
+  });
+
+  byId("goalsSupportHabits")?.addEventListener("click", async (e) => {
+    const advancedBtn = e.target.closest("[data-goal-open-advanced]");
+    if (advancedBtn) {
+      openGoalAdvancedPanel();
+      return;
+    }
+
+    const btn = e.target.closest(".btn-habit-focus-checkin");
+    const habitId = btn?.dataset?.id;
+    if (!habitId) return;
+
+    try {
+      await handleHabitCheckInAction(habitId);
+    } catch (err) {
+      console.error("goals support habit check-in error", err);
+      showToast(err?.message || t("toast.habitUpdateFail", "Không thể cập nhật thói quen"), "error");
+    }
+  });
 
   byId("btnGoalAiGenerate")?.addEventListener("click", () => {
     void handleGoalAiAction("generate");
@@ -3301,7 +3831,7 @@ function bindGoalEvents() {
     if (!option) return;
 
     applyGoalBundle(option);
-    showToast(t("toast.goalAiApplied", "Äã áp dá»¥ng gá»£i ý AI vào form má»¥c tiêu và má»¥c tiêu tuáº§n."), "success");
+    showToast(t("toast.goalAiApplied", "Đã áp dụng gợi ý AI vào form mục tiêu."), "success");
     await saveAppliedAiSuggestionSafe({
       type: "goal-bundle",
       mode: state.goalAi.mode || "generate",
@@ -3333,11 +3863,11 @@ function bindGoalEvents() {
         status: "saved",
         savedAt: new Date(),
       });
-      showToast(t("toast.weeklyGoalsSaved", "Äã lÆ°u má»¥c tiêu tuáº§n."), "success");
+      showToast(t("toast.weeklyGoalsSaved", "Đã lưu mục tiêu tuần."), "success");
     } catch (err) {
       console.error("save weekly goals error", err);
       setWeeklyGoalsSaveState({ status: "error" });
-      showToast(err?.message || t("toast.weeklyGoalsSaveFail", "Không thá»’ lÆ°u má»¥c tiêu tuáº§n."), "error");
+      showToast(err?.message || t("toast.weeklyGoalsSaveFail", "Không thể lưu mục tiêu tuần."), "error");
     }
   });
 
@@ -3360,7 +3890,7 @@ function bindGoalEvents() {
       period: byId("goalPeriod")?.value || "month",
       targetValue: Number(byId("goalTarget")?.value || 0),
       currentValue: 0,
-      unit: (byId("goalUnit")?.value || "láº§n").trim(),
+      unit: (byId("goalUnit")?.value || "lần").trim(),
       dueDate: byId("goalDueDate")?.value || null,
       status: "active",
       priority: byId("goalPriority")?.value || "medium",
@@ -3369,17 +3899,14 @@ function bindGoalEvents() {
 
     try {
       await createGoal(uid, payload);
-      ["goalTitle", "goalNote"].forEach((id) => {
-        const el = byId(id);
-        if (el) el.value = "";
-      });
-      setInputValue("goalTarget", "1");
+      resetGoalComposerForm();
+      closeGoalComposerPanel();
 
-      showToast(t("toast.goalAdded", "Äã táº¡o má»¥c tiêu m:i."), "success");
+      showToast(t("toast.goalAdded", "Đã tạo mục tiêu mới."), "success");
       await refreshGoalsAndMotivation(uid);
     } catch (err) {
       console.error("createGoal error", err);
-      showToast(err?.message || t("toast.goalCreateFail", "Không thá»’ táº¡o má»¥c tiêu"), "error");
+      showToast(err?.message || t("toast.goalCreateFail", "Không thể tạo mục tiêu"), "error");
     }
   });
 
@@ -3399,61 +3926,33 @@ function bindGoalEvents() {
       setInputValue("habitName", "");
       setInputValue("habitTarget", "1");
 
-      showToast(t("toast.habitAdded", "Äã táº¡o thói quen m:i."), "success");
+      showToast(t("toast.habitAdded", "Đã tạo thói quen mới."), "success");
       await refreshGoalsAndMotivation(uid);
     } catch (err) {
       console.error("createHabit error", err);
-      showToast(err?.message || t("toast.habitCreateFail", "Không thá»’ táº¡o thói quen"), "error");
+      showToast(err?.message || t("toast.habitCreateFail", "Không thể tạo thói quen"), "error");
     }
   });
 
-  byId("goalsTableBody")?.addEventListener("click", async (e) => {
+  byId("goalsActiveTableBody")?.addEventListener("click", async (e) => {
     const btn = e.target.closest("button");
     const row = e.target.closest("tr");
-    if (!btn || !row?.dataset?.id) return;
-
-    const uid = ensureUser();
-    if (!uid) return;
-
-    const goalId = row.dataset.id;
-    const goal = state.goals.find((item) => item.id === goalId);
-    if (!goal) return;
-
-    try {
-      if (btn.classList.contains("btn-goal-save")) {
-        const current = row.querySelector(".goal-current-input")?.value;
-        await saveGoalProgress(uid, goal.id, current, goal.targetValue);
-        showToast(t("toast.goalProgressUpdated", "Äã cáº­p nháº­t tiáº¿n ? má»¥c tiêu."), "success");
-      }
-
-      if (btn.classList.contains("btn-goal-done")) {
-        await markGoalDone(uid, goal.id);
-        showToast(t("toast.goalDoneXp", "Äã hoàn thành má»¥c tiêu."), "success");
-      }
-
-      if (btn.classList.contains("btn-goal-del")) {
-        await removeGoal(uid, goal.id);
-        showToast(t("toast.goalDeleted", "Äã xóa má»¥c tiêu."), "success");
-      }
-
-      await refreshGoalsAndMotivation(uid);
-    } catch (err) {
-      console.error("goal action error", err);
-      showToast(err?.message || t("toast.goalUpdateFail", "Không thá»’ cáº­p nháº­t má»¥c tiêu"), "error");
-    }
+    await handleGoalAction(row, btn);
   });
 
-  byId("goalsDailyFocus")?.addEventListener("click", async (e) => {
-    const btn = e.target.closest(".btn-habit-focus-checkin");
-    const habitId = btn?.dataset?.id;
-    if (!habitId) return;
+  byId("goalsCompletedTableBody")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    const row = e.target.closest("tr");
+    await handleGoalAction(row, btn);
+  });
 
-    try {
-      await handleHabitCheckInAction(habitId);
-    } catch (err) {
-      console.error("goals focus check-in error", err);
-      showToast(err?.message || t("toast.habitUpdateFail", "Không thá»’ cáº­p nháº­t thói quen"), "error");
-    }
+  byId("goalsActiveTableBody")?.addEventListener("keydown", async (e) => {
+    const input = e.target.closest(".goal-current-input");
+    const row = e.target.closest("tr");
+    if (!input || !row || e.key !== "Enter") return;
+    e.preventDefault();
+    const btn = row.querySelector(".btn-goal-save");
+    await handleGoalAction(row, btn);
   });
 
   byId("habitsTableBody")?.addEventListener("click", async (e) => {
@@ -3476,14 +3975,653 @@ function bindGoalEvents() {
 
       if (btn.classList.contains("btn-habit-del")) {
         await removeHabit(uid, habit.id);
-        showToast(t("toast.habitDeleted", "Äã xóa thói quen."), "success");
+        showToast(t("toast.habitDeleted", "Đã xóa thói quen."), "success");
       }
 
       await refreshGoalsAndMotivation(uid);
     } catch (err) {
       console.error("habit action error", err);
-      showToast(err?.message || t("toast.habitUpdateFail", "Không thá»’ cáº­p nháº­t thói quen"), "error");
+      showToast(err?.message || t("toast.habitUpdateFail", "Không thể cập nhật thói quen"), "error");
     }
+  });
+}
+
+async function bindClassesModule() {
+  if (bindState.classes) return;
+  await ensureClassesModule();
+  if (typeof classesModule?.bindClassesEvents !== "function") return;
+
+  bindState.classes = true;
+  classesModule.bindClassesEvents({
+    onChangeMode: (mode) => {
+      const nextMode = normalizeClassesMode(mode);
+      if (state.classesMode === "presentation" && nextMode !== "presentation") {
+        void flushPresentationPointQueue({ force: true });
+        stopPresentationTimer();
+      }
+      state.classesMode = nextMode;
+      persistClassUiPref("mode", state.classesMode);
+      renderClassesRoute();
+    },
+    onExitPresentation: () => {
+      void flushPresentationPointQueue({ force: true });
+      stopPresentationTimer();
+      state.classesMode = "admin";
+      persistClassUiPref("mode", state.classesMode);
+      renderClassesRoute();
+    },
+    onChangeAdminTab: (tab) => {
+      state.classesAdminTab = normalizeClassesAdminTab(tab);
+      persistClassUiPref("adminTab", state.classesAdminTab);
+      renderClassesRoute();
+    },
+    onChangeSessionFilter: (filter) => {
+      state.classSessionFilter = normalizeClassSessionFilter(filter);
+      state.classSelectedSessionId = "";
+      persistClassUiPref("sessionFilter", state.classSessionFilter);
+      renderClassesRoute();
+    },
+    onCreateClass: async (payload = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      try {
+        const created = await classesModule.createClassFlow(uid, payload);
+        const createdId = String(created?.id || "").trim();
+        state.classSelectedId = createdId;
+        state.presentationClassId = createdId || state.presentationClassId;
+        state.classesAdminTab = "overview";
+        persistClassUiPref("adminTab", state.classesAdminTab);
+        persistClassUiPref("presentationClass", state.presentationClassId);
+        resetClassCreateForm();
+        await loadClasses(uid, { classId: createdId, syncPresentationClass: true });
+        showToast(t("toast.classAdded", "Đã tạo lớp mới."), "success");
+      } catch (err) {
+        console.error("create class error", err);
+        showToast(err?.message || t("toast.classCreateFail", "Không thể tạo lớp học"), "error");
+      }
+    },
+    onSaveClass: async (payload = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const classId = String(payload?.classId || state.classSelectedId || "").trim();
+      if (!classId) return;
+      try {
+        await classesModule.updateClassFlow(uid, classId, payload);
+        await loadClasses(uid, {
+          classId,
+          sessionId: state.classSelectedSessionId,
+          syncPresentationClass: false,
+        });
+        showToast(t("toast.classUpdated", "Đã cập nhật lớp học."), "success");
+      } catch (err) {
+        console.error("save class error", err);
+        showToast(err?.message || t("toast.classUpdateFail", "Không thể cập nhật lớp học"), "error");
+      }
+    },
+    onDeleteClass: async (classId = "") => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const id = String(classId || state.classSelectedId || "").trim();
+      if (!id) return;
+      const allowDelete = window.confirm(
+        t("classes.confirmDelete", "Bạn chắc chắn muốn xóa lớp học này cùng toàn bộ dữ liệu?")
+      );
+      if (!allowDelete) return;
+
+      try {
+        await classesModule.deleteClassFlow(uid, id);
+        if (state.classSelectedId === id) state.classSelectedId = "";
+        if (state.presentationClassId === id) state.presentationClassId = "";
+        await loadClasses(uid, { syncPresentationClass: true });
+        showToast(t("toast.classDeleted", "Đã xóa lớp học."), "success");
+      } catch (err) {
+        console.error("delete class error", err);
+        showToast(err?.message || t("toast.classDeleteFail", "Không thể xóa lớp học"), "error");
+      }
+    },
+    onSelectClass: async (classId = "") => {
+      const uid = ensureUser();
+      if (!uid) return;
+
+      const id = String(classId || "").trim();
+      if (!id) return;
+      state.classSelectedId = id;
+      state.classSelectedSessionId = "";
+      if (!state.presentationClassId) {
+        state.presentationClassId = id;
+        persistClassUiPref("presentationClass", state.presentationClassId);
+      }
+      await loadClasses(uid, { classId: id, syncPresentationClass: false });
+    },
+    onSelectSession: (sessionId = "") => {
+      state.classSelectedSessionId = String(sessionId || "").trim();
+      renderClassesRoute();
+    },
+    onAddStudent: async (payload = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const classId = String(state.classSelectedId || "").trim();
+      if (!classId) {
+        showToast(t("classes.selectClassFirst", "Vui lòng chọn lớp trước khi thêm học sinh."), "info");
+        return;
+      }
+      try {
+        await classesModule.addStudentFlow(uid, classId, payload);
+        setInputValue("classStudentName", "");
+        setInputValue("classStudentNote", "");
+        await loadClasses(uid, {
+          classId,
+          sessionId: state.classSelectedSessionId,
+          syncPresentationClass: false,
+        });
+        showToast(t("toast.classStudentAdded", "Đã thêm học sinh vào lớp."), "success");
+      } catch (err) {
+        console.error("add student error", err);
+        showToast(err?.message || t("toast.classStudentAddFail", "Không thể thêm học sinh"), "error");
+      }
+    },
+    onToggleStudent: async (studentId = "") => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const classId = String(state.classSelectedId || "").trim();
+      const sid = String(studentId || "").trim();
+      if (!classId || !sid) return;
+      const student = (Array.isArray(state.classStudents) ? state.classStudents : []).find(
+        (item) => String(item?.id || "").trim() === sid
+      );
+      if (!student) return;
+
+      try {
+        const nextStatus = String(student?.status || "active") === "inactive" ? "active" : "inactive";
+        await classesModule.updateStudentFlow(uid, classId, sid, { status: nextStatus });
+        await loadClasses(uid, {
+          classId,
+          sessionId: state.classSelectedSessionId,
+          syncPresentationClass: false,
+        });
+        showToast(
+          nextStatus === "active"
+            ? t("toast.classStudentReactivated", "Đã kích hoạt lại học sinh từ buổi kế.")
+            : t("toast.classStudentRemoved", "Đã cập nhật trạng thái học sinh từ buổi kế."),
+          "success"
+        );
+      } catch (err) {
+        console.error("toggle student error", err);
+        showToast(err?.message || t("toast.classStudentUpdateFail", "Không thể cập nhật học sinh"), "error");
+      }
+    },
+    onSaveSession: async (payload = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const classId = String(state.classSelectedId || "").trim();
+      const sessionId = String(payload?.sessionId || "").trim();
+      if (!classId || !sessionId) return;
+
+      try {
+        await classesModule.saveSessionFlow(uid, classId, sessionId, payload);
+        setInputValue("sessionRescheduleReason", "");
+        await loadClasses(uid, { classId, sessionId, syncPresentationClass: false });
+        showToast(t("toast.classSessionSaved", "Đã lưu ghi chú và nhận xét buổi học."), "success");
+      } catch (err) {
+        console.error("save session error", err);
+        showToast(err?.message || t("toast.classSessionSaveFail", "Không thể lưu buổi học"), "error");
+      }
+    },
+    onRescheduleSession: async ({ sessionId = "", reason = "" } = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const classId = String(state.classSelectedId || "").trim();
+      const sid = String(sessionId || "").trim();
+      if (!classId || !sid) return;
+      try {
+        await classesModule.rescheduleSessionFlow(uid, classId, sid, reason);
+        setInputValue("sessionRescheduleReason", "");
+        await loadClasses(uid, { classId, sessionId: sid, syncPresentationClass: false });
+        showToast(t("toast.classSessionShifted", "Đã dời buổi học và cập nhật lịch chuỗi kế tiếp."), "success");
+      } catch (err) {
+        console.error("reschedule session error", err);
+        showToast(err?.message || t("toast.classSessionShiftFail", "Không thể dời buổi học"), "error");
+      }
+    },
+    onSelectPresentationClass: async (classId = "") => {
+      const uid = ensureUser();
+      if (!uid) return;
+      const nextClassId = String(classId || "").trim();
+      const prevClassId = String(state.presentationClassId || "").trim();
+      if (!nextClassId) return;
+
+      if (prevClassId && prevClassId !== nextClassId) {
+        await flushPresentationPointQueue({ force: true });
+      }
+      stopPresentationTimer();
+      state.presentationClassId = nextClassId;
+      state.presentationSelectedSessionId = "";
+      persistClassUiPref("presentationClass", state.presentationClassId);
+
+      if (nextClassId !== state.classSelectedId) {
+        state.classSelectedId = nextClassId;
+        state.classSelectedSessionId = "";
+      }
+      await loadClasses(uid, { classId: nextClassId, syncPresentationClass: false });
+    },
+    onSelectPresentationSession: (sessionId = "") => {
+      const sid = String(sessionId || "").trim();
+      if (!sid) return;
+      if (sid !== String(state.presentationSelectedSessionId || "").trim()) {
+        stopPresentationTimer();
+      }
+      state.presentationSelectedSessionId = sid;
+      ensurePresentationGameState(sid);
+      renderClassesRoute();
+    },
+    onPresentationSearch: (query = "") => {
+      const sid = String(state.presentationSelectedSessionId || "").trim();
+      if (!sid) return;
+      const game = ensurePresentationGameState(sid);
+      game.studentQuery = String(query || "").trim();
+      renderClassesRoute();
+    },
+    onPresentationAttendance: async ({ studentId = "", next = "present" } = {}) => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const { classId, sessionId, session } = getPresentationContext();
+      if (!classId || !sessionId) return;
+      const sid = String(studentId || "").trim();
+      if (!sid) return;
+
+      const previousAttendance =
+        session?.attendance && typeof session.attendance === "object" ? { ...session.attendance } : {};
+      const applied = applyLocalAttendanceStatus(sessionId, sid, next);
+      if (!applied) return;
+      renderClassesRoute();
+
+      try {
+        const latestSession = (Array.isArray(state.classSessions) ? state.classSessions : []).find(
+          (item) => String(item?.id || "").trim() === sessionId
+        );
+        await classesModule.saveSessionFlow(uid, classId, sessionId, {
+          attendance:
+            latestSession?.attendance && typeof latestSession.attendance === "object"
+              ? latestSession.attendance
+              : {},
+          reviews:
+            latestSession?.reviews && typeof latestSession.reviews === "object"
+              ? latestSession.reviews
+              : {},
+        });
+      } catch (err) {
+        console.error("presentation attendance error", err);
+        applyLocalAttendanceStatus(sessionId, sid, previousAttendance[sid] || "present");
+        renderClassesRoute();
+        showToast(err?.message || t("toast.classSessionSaveFail", "Không thể lưu buổi học"), "error");
+      }
+    },
+    onPresentationAddPoint: ({ studentId = "", delta = 1 } = {}) => {
+      const { sessionId } = getPresentationContext();
+      if (!sessionId) return;
+      const sid = String(studentId || "").trim();
+      const safeDelta = Math.max(1, Math.trunc(Number(delta || 0)));
+      if (!sid || !safeDelta) return;
+      if (!queuePresentationPointDelta(sessionId, sid, safeDelta)) return;
+      playPresentationBeep("ok");
+      renderClassesRoute();
+    },
+    onPresentationSwitchGame: (gameId = "") => {
+      const sid = String(state.presentationSelectedSessionId || "").trim();
+      if (!sid) return;
+      const game = ensurePresentationGameState(sid);
+      game.activeGame = normalizePresentationGameMode(gameId);
+      renderClassesRoute();
+    },
+    onPresentationGameCandidate: ({ game = "", studentId = "", checked = false } = {}) => {
+      const sid = String(state.presentationSelectedSessionId || "").trim();
+      const studentKey = String(studentId || "").trim();
+      if (!sid || !studentKey) return;
+      const stateGame = ensurePresentationGameState(sid);
+      const mapKey =
+        game === "quiz" ? "quizWinnerIds" : game === "challenge" ? "challengeWinnerIds" : "timerWinnerIds";
+      const set = new Set(
+        (Array.isArray(stateGame[mapKey]) ? stateGame[mapKey] : [])
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      );
+      if (checked) set.add(studentKey);
+      else set.delete(studentKey);
+      stateGame[mapKey] = Array.from(set);
+      renderClassesRoute();
+    },
+    onPresentationQuizAnswer: (answer = "A") => {
+      const sid = String(state.presentationSelectedSessionId || "").trim();
+      if (!sid) return;
+      const game = ensurePresentationGameState(sid);
+      game.quizAnswer = String(answer || "A").trim() === "B" ? "B" : "A";
+      renderClassesRoute();
+    },
+    onPresentationRandom: () => {
+      const vm = buildClassesVmSnapshot();
+      const sessionId = String(vm?.presentation?.selectedSessionId || "").trim();
+      const candidates = Array.isArray(vm?.presentation?.randomCandidates)
+        ? vm.presentation.randomCandidates
+        : [];
+      if (!sessionId || !candidates.length) {
+        showToast(t("toast.classRandomEmpty", "Lớp hiện không có học sinh đi học để random."), "info");
+        return;
+      }
+      const game = ensurePresentationGameState(sessionId);
+      const picked = classesModule.pickRandomStudentNoImmediateRepeat(candidates, game.wheelLastPickedId);
+      const pickedId = String(picked?.studentId || picked?.id || "").trim();
+      if (!pickedId) {
+        showToast(t("toast.classRandomEmpty", "Lớp hiện không có học sinh đi học để random."), "info");
+        return;
+      }
+      game.activeGame = "wheel";
+      game.wheelLastPickedId = pickedId;
+      game.wheelResultText = `Vừa chọn: ${String(picked?.name || "").trim() || "Không rõ tên"}`;
+      appendPresentationRandomHistory(sessionId, picked);
+      state.presentationSelectedSessionId = sessionId;
+      playPresentationBeep("ok");
+      renderClassesRoute();
+    },
+    onPresentationClearRandomHistory: () => {
+      const sid = String(state.presentationSelectedSessionId || "").trim();
+      if (!sid) return;
+      const game = ensurePresentationGameState(sid);
+      game.wheelHistory = [];
+      game.wheelLastPickedId = "";
+      game.wheelResultText = "Chưa quay tên lần nào.";
+      renderClassesRoute();
+    },
+    onPresentationGameAction: ({ action = "", studentId = "", delta = 1 } = {}) => {
+      const vm = buildClassesVmSnapshot();
+      const classId = String(vm?.presentation?.selectedClassId || "").trim();
+      const sessionId = String(vm?.presentation?.selectedSessionId || "").trim();
+      if (!classId || !sessionId) return;
+
+      const game = ensurePresentationGameState(sessionId);
+      const candidates = Array.isArray(vm?.presentation?.randomCandidates)
+        ? vm.presentation.randomCandidates
+        : [];
+      const safeDelta = Math.max(1, Math.trunc(Number(delta || 0)));
+      const studentKey = String(studentId || "").trim();
+      const awardWinners = (winnerIds = [], amount = 1, meta = {}) => {
+        const uniqWinnerIds = Array.from(
+          new Set(
+            (Array.isArray(winnerIds) ? winnerIds : [])
+              .map((item) => String(item || "").trim())
+              .filter(Boolean)
+          )
+        );
+        if (!uniqWinnerIds.length) return false;
+        uniqWinnerIds.forEach((sid) => {
+          queuePresentationPointDelta(sessionId, sid, amount);
+        });
+        const entry = createPresentationGameHistoryEntry({
+          type: String(meta.type || "game").trim() || "game",
+          title: String(meta.title || "").trim(),
+          winnerIds: uniqWinnerIds,
+          pointsAwarded: amount * uniqWinnerIds.length,
+          meta: meta && typeof meta === "object" ? meta : {},
+        });
+        queuePresentationGameHistory(sessionId, entry);
+        playPresentationBeep("ok");
+        return true;
+      };
+
+      if (action === "wheel-random") {
+        const picked = classesModule.pickRandomStudentNoImmediateRepeat(candidates, game.wheelLastPickedId);
+        const pickedId = String(picked?.studentId || picked?.id || "").trim();
+        if (!pickedId) {
+          showToast(t("toast.classRandomEmpty", "Lớp hiện không có học sinh đi học để random."), "info");
+          return;
+        }
+        game.wheelLastPickedId = pickedId;
+        game.wheelResultText = `Vừa chọn: ${String(picked?.name || "").trim() || "Không rõ tên"}`;
+        appendPresentationRandomHistory(sessionId, picked);
+        playPresentationBeep("ok");
+        renderClassesRoute();
+        return;
+      }
+
+      if (action === "wheel-clear") {
+        game.wheelLastPickedId = "";
+        game.wheelResultText = "Chưa quay tên lần nào.";
+        renderClassesRoute();
+        return;
+      }
+
+      if (action === "wheel-award") {
+        if (!studentKey) return;
+        const ok = awardWinners([studentKey], safeDelta, {
+          type: "wheel",
+          title: "Vòng quay tên",
+        });
+        if (ok) renderClassesRoute();
+        return;
+      }
+
+      if (action === "duel-random") {
+        if (candidates.length < 2) {
+          showToast("Cần ít nhất 2 học sinh đi học để đấu nhanh 1v1.", "info");
+          return;
+        }
+        const pool = [...candidates];
+        const first = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+        const second = pool[Math.floor(Math.random() * pool.length)] || null;
+        const firstId = String(first?.studentId || first?.id || "").trim();
+        const secondId = String(second?.studentId || second?.id || "").trim();
+        if (!firstId || !secondId || firstId === secondId) return;
+        game.duelPairIds = [firstId, secondId];
+        renderClassesRoute();
+        return;
+      }
+
+      if (action === "duel-win") {
+        if (!studentKey) return;
+        const ok = awardWinners([studentKey], safeDelta, {
+          type: "duel",
+          title: "Đấu nhanh 1v1",
+          pair: Array.isArray(game.duelPairIds) ? game.duelPairIds : [],
+        });
+        if (ok) {
+          game.duelPairIds = [];
+          renderClassesRoute();
+        }
+        return;
+      }
+
+      if (action === "quiz-award") {
+        const winnerIds = Array.isArray(game.quizWinnerIds) ? game.quizWinnerIds : [];
+        if (!winnerIds.length) {
+          showToast("Hãy chọn học sinh trả lời đúng trước khi cộng điểm.", "info");
+          return;
+        }
+        const ok = awardWinners(winnerIds, safeDelta, {
+          type: "quiz",
+          title: `Quiz A/B - đáp án ${String(game.quizAnswer || "A")}`,
+        });
+        if (ok) {
+          game.quizWinnerIds = [];
+          renderClassesRoute();
+        }
+        return;
+      }
+
+      if (action === "challenge-random") {
+        if (!PRESENTATION_CHALLENGE_BANK.length) return;
+        const candidatesIndex = PRESENTATION_CHALLENGE_BANK.map((_, index) => index).filter(
+          (index) =>
+            PRESENTATION_CHALLENGE_BANK.length <= 1 || index !== Number(game.challengeIndex ?? -1)
+        );
+        const pool = candidatesIndex.length ? candidatesIndex : [0];
+        const pickedIndex = pool[Math.floor(Math.random() * pool.length)] ?? 0;
+        game.challengeIndex = pickedIndex;
+        game.challengeText = String(PRESENTATION_CHALLENGE_BANK[pickedIndex] || "").trim();
+        renderClassesRoute();
+        return;
+      }
+
+      if (action === "challenge-award") {
+        const winnerIds = Array.isArray(game.challengeWinnerIds) ? game.challengeWinnerIds : [];
+        if (!winnerIds.length) {
+          showToast("Hãy chọn học sinh hoàn thành thử thách.", "info");
+          return;
+        }
+        const ok = awardWinners(winnerIds, safeDelta, {
+          type: "challenge",
+          title: String(game.challengeText || "Thử thách nhanh").trim(),
+        });
+        if (ok) {
+          game.challengeWinnerIds = [];
+          renderClassesRoute();
+        }
+        return;
+      }
+
+      if (action === "timer-award") {
+        const winnerIds = Array.isArray(game.timerWinnerIds) ? game.timerWinnerIds : [];
+        if (!winnerIds.length) {
+          showToast("Hãy chọn học sinh/nhóm hoàn thành nhiệm vụ.", "info");
+          return;
+        }
+        const ok = awardWinners(winnerIds, safeDelta, {
+          type: "timer",
+          title: "Nhiệm vụ nhóm",
+          timerPresetSec: Number(game.timerPresetSec || 0),
+        });
+        if (ok) {
+          game.timerWinnerIds = [];
+          renderClassesRoute();
+        }
+      }
+    },
+    onPresentationToggleUsed: async (studentId = "") => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const { classId, sessionId } = getPresentationContext();
+      const sid = String(studentId || "").trim();
+      if (!classId || !sessionId || !sid) return;
+      const applied = applyLocalUsedToggle(sessionId, sid);
+      if (!applied) return;
+      renderClassesRoute();
+      try {
+        await classesModule.toggleSessionUsedFlow(uid, classId, sessionId, sid);
+      } catch (err) {
+        console.error("toggle used error", err);
+        applyLocalUsedToggle(sessionId, sid);
+        renderClassesRoute();
+        showToast(err?.message || t("toast.classSessionSaveFail", "Không thể lưu buổi học"), "error");
+      }
+    },
+    onPresentationResetUsed: async () => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const { classId, sessionId, session } = getPresentationContext();
+      if (!classId || !sessionId) return;
+      const backupUsed = Array.isArray(session?.usedStudentIds) ? [...session.usedStudentIds] : [];
+      resetLocalUsedStudents(sessionId);
+      renderClassesRoute();
+      try {
+        await classesModule.resetSessionUsedFlow(uid, classId, sessionId);
+      } catch (err) {
+        console.error("reset used error", err);
+        const latestSession = (Array.isArray(state.classSessions) ? state.classSessions : []).find(
+          (item) => String(item?.id || "").trim() === sessionId
+        );
+        if (latestSession) latestSession.usedStudentIds = backupUsed;
+        renderClassesRoute();
+        showToast(err?.message || t("toast.classSessionSaveFail", "Không thể lưu buổi học"), "error");
+      }
+    },
+    onPresentationResetPoints: async () => {
+      const uid = ensureUser();
+      if (!uid) return;
+      await ensureClassesModule();
+
+      const { classId, sessionId, session } = getPresentationContext();
+      if (!classId || !sessionId) return;
+      await flushPresentationPointQueue({ force: true });
+      const backupPoints =
+        session?.pointsByStudent && typeof session.pointsByStudent === "object"
+          ? { ...session.pointsByStudent }
+          : {};
+      const backupHighlights = Array.isArray(session?.highlightStudentIds)
+        ? [...session.highlightStudentIds]
+        : [];
+
+      delete state.presentationPointsDeltaBySession[sessionId];
+      delete state.presentationPendingGameHistoryBySession[sessionId];
+      resetLocalSessionPoints(sessionId);
+      recomputePresentationPendingOps();
+      renderClassesRoute();
+      try {
+        await classesModule.resetSessionPointsFlow(uid, classId, sessionId);
+      } catch (err) {
+        console.error("reset points error", err);
+        const latestSession = (Array.isArray(state.classSessions) ? state.classSessions : []).find(
+          (item) => String(item?.id || "").trim() === sessionId
+        );
+        if (latestSession) {
+          latestSession.pointsByStudent = backupPoints;
+          latestSession.highlightStudentIds = backupHighlights;
+        }
+        renderClassesRoute();
+        showToast(err?.message || t("toast.classSessionSaveFail", "Không thể lưu buổi học"), "error");
+      }
+    },
+    onPresentationToggleAudio: () => {
+      state.presentationAudioEnabled = !state.presentationAudioEnabled;
+      renderClassesRoute();
+    },
+    onPresentationTimerPreset: (seconds = "") => {
+      const sid = String(state.presentationSelectedSessionId || "").trim();
+      if (!sid) return;
+      const game = ensurePresentationGameState(sid);
+      const preset = normalizePresentationTimerPreset(seconds);
+      game.timerPresetSec = preset;
+      if (!game.timerRunning) {
+        game.timerRemainingSec = preset;
+      }
+      renderClassesRoute();
+    },
+    onPresentationTimerStart: () => {
+      startPresentationTimer();
+    },
+    onPresentationTimerPause: () => {
+      const sid = String(state.presentationSelectedSessionId || "").trim();
+      if (!sid) return;
+      const game = ensurePresentationGameState(sid);
+      game.timerRunning = false;
+      stopPresentationTimer();
+      renderClassesRoute();
+    },
+    onPresentationTimerReset: () => {
+      const sid = String(state.presentationSelectedSessionId || "").trim();
+      if (!sid) return;
+      const game = ensurePresentationGameState(sid);
+      stopPresentationTimer();
+      game.timerRemainingSec = normalizePresentationTimerPreset(game.timerPresetSec);
+      renderClassesRoute();
+    },
   });
 }
 
@@ -4090,9 +5228,6 @@ void preloadRouteModule(resolveWarmStartRoute());
 if (isWeeklyReviewRouteActive()) {
   void bindWeeklyReviewModule();
 }
-if (isClassesRouteActive()) {
-  void bindClassesModule();
-}
 startAuthWarmStart();
 
 byId("btnConfirmDelete")?.addEventListener("click", handleConfirmDelete);
@@ -4137,6 +5272,13 @@ watchAuth(async (user) => {
       await bindClassesModule();
     }
     await refreshAll(user.uid);
+    if (nextRoute === "classes") {
+      await loadClasses(user.uid, {
+        classId: state.classSelectedId || state.presentationClassId || "",
+        sessionId: state.classSelectedSessionId || "",
+        syncPresentationClass: false,
+      });
+    }
   } finally {
     setGlobalLoading(false);
   }

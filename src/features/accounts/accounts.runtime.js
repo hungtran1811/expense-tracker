@@ -6,8 +6,8 @@ export async function loadAccountsRuntime(uid, appState) {
   return appState.accounts;
 }
 
-export async function loadBalancesRuntime(uid, appState, onRendered) {
-  const balances = await refreshBalances(uid, appState.accounts);
+export async function loadBalancesRuntime(uid, appState, onRendered, options = {}) {
+  const balances = await refreshBalances(uid, appState.accounts, options);
   appState.accountBalances = Array.isArray(balances) ? balances : [];
   if (typeof onRendered === "function") onRendered();
   return appState.accountBalances;

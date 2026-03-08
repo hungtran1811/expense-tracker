@@ -7,9 +7,13 @@ function normalizeHistory(value) {
       name: String(item?.name || "").trim(),
       note: String(item?.note || "").trim(),
       category: String(item?.category || "").trim(),
+      appliedAt: item?.appliedAt || null,
+      source: String(item?.source || "").trim(),
+      mode: String(item?.mode || "").trim(),
+      weight: Number(item?.weight || 1),
     }))
     .filter((item) => item.name && item.category)
-    .slice(0, 40);
+    .slice(0, 120);
 }
 
 export async function suggestCategory({ name, note, categories, history }) {
@@ -27,11 +31,13 @@ export async function suggestCategory({ name, note, categories, history }) {
   const category = String(data?.category || "").trim();
   const confidence = Number(data?.confidence || 0);
   const reason = String(data?.reason || "").trim();
+  const matchType = String(data?.matchType || "").trim();
 
   return {
     category,
     confidence: Number.isFinite(confidence) ? confidence : 0,
     reason,
+    matchType,
     model: String(data?.model || "gemini-3-flash-latest"),
     promptVersion: String(data?.promptVersion || "2.7.0"),
   };

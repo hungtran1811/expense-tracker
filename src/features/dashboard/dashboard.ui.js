@@ -120,24 +120,51 @@ function renderAccountBalances(items = []) {
   );
 }
 
-function renderUpcomingClass(moduleData = {}) {
-  const summaryEl = document.getElementById("dashUpcomingClassSummary");
-  if (!summaryEl) return;
+function formatDateTimeVi(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "--/--/---- --:--";
+  const dateText = date.toLocaleDateString("vi-VN");
+  const timeText = date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  return `${dateText} ${timeText}`;
+}
 
-  const hasUpcoming = !!moduleData?.hasUpcoming;
-  if (!hasUpcoming) {
-    summaryEl.innerHTML = `<span class="text-muted">${escapeHtml(
-      safeText(moduleData?.empty, t("dashboard.classes.empty", "Chưa có buổi học nào sắp tới."))
-    )}</span>`;
+function renderUpcomingClasses(items = [], emptyText = "") {
+  if (!Array.isArray(items) || !items.length) {
+    setHtml(
+      "dashboardUpcomingClasses",
+      `<div class="text-muted small">${emptyText || t("dashboard.classes.empty", "Chưa có buổi học nào sắp tới.")}</div>`
+    );
     return;
   }
 
-  const title = escapeHtml(safeText(moduleData?.summary, "(Chưa có tên lớp)"));
-  const detail = escapeHtml(safeText(moduleData?.detail, ""));
-  summaryEl.innerHTML = `
-    <div class="dash-class-summary">${title}</div>
-    <div class="dash-class-detail text-muted">${detail}</div>
-  `;
+  setHtml(
+    "dashboardUpcomingClasses",
+    items
+      .map((item) => {
+        const classCode = escapeHtml(safeText(item?.code, "(Không mã lớp)"));
+        const classTitle = escapeHtml(safeText(item?.title, "(Chưa đặt tên lớp)"));
+        const sessionNo = Number(item?.nextSessionNo || 0);
+        const timeLabel = formatDateTimeVi(item?.nextScheduledAt);
+        const todayBadge = item?.isToday
+          ? `<span class="badge text-bg-success-subtle text-success-emphasis">Hôm nay</span>`
+          : "";
+
+        return `
+          <article class="dash-upcoming-class-item">
+            <div class="dash-upcoming-class-main">
+              <div class="dash-upcoming-class-head">
+                <strong>${classCode}</strong>
+                ${todayBadge}
+              </div>
+              <div class="small">${classTitle}</div>
+              <div class="small text-muted">Buổi ${sessionNo} • ${escapeHtml(timeLabel)}</div>
+            </div>
+            <a class="btn btn-sm btn-outline-primary" href="#classes">Mở lớp</a>
+          </article>
+        `;
+      })
+      .join("")
+  );
 }
 
 function renderReminderBadges(reminders = {}, windowHours = 72) {
@@ -295,21 +322,16 @@ export function renderDashboardCommandCenter(vm) {
   setText("dashHeroMeta", vm?.hero?.meta || "");
   setText("dashPriorityTitle", t("dashboard.priority.title", "Ưu tiên hôm nay"));
   setText("dashBalancesTitle", t("dashboard.modules.accounts.title", "Số dư tài khoản"));
-  setText("dashClassTitle", t("dashboard.classes.title", "Buổi học sắp tới"));
-  const classLink = document.querySelector("[data-dash-open-classes]");
-  if (classLink) classLink.textContent = t("dashboard.classes.open", "Mở lớp học");
-
   setText("dashHeroVideoCount", String(vm?.hero?.kpis?.openVideoTasks ?? 0));
   setText("dashHeroHabitCount", String(vm?.hero?.kpis?.remainingHabitTurns ?? 0));
   setText("dashHeroGoalCount", String(vm?.hero?.kpis?.activeGoals ?? 0));
 
-  setText("dashVideoPipelineSub", vm?.modules?.video?.subtitle || "");
-  setText("dashGoalsSub", vm?.modules?.goals?.subtitle || "");
+  setText("dashClassesTitle", t("dashboard.classes.title", "Buổi học sắp tới"));
+  setText("dashClassesSub", vm?.modules?.classes?.subtitle || "");
 
-  setText("dashVideoCountBadge", `${vm?.modules?.video?.count ?? 0}`);
-  setText("dashGoalsCountBadge", `${vm?.modules?.goals?.count ?? 0}`);
+  setText("dashClassesCountBadge", `${vm?.modules?.classes?.count ?? 0}`);
 
   renderPriorityList(vm?.priorityItems || []);
   renderAccountBalances(vm?.modules?.accounts?.items || []);
-  renderUpcomingClass(vm?.modules?.classes || {});
+  renderUpcomingClasses(vm?.modules?.classes?.items || [], vm?.modules?.classes?.emptyText || "");
 }

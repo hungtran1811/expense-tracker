@@ -3,7 +3,7 @@ import { PROFILE_VI } from "../../shared/constants/profile.vi.js";
 
 const MONTH_MODE = new Set(["current", "lastUsed"]);
 const UI_DENSITY = new Set(["comfortable", "compact"]);
-const START_ROUTE = new Set(["dashboard", "goals", "video-plan", "classes"]);
+const START_ROUTE = new Set(["dashboard", "classes"]);
 
 const DEFAULT_PROFILE = {
   displayName: PROFILE_VI.displayName || "Hưng Trần",

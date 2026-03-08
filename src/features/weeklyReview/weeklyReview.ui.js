@@ -1,8 +1,8 @@
 import { formatVND } from "../../shared/ui/core.js";
 import { t } from "../../shared/constants/copy.vi.js";
 
-let _eventsBound = false;
-let _handlers = {
+let eventsBound = false;
+let handlers = {
   onFilterChange: null,
 };
 
@@ -86,31 +86,17 @@ function renderFinanceSnapshot(snapshot = {}) {
   `;
 }
 
-function renderGoalsSnapshot(snapshot = {}) {
+function renderClassesSnapshot(snapshot = {}) {
   return `
     <div class="wr-metric-list">
-      ${row(t("weeklyReview.goals.active"), `${Number(snapshot?.activeGoals || 0)}`)}
-      ${row(t("weeklyReview.goals.done"), `${Number(snapshot?.doneGoals || 0)}`)}
+      ${row(t("weeklyReview.classes.active", "Lớp đang dạy"), `${Number(snapshot?.activeClasses || 0)}`)}
+      ${row(t("weeklyReview.classes.completed", "Lớp đã hoàn thành"), `${Number(snapshot?.completedClasses || 0)}`)}
       ${row(
-        t("weeklyReview.goals.habitsReached"),
-        `${Number(snapshot?.habitsReached || 0)}/${Number(snapshot?.habitsTotal || 0)}`
+        t("weeklyReview.classes.progress", "Tiến độ buổi đã dạy"),
+        `${Number(snapshot?.doneSessions || 0)}/${Number(snapshot?.totalSessions || 0)} (${Number(
+          snapshot?.progressRate || 0
+        )}%)`
       )}
-    </div>
-  `;
-}
-
-function renderVideoSnapshot(snapshot = {}) {
-  const periodMode = normalizePeriodMode(snapshot?.periodMode || "week");
-  const dueLabel =
-    periodMode === "month"
-      ? t("weeklyReview.video.dueMonth", "Công việc có hạn trong tháng")
-      : t("weeklyReview.video.dueWeek");
-
-  return `
-    <div class="wr-metric-list">
-      ${row(t("weeklyReview.video.open"), `${Number(snapshot?.open || 0)}`)}
-      ${row(dueLabel, `${Number(snapshot?.dueInWeek || 0)}`)}
-      ${row(t("weeklyReview.video.overdue"), `${Number(snapshot?.overdue || 0)}`)}
     </div>
   `;
 }
@@ -134,13 +120,11 @@ export function renderWeeklyReviewPage(vm) {
   const safeVm = vm || {};
 
   setText("wrHeaderTitle", t("weeklyReview.header.title"));
-  setText("wrHeaderSubtitle", t("weeklyReview.header.subtitle"));
   setText("wrPeriodModeLabel", t("weeklyReview.filters.modeLabel", "Bộ lọc"));
   setText("wrWeekInputLabel", t("weeklyReview.filters.weekLabel", "Tuần"));
   setText("wrMonthInputLabel", t("weeklyReview.filters.monthLabel", "Tháng"));
   setText("wrFinanceTitle", t("weeklyReview.cards.finance"));
-  setText("wrGoalsTitle", t("weeklyReview.cards.goals"));
-  setText("wrVideoTitle", t("weeklyReview.cards.video"));
+  setText("wrGoalsTitle", t("weeklyReview.cards.classes", "Lớp học"));
   setText("wrActionsTitle", t("weeklyReview.cards.actions", "Hành động ưu tiên"));
 
   const periodModeEl = byId("wrPeriodMode");
@@ -154,30 +138,29 @@ export function renderWeeklyReviewPage(vm) {
 
   setText("wrWeekLabel", safeVm?.weekLabel || t("weeklyReview.header.fallbackWeek"));
   setHtml("wrFinanceSnapshot", renderFinanceSnapshot(safeVm?.snapshot?.finance || {}));
-  setHtml("wrGoalsSnapshot", renderGoalsSnapshot(safeVm?.snapshot?.goals || {}));
-  setHtml("wrVideoSnapshot", renderVideoSnapshot(safeVm?.snapshot?.video || {}));
+  setHtml("wrGoalsSnapshot", renderClassesSnapshot(safeVm?.snapshot?.classes || {}));
   setHtml("wrReleaseStage", renderReleaseStage(safeVm?.releasePlan || {}));
   syncPeriodControls(safeVm);
 }
 
 export function bindWeeklyReviewEvents({ onFilterChange } = {}) {
-  _handlers = {
+  handlers = {
     onFilterChange: typeof onFilterChange === "function" ? onFilterChange : null,
   };
 
-  if (_eventsBound) return;
+  if (eventsBound) return;
 
   const root = byId("weekly-review");
   if (!root) return;
-  _eventsBound = true;
+  eventsBound = true;
 
   const emitFilterChange = () => {
-    if (typeof _handlers.onFilterChange !== "function") return;
+    if (typeof handlers.onFilterChange !== "function") return;
     const mode = normalizePeriodMode(byId("wrPeriodMode")?.value || "week");
     const weekKey = normalizeWeekInput(byId("wrWeekPicker")?.value || "");
     const monthKey = normalizeMonthInput(byId("wrMonthPicker")?.value || "");
     togglePeriodControls(mode);
-    _handlers.onFilterChange({ mode, weekKey, monthKey });
+    handlers.onFilterChange({ mode, weekKey, monthKey });
   };
 
   byId("wrPeriodMode")?.addEventListener("change", emitFilterChange);

@@ -37,11 +37,11 @@ export const copyVi = {
     },
     classes: {
       title: "Lớp học",
-      subtitle: "Quản lý lớp, học sinh và 14 buổi học cố định",
+      subtitle: "",
     },
     "weekly-review": {
       title: "Tổng kết tuần",
-      subtitle: "Nhìn lại tuần cũ và chuẩn bị lịch phát hành",
+      subtitle: "",
     },
     accounts: {
       title: "Tài khoản",
@@ -321,7 +321,7 @@ export const copyVi = {
   weeklyReview: {
     header: {
       title: "Tổng kết tuần",
-      subtitle: "Nghi thức review cuối tuần để ra quyết định nhanh cho tuần mới.",
+      subtitle: "",
       weekLabel: "Tuần {{weekKey}} • {{range}}",
       fallbackWeek: "Tuần hiện tại",
     },
@@ -409,7 +409,7 @@ export const copyVi = {
   },
   classes: {
     title: "Quản lý lớp học",
-    subtitle: "Theo dõi lịch 14 buổi, học sinh và ghi chú từng buổi.",
+    subtitle: "",
     listTitle: "Danh sách lớp",
     detailTitle: "Chi tiết lớp",
     studentsTitle: "Học sinh",
@@ -419,11 +419,14 @@ export const copyVi = {
     formModeCreate: "Tạo lớp mới",
     formModeEdit: "Đang sửa lớp đã chọn",
     formModeRead: "Đang xem lớp đã hoàn thành",
+    formModeSelect: "Chọn lớp để chỉnh sửa",
     emptyClasses: "Chưa có lớp học nào. Hãy tạo lớp đầu tiên.",
     emptyCompleted: "Chưa có lớp nào hoàn thành.",
     emptyClassDetail: "Chọn một lớp để xem chi tiết.",
     emptyStudents: "Chưa có học sinh. Hãy thêm học sinh cho lớp.",
     emptySessions: "Chưa có lịch 14 buổi. Hãy lưu lớp để tự sinh lịch.",
+    emptyUpcomingSession: "Không có buổi học sắp tới.",
+    emptyPastSessions: "Chưa có buổi học đã qua.",
     emptySessionEditor: "Chọn buổi học để nhập kế hoạch và nhận xét.",
     emptyStudentsForSession: "Chưa có học sinh áp dụng cho buổi này.",
     emptySlots: "Chưa có lịch cố định",
@@ -438,6 +441,17 @@ export const copyVi = {
     tabs: {
       active: "Đang dạy",
       completed: "Đã hoàn thành",
+    },
+    adminTabs: {
+      overview: "Tổng quan",
+      sessions: "Buổi học",
+      students: "Học sinh",
+      create: "Tạo lớp",
+    },
+    sessionFilters: {
+      upcoming: "Sắp tới",
+      past: "Đã qua",
+      all: "Tất cả",
     },
     badges: {
       completed: "Hoàn thành",
@@ -630,9 +644,9 @@ export const copyVi = {
     blueprintSaveFail: "Không thể lưu template nội dung.",
     blueprintApplied: "Đã áp dụng template vào form video.",
     blueprintApplyFail: "Không thể áp dụng template đã chọn.",
-    goalAiReady: "AI đã tạo 3 bundle mục tiêu.",
+    goalAiReady: "AI đã tạo 3 gợi ý mục tiêu.",
     goalAiFail: "Không thể tạo gợi ý mục tiêu lúc này.",
-    goalAiApplied: "Đã áp dụng bundle AI vào form mục tiêu.",
+    goalAiApplied: "Đã áp dụng gợi ý AI vào form mục tiêu.",
     weeklyReviewSaved: "Đã lưu tổng kết tuần.",
     weeklyReviewSaveFail: "Không thể lưu tổng kết tuần.",
     classAdded: "Đã tạo lớp mới.",
@@ -658,7 +672,7 @@ export const copyVi = {
 copyVi.classes = {
   ...(copyVi.classes || {}),
   title: "Lớp học",
-  subtitle: "Quản lý lớp, học sinh và lịch 14 buổi gọn trong một màn hình.",
+  subtitle: "",
   listTitle: "Danh sách lớp",
   detailTitle: "Chi tiết lớp",
   studentsTitle: "Học sinh",
@@ -668,11 +682,14 @@ copyVi.classes = {
   formModeCreate: "Tạo lớp mới",
   formModeEdit: "Đang sửa lớp đã chọn",
   formModeRead: "Đang xem lớp đã hoàn thành",
+  formModeSelect: "Chọn lớp để chỉnh sửa",
   emptyClasses: "Chưa có lớp học nào. Hãy tạo lớp đầu tiên.",
   emptyCompleted: "Chưa có lớp nào hoàn thành.",
   emptyClassDetail: "Chọn một lớp để xem chi tiết.",
   emptyStudents: "Chưa có học sinh. Hãy thêm học sinh cho lớp.",
   emptySessions: "Chưa có lịch 14 buổi. Hãy lưu lớp để tự sinh lịch.",
+  emptyUpcomingSession: "Không có buổi học sắp tới.",
+  emptyPastSessions: "Chưa có buổi học đã qua.",
   emptySessionEditor: "Chọn buổi học để nhập ghi chú.",
   emptyStudentsForSession: "Chưa có học sinh áp dụng cho buổi này.",
   emptySlots: "Chưa có lịch cố định",
@@ -693,6 +710,19 @@ copyVi.classes = {
     active: "Đang dạy",
     completed: "Đã hoàn thành",
     ...(copyVi.classes?.tabs || {}),
+  },
+  adminTabs: {
+    overview: "Tổng quan",
+    sessions: "Buổi học",
+    students: "Học sinh",
+    create: "Tạo lớp",
+    ...(copyVi.classes?.adminTabs || {}),
+  },
+  sessionFilters: {
+    upcoming: "Sắp tới",
+    past: "Đã qua",
+    all: "Tất cả",
+    ...(copyVi.classes?.sessionFilters || {}),
   },
   badges: {
     completed: "Hoàn thành",
@@ -877,6 +907,19 @@ copyVi.videoPlan = {
     ...((copyVi.videoPlan && copyVi.videoPlan.layout) || {}),
     createSubtitle: "Điền thông tin cốt lõi, sau đó dùng AI để hoàn thiện nội dung.",
   },
+};
+
+copyVi.routeMeta = {
+  ...(copyVi.routeMeta || {}),
+  classes: {
+    ...((copyVi.routeMeta && copyVi.routeMeta.classes) || {}),
+    subtitle: "Quản trị lớp, buổi học và trình chiếu theo từng lớp.",
+  },
+};
+
+copyVi.classes = {
+  ...(copyVi.classes || {}),
+  subtitle: "Quản trị lớp, buổi học và trình chiếu theo từng lớp.",
 };
 
 export function t(path, fallback = "") {

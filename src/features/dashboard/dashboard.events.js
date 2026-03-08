@@ -61,9 +61,5 @@ export function initDashboardEvents(handlers = {}) {
       return;
     }
 
-    const openClassesBtn = target.closest("[data-dash-open-classes]");
-    if (openClassesBtn) {
-      runHandler(handlers.onOpenClasses);
-    }
   });
 }

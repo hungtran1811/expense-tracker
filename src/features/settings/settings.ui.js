@@ -152,8 +152,6 @@ export function renderSettingsForm(settings, saveState = {}) {
   );
   setText("stLabelStartRoute", t("settings.preferences.dashboard.startRoute", "Route mặc định sau đăng nhập"));
   setText("stOptStartDashboard", t("settings.preferences.dashboard.startRouteOptions.dashboard", "Trung tâm"));
-  setText("stOptStartGoals", t("settings.preferences.dashboard.startRouteOptions.goals", "Mục tiêu"));
-  setText("stOptStartVideoPlan", t("settings.preferences.dashboard.startRouteOptions.videoPlan", "Kế hoạch video"));
   setText("stOptStartClasses", t("settings.preferences.dashboard.startRouteOptions.classes", "Lớp học"));
 
   setText("stFiltersTitle", t("settings.preferences.filters.title", "Bộ lọc & Hiển thị"));

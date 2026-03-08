@@ -33,9 +33,11 @@ const routeLoaders = {
     Promise.all([
       import("../features/classes/classes.controller.js"),
       import("../features/classes/classes.ui.js"),
-    ]).then(([controller, ui]) => ({
+      import("../features/classes/classes.events.js"),
+    ]).then(([controller, ui, events]) => ({
       ...controller,
       ...ui,
+      ...events,
     })),
 
   // Các route còn lại hiện vẫn dùng import tĩnh trong bootstrap.

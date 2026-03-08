@@ -91,8 +91,11 @@ function setCachedBalanceItems(uid, items = []) {
 
 function applyBalanceDeltaCache(uid, deltas = []) {
   if (!uid) return;
-  const entry = _balanceCache.get(uid);
-  if (!entry || !(entry.map instanceof Map)) return;
+  const entry = getCachedBalanceEntry(uid, BALANCE_CACHE_TTL_MS);
+  if (!entry || !(entry.map instanceof Map)) {
+    _balanceCache.delete(uid);
+    return;
+  }
 
   const map = entry.map;
   (Array.isArray(deltas) ? deltas : []).forEach((deltaItem) => {
@@ -640,6 +643,43 @@ function normalizeSessionReviewsPayload(reviews = {}) {
   return out;
 }
 
+function normalizePointsByStudent(payload = {}) {
+  const out = {};
+  const safe = payload && typeof payload === "object" ? payload : {};
+
+  Object.entries(safe).forEach(([studentId, value]) => {
+    const sid = String(studentId || "").trim();
+    if (!sid) return;
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return;
+    if (num <= 0) return;
+    out[sid] = Math.trunc(num);
+  });
+
+  return out;
+}
+
+function normalizeGameHistoryEntry(entry = {}) {
+  const id = String(entry?.id || "").trim();
+  const type = String(entry?.type || "custom").trim() || "custom";
+  const title = String(entry?.title || "").trim();
+  const winnerIds = Array.isArray(entry?.winnerIds)
+    ? entry.winnerIds.map((value) => String(value || "").trim()).filter(Boolean)
+    : [];
+  const pointsAwarded = Number(entry?.pointsAwarded || 0);
+  const createdAt = toTimestamp(entry?.createdAt) || Timestamp.now();
+  const meta = entry?.meta && typeof entry.meta === "object" ? entry.meta : {};
+  return {
+    id: id || `gh_${Date.now()}`,
+    type,
+    title,
+    winnerIds,
+    pointsAwarded: Number.isFinite(pointsAwarded) ? Math.max(0, Math.trunc(pointsAwarded)) : 0,
+    createdAt,
+    meta,
+  };
+}
+
 function asDate(value) {
   if (!value) return null;
   if (value instanceof Date) {
@@ -655,6 +695,36 @@ function asDate(value) {
   }
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function parseTimeToMinutes(text = "") {
+  const match = String(text || "")
+    .trim()
+    .match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hh = Number(match[1]);
+  const mm = Number(match[2]);
+  if (!Number.isInteger(hh) || !Number.isInteger(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+    return null;
+  }
+  return hh * 60 + mm;
+}
+
+function buildSessionEndDate(session = {}) {
+  const startDate = asDate(session?.scheduledAt);
+  if (!startDate) return null;
+
+  const baseStartMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+  const endMinutes = parseTimeToMinutes(session?.endTime);
+  if (Number.isInteger(endMinutes)) {
+    const minuteDelta = endMinutes - baseStartMinutes;
+    if (minuteDelta > 0) {
+      return new Date(startDate.getTime() + minuteDelta * 60 * 1000);
+    }
+  }
+
+  const durationMin = Math.max(30, Number(session?.durationMin || CLASS_DEFAULT_DURATION_MIN));
+  return new Date(startDate.getTime() + durationMin * 60 * 1000);
 }
 
 function buildSlotGroups(slots = []) {
@@ -753,7 +823,10 @@ export async function createClass(uid, payload = {}) {
 
   const code = normalizeClassCode(payload?.code);
   const codeLower = normalizeClassCodeLower(code);
-  const title = String(payload?.title || "").trim();
+  const subject = String(payload?.subject || "").trim();
+  const level = String(payload?.level || "").trim();
+  const title =
+    String(payload?.title || "").trim() || [subject, level].filter(Boolean).join(" ").trim();
   if (!code) throw new Error("Vui lòng nhập mã lớp");
   if (!title) throw new Error("Vui lòng nhập tên lớp");
 
@@ -764,6 +837,7 @@ export async function createClass(uid, payload = {}) {
 
   const slots = normalizeClassSlots(payload?.slots || []);
   if (!slots.length) throw new Error("Vui lòng chọn ít nhất 1 khung giờ học");
+  const firstSlot = slots[0] || {};
 
   const startDate = toTimestamp(payload?.startDate || new Date());
   if (!startDate) throw new Error("Ngày bắt đầu lớp không hợp lệ");
@@ -775,9 +849,13 @@ export async function createClass(uid, payload = {}) {
     code,
     codeLower,
     title,
+    subject,
+    level,
     description: String(payload?.description || "").trim(),
     status,
     startDate,
+    weekday: Number(firstSlot?.weekday || 1),
+    startTime: String(firstSlot?.startTime || "08:00"),
     durationMin: CLASS_DEFAULT_DURATION_MIN,
     slots,
     totalSessions,
@@ -851,6 +929,8 @@ export async function updateClass(uid, classId, payload = {}) {
     if (!nextTitle) throw new Error("Tên lớp không được để trống");
     data.title = nextTitle;
   }
+  if (payload.subject != null) data.subject = String(payload.subject || "").trim();
+  if (payload.level != null) data.level = String(payload.level || "").trim();
   if (payload.description != null) data.description = String(payload.description || "").trim();
   if (payload.startDate !== undefined) {
     const nextStartDate = toTimestamp(payload.startDate);
@@ -861,7 +941,11 @@ export async function updateClass(uid, classId, payload = {}) {
     const slots = normalizeClassSlots(payload.slots);
     if (!slots.length) throw new Error("Vui lòng chọn ít nhất 1 khung giờ học");
     data.slots = slots;
+    data.weekday = Number(slots[0]?.weekday || 1);
+    data.startTime = String(slots[0]?.startTime || "08:00");
   }
+  if (payload.weekday != null) data.weekday = Math.max(1, Math.min(7, Number(payload.weekday || 1)));
+  if (payload.startTime != null) data.startTime = normalizeTimeText(payload.startTime) || "08:00";
   if (payload.status != null) {
     const status = String(payload.status || "").trim();
     data.status = CLASS_STATUSES.has(status) ? status : "active";
@@ -883,18 +967,43 @@ export async function deleteClass(uid, classId) {
   return true;
 }
 
+// Legacy cleanup helper: permanently removes all class data for one user.
+export async function purgeLegacyClassesData(uid) {
+  const userId = String(uid || "").trim();
+  if (!userId) return { deletedClasses: 0 };
+
+  const classesSnap = await getDocs(colClasses(userId));
+  if (classesSnap.empty) return { deletedClasses: 0 };
+
+  for (const classDoc of classesSnap.docs) {
+    const classId = String(classDoc?.id || "").trim();
+    if (!classId) continue;
+    await Promise.all([
+      deleteCollectionDocs(colClassStudents(userId, classId)),
+      deleteCollectionDocs(colClassSessions(userId, classId)),
+    ]);
+    await deleteDoc(classDoc.ref);
+  }
+
+  return { deletedClasses: classesSnap.docs.length };
+}
+
 export async function addClassStudent(uid, classId, payload = {}) {
   const id = String(classId || "").trim();
   if (!uid || !id) throw new Error("Thiếu mã lớp");
 
   const name = String(payload?.name || "").trim();
   if (!name) throw new Error("Vui lòng nhập tên học sinh");
+  const note = String(payload?.note || "").trim();
+  const status = String(payload?.status || "active").trim() === "inactive" ? "inactive" : "active";
   const joinedFromSessionNo = Math.max(1, Number(payload?.joinedFromSessionNo || 1));
   const now = Timestamp.now();
 
   const data = {
     name,
-    active: true,
+    note,
+    status,
+    active: status === "active",
     joinedFromSessionNo,
     leftFromSessionNo: null,
     starsBalance: 0,
@@ -922,6 +1031,12 @@ export async function updateClassStudent(uid, classId, studentId, payload = {}) 
     const name = String(payload.name || "").trim();
     if (!name) throw new Error("Tên học sinh không được để trống");
     data.name = name;
+  }
+  if (payload.note != null) data.note = String(payload.note || "").trim();
+  if (payload.status != null) {
+    const status = String(payload.status || "").trim() === "inactive" ? "inactive" : "active";
+    data.status = status;
+    data.active = status === "active";
   }
   if (payload.active != null) data.active = !!payload.active;
   if (payload.joinedFromSessionNo != null) {
@@ -1131,8 +1246,24 @@ export async function createClassSessions(uid, classId, options = {}) {
           durationMin: Math.max(30, Number(session?.durationMin || classData?.durationMin || CLASS_DEFAULT_DURATION_MIN)),
           scheduledAt: toTimestamp(session?.scheduledAt) || null,
           status: CLASS_SESSION_STATUSES.has(String(session?.status || "")) ? session.status : "planned",
+          lessonPlan: String(session?.lessonPlan || session?.teachingPlan || "").trim(),
+          sessionNote: String(session?.sessionNote || session?.teachingResultNote || "").trim(),
           teachingPlan: String(session?.teachingPlan || "").trim(),
           teachingResultNote: String(session?.teachingResultNote || "").trim(),
+          attendance:
+            session?.attendance && typeof session.attendance === "object" ? session.attendance : {},
+          reviews: session?.reviews && typeof session.reviews === "object" ? session.reviews : {},
+          highlightStudentIds: Array.isArray(session?.highlightStudentIds)
+            ? session.highlightStudentIds.filter(Boolean)
+            : [],
+          pointsByStudent: normalizePointsByStudent(session?.pointsByStudent || {}),
+          gameHistory: Array.isArray(session?.gameHistory)
+            ? session.gameHistory.map((entry) => normalizeGameHistoryEntry(entry))
+            : [],
+          usedStudentIds: Array.isArray(session?.usedStudentIds)
+            ? session.usedStudentIds.filter(Boolean)
+            : [],
+          rescheduleHistory: Array.isArray(session?.rescheduleHistory) ? session.rescheduleHistory : [],
           studentReviews: normalizeSessionReviewsPayload(session?.studentReviews || {}),
           completedAt: toTimestamp(session?.completedAt),
           createdAt: now,
@@ -1164,6 +1295,60 @@ export async function listClassSessions(uid, classId, filter = {}) {
   return list;
 }
 
+export async function autoCompletePastClassSessions(uid, classId, options = {}) {
+  const classKey = String(classId || "").trim();
+  if (!uid || !classKey) return { updatedCount: 0, updatedSessionIds: [] };
+
+  const nowDate =
+    options?.now instanceof Date && !Number.isNaN(options.now.getTime())
+      ? options.now
+      : new Date();
+  const nowMs = nowDate.getTime();
+
+  const [classSnap, sessionsSnap] = await Promise.all([
+    getDoc(doc(db, `users/${uid}/classes/${classKey}`)),
+    getDocs(query(colClassSessions(uid, classKey), orderBy("sessionNo", "asc"))),
+  ]);
+  if (!classSnap.exists()) return { updatedCount: 0, updatedSessionIds: [] };
+
+  const sessions = mapDocs(sessionsSnap);
+  const needStatusSync = sessions.filter((session) => {
+    const currentStatus = String(session?.status || "planned");
+    if (currentStatus === "cancelled") return false;
+    const endDate = buildSessionEndDate(session);
+    if (!endDate) return false;
+    const shouldDone = endDate.getTime() <= nowMs;
+    const expectedStatus = shouldDone ? "done" : "planned";
+    return currentStatus !== expectedStatus;
+  });
+
+  if (!needStatusSync.length) return { updatedCount: 0, updatedSessionIds: [] };
+
+  const nowTs = Timestamp.now();
+  const batch = writeBatch(db);
+  const updatedSessionIds = [];
+  needStatusSync.forEach((session) => {
+    const sid = String(session?.id || "").trim();
+    if (!sid) return;
+    const endDate = buildSessionEndDate(session);
+    const shouldDone = !!endDate && endDate.getTime() <= nowMs;
+    updatedSessionIds.push(sid);
+    batch.update(doc(db, `users/${uid}/classes/${classKey}/sessions/${sid}`), {
+      status: shouldDone ? "done" : "planned",
+      completedAt: shouldDone ? toTimestamp(session?.completedAt) || nowTs : null,
+      updatedAt: nowTs,
+    });
+  });
+
+  if (!updatedSessionIds.length) return { updatedCount: 0, updatedSessionIds: [] };
+  await batch.commit();
+  await syncClassProgress(uid, classKey);
+  return {
+    updatedCount: updatedSessionIds.length,
+    updatedSessionIds,
+  };
+}
+
 export async function updateClassSession(uid, classId, sessionId, payload = {}) {
   const classKey = String(classId || "").trim();
   const sessionKey = String(sessionId || "").trim();
@@ -1184,9 +1369,71 @@ export async function updateClassSession(uid, classId, sessionId, payload = {}) 
     data.status = CLASS_SESSION_STATUSES.has(status) ? status : "planned";
     data.completedAt = data.status === "done" ? Timestamp.now() : null;
   }
-  if (payload.teachingPlan != null) data.teachingPlan = String(payload.teachingPlan || "").trim();
-  if (payload.teachingResultNote != null) data.teachingResultNote = String(payload.teachingResultNote || "").trim();
-  if (payload.studentReviews != null) data.studentReviews = normalizeSessionReviewsPayload(payload.studentReviews);
+  if (payload.lessonPlan != null) {
+    const lessonPlan = String(payload.lessonPlan || "").trim();
+    data.lessonPlan = lessonPlan;
+    data.teachingPlan = lessonPlan;
+  }
+  if (payload.sessionNote != null) {
+    const sessionNote = String(payload.sessionNote || "").trim();
+    data.sessionNote = sessionNote;
+    data.teachingResultNote = sessionNote;
+  }
+  if (payload.teachingPlan != null) {
+    const teachingPlan = String(payload.teachingPlan || "").trim();
+    data.teachingPlan = teachingPlan;
+    if (payload.lessonPlan == null) data.lessonPlan = teachingPlan;
+  }
+  if (payload.teachingResultNote != null) {
+    const teachingResultNote = String(payload.teachingResultNote || "").trim();
+    data.teachingResultNote = teachingResultNote;
+    if (payload.sessionNote == null) data.sessionNote = teachingResultNote;
+  }
+  if (payload.attendance != null) {
+    data.attendance =
+      payload.attendance && typeof payload.attendance === "object" ? payload.attendance : {};
+  }
+  if (payload.reviews != null) {
+    data.reviews = payload.reviews && typeof payload.reviews === "object" ? payload.reviews : {};
+  }
+  if (payload.highlightStudentIds != null) {
+    data.highlightStudentIds = Array.isArray(payload.highlightStudentIds)
+      ? payload.highlightStudentIds.filter(Boolean)
+      : [];
+  }
+  if (payload.pointsByStudent != null) {
+    data.pointsByStudent = normalizePointsByStudent(payload.pointsByStudent);
+  }
+  if (payload.gameHistory != null) {
+    data.gameHistory = Array.isArray(payload.gameHistory)
+      ? payload.gameHistory.map((entry) => normalizeGameHistoryEntry(entry))
+      : [];
+  }
+  if (payload.usedStudentIds != null) {
+    data.usedStudentIds = Array.isArray(payload.usedStudentIds)
+      ? payload.usedStudentIds.filter(Boolean)
+      : [];
+  }
+  if (payload.rescheduleHistory != null) {
+    data.rescheduleHistory = Array.isArray(payload.rescheduleHistory) ? payload.rescheduleHistory : [];
+  }
+  if (payload.studentReviews != null) {
+    data.studentReviews = normalizeSessionReviewsPayload(payload.studentReviews);
+  }
+  if (payload.reviews != null && payload.studentReviews == null) {
+    const converted = {};
+    Object.entries(data.reviews || {}).forEach(([studentId, value]) => {
+      const sid = String(studentId || "").trim();
+      if (!sid) return;
+      const status = String(value || "").trim();
+      let legacyStatus = "normal";
+      if (status === "unfocused") legacyStatus = "low_focus";
+      if (status === "good") legacyStatus = "good";
+      if (status === "excellent") legacyStatus = "good";
+      converted[sid] = { status: legacyStatus, note: "" };
+    });
+    data.studentReviews = normalizeSessionReviewsPayload(converted);
+  }
 
   await updateDoc(doc(db, `users/${uid}/classes/${classKey}/sessions/${sessionKey}`), data);
   await syncClassProgress(uid, classKey);
@@ -1291,6 +1538,386 @@ export async function saveSessionReviews(uid, classId, sessionId, reviews = {}) 
   });
   await updateDoc(doc(db, `users/${uid}/classes/${classKey}`), { updatedAt: Timestamp.now() });
   return true;
+}
+
+// ================================
+// Classes V2 wrappers
+// ================================
+
+function weekdayFromDate(value) {
+  const dt = asDate(value);
+  if (!dt) return 1;
+  const day = dt.getDay();
+  return day === 0 ? 7 : day;
+}
+
+export async function createClassWithAutoSessions(uid, payload = {}) {
+  const weekday = Math.max(1, Math.min(7, Number(payload?.weekday || 1)));
+  const startTime = normalizeTimeText(payload?.startTime || payload?.sessionStartTime || "08:00") || "08:00";
+  const created = await createClass(uid, {
+    code: payload?.code,
+    title: payload?.title,
+    subject: payload?.subject,
+    level: payload?.level,
+    startDate: payload?.startDate,
+    slots: [{ weekday, startTime }],
+    description: payload?.description || "",
+    status: payload?.status || "active",
+  });
+  await createClassSessions(uid, created.id, { forceRebuild: true });
+  const classItem = await readClass(uid, created.id);
+  return classItem || created;
+}
+
+export async function listClassesOverview(uid) {
+  return listClasses(uid, {});
+}
+
+export async function loadClassBundle(uid, classId, options = {}) {
+  const key = String(classId || "").trim();
+  if (!uid || !key) return { classItem: null, students: [], sessions: [] };
+
+  const ensureSessions = options?.ensureSessions !== false;
+  const autoCompletePastSessions = options?.autoCompletePastSessions !== false;
+
+  if (ensureSessions) {
+    await createClassSessions(uid, key, { forceRebuild: false });
+  }
+  if (autoCompletePastSessions) {
+    await autoCompletePastClassSessions(uid, key, options?.autoCompleteOptions || {});
+  }
+
+  const [classItem, students, sessions] = await Promise.all([
+    readClass(uid, key),
+    listClassStudents(uid, key, {}),
+    listClassSessions(uid, key, {}),
+  ]);
+  return {
+    classItem,
+    students: Array.isArray(students) ? students : [],
+    sessions: Array.isArray(sessions) ? sessions : [],
+  };
+}
+
+export async function reconcilePastSessionsToDone(uid, classId, options = {}) {
+  return autoCompletePastClassSessions(uid, classId, options);
+}
+
+export async function rescheduleSessionChainByWeek(uid, classId, sessionId, reason = "") {
+  const classKey = String(classId || "").trim();
+  const sessionKey = String(sessionId || "").trim();
+  if (!uid || !classKey || !sessionKey) throw new Error("Thiếu mã lớp hoặc buổi học");
+
+  const sessions = (await listClassSessions(uid, classKey, {})).sort(
+    (a, b) => Number(a?.sessionNo || 0) - Number(b?.sessionNo || 0)
+  );
+  const target = sessions.find((item) => String(item?.id || "") === sessionKey);
+  if (!target) throw new Error("Không tìm thấy buổi học cần dời");
+  const targetDate = asDate(target?.scheduledAt);
+  if (!targetDate) throw new Error("Buổi học đang chọn chưa có thời gian hợp lệ để dời");
+
+  const targetNo = Number(target?.sessionNo || 0);
+  const chain = sessions.filter(
+    (item) => {
+      const sessionNo = Number(item?.sessionNo || 0);
+      if (sessionNo < targetNo) return false;
+      if (String(item?.id || "") === sessionKey) return true;
+      // Khi dời mốc buổi, kéo theo toàn bộ các buổi phía sau để giữ timeline nhất quán,
+      // kể cả những buổi đã dạy (giáo viên có thể đang chỉnh lại lịch quá khứ).
+      return true;
+    }
+  );
+  if (!chain.length) return { updatedCount: 0, updatedSessionIds: [] };
+
+  const now = Timestamp.now();
+  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+  const safeReason = String(reason || "").trim();
+  const updatedSessionIds = [];
+  const batch = writeBatch(db);
+
+  chain.forEach((item) => {
+    const sid = String(item?.id || "").trim();
+    const fallbackFromDate = new Date(
+      targetDate.getTime() + Math.max(0, Number(item?.sessionNo || 0) - targetNo) * 7 * 24 * 60 * 60 * 1000
+    );
+    const fromDate = asDate(item?.scheduledAt) || fallbackFromDate;
+    if (!sid || !fromDate) return;
+    const toDate = new Date(fromDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const fromTs = toTimestamp(fromDate);
+    const toTs = toTimestamp(toDate);
+    const history = Array.isArray(item?.rescheduleHistory) ? [...item.rescheduleHistory] : [];
+    const projectedEndDate = buildSessionEndDate({
+      ...item,
+      scheduledAt: toTs,
+    });
+    const shouldDone = !!projectedEndDate && projectedEndDate.getTime() <= nowMs;
+    const currentStatus = String(item?.status || "planned");
+    const nextStatus = currentStatus === "cancelled" ? "cancelled" : shouldDone ? "done" : "planned";
+    history.push({
+      fromScheduledAt: fromTs,
+      toScheduledAt: toTs,
+      reason: safeReason,
+      changedAt: now,
+      changedAtIso: nowIso,
+    });
+
+    updatedSessionIds.push(sid);
+    batch.update(doc(db, `users/${uid}/classes/${classKey}/sessions/${sid}`), {
+      scheduledAt: toTs,
+      weekday: weekdayFromDate(toDate),
+      rescheduleReason: safeReason,
+      rescheduledAt: now,
+      rescheduledFrom: fromTs,
+      rescheduleHistory: history,
+      status: nextStatus,
+      completedAt: nextStatus === "done" ? toTimestamp(item?.completedAt) || now : null,
+      updatedAt: now,
+    });
+  });
+
+  if (!updatedSessionIds.length) return { updatedCount: 0, updatedSessionIds: [] };
+  await batch.commit();
+  await autoCompletePastClassSessions(uid, classKey, { now: new Date() });
+  await syncClassProgress(uid, classKey);
+  return { updatedCount: updatedSessionIds.length, updatedSessionIds };
+}
+
+export async function saveSessionAttendanceAndReviews(uid, classId, sessionId, payload = {}) {
+  const classKey = String(classId || "").trim();
+  const sessionKey = String(sessionId || "").trim();
+  if (!uid || !classKey || !sessionKey) throw new Error("Thiếu mã lớp hoặc buổi học");
+
+  const updatePayload = {};
+
+  if (payload?.status != null) {
+    updatePayload.status = String(payload.status || "").trim() || "planned";
+  }
+
+  if (payload?.lessonPlan != null) {
+    updatePayload.lessonPlan = String(payload.lessonPlan || "").trim();
+  }
+
+  if (payload?.sessionNote != null) {
+    updatePayload.sessionNote = String(payload.sessionNote || "").trim();
+  }
+
+  if (payload?.attendance && typeof payload.attendance === "object") {
+    updatePayload.attendance = payload.attendance;
+  }
+
+  if (payload?.reviews && typeof payload.reviews === "object") {
+    const reviews = payload.reviews;
+    updatePayload.reviews = reviews;
+    const legacyReviews = {};
+    Object.entries(reviews).forEach(([studentId, statusValue]) => {
+      const sid = String(studentId || "").trim();
+      if (!sid) return;
+      const status = String(statusValue || "").trim();
+      let legacy = "normal";
+      if (status === "unfocused") legacy = "low_focus";
+      if (status === "good") legacy = "good";
+      if (status === "excellent") legacy = "good";
+      legacyReviews[sid] = { status: legacy, note: "" };
+    });
+    updatePayload.studentReviews = legacyReviews;
+  }
+
+  const hasDateInput = payload?.sessionDate != null || payload?.sessionStartTime != null;
+  const hasTimeInput = payload?.sessionStartTime != null || payload?.sessionEndTime != null;
+  const safeStartTime = normalizeTimeText(payload?.sessionStartTime || payload?.startTime || "");
+  const safeEndTime = normalizeTimeText(payload?.sessionEndTime || payload?.endTime || "");
+
+  if (hasTimeInput && safeStartTime) {
+    updatePayload.startTime = safeStartTime;
+  }
+  if (hasTimeInput && safeEndTime) {
+    updatePayload.endTime = safeEndTime;
+  }
+
+  if (hasDateInput) {
+    const dateText = String(payload?.sessionDate || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
+      const [yy, mm, dd] = dateText.split("-").map((part) => Number(part));
+      const [startHh, startMm] = (safeStartTime || "08:00").split(":").map((part) => Number(part));
+      const scheduledAt = new Date(
+        yy,
+        Math.max(0, Number(mm || 1) - 1),
+        Math.max(1, Number(dd || 1)),
+        Number.isFinite(startHh) ? startHh : 8,
+        Number.isFinite(startMm) ? startMm : 0,
+        0,
+        0
+      );
+      if (!Number.isNaN(scheduledAt.getTime())) {
+        updatePayload.scheduledAt = toTimestamp(scheduledAt);
+        updatePayload.weekday = weekdayFromDate(scheduledAt);
+      }
+    }
+  } else if (payload?.scheduledAt != null) {
+    const scheduledTs = toTimestamp(payload.scheduledAt);
+    if (scheduledTs) {
+      const scheduledDate = asDate(scheduledTs);
+      updatePayload.scheduledAt = scheduledTs;
+      updatePayload.weekday = weekdayFromDate(scheduledDate);
+    }
+  }
+
+  await updateClassSession(uid, classKey, sessionKey, updatePayload);
+  return true;
+}
+
+export function resolveSessionPointsLegacy(session = {}) {
+  const resolved = normalizePointsByStudent(session?.pointsByStudent || {});
+  if (Object.keys(resolved).length) return resolved;
+
+  const fallback = {};
+  (Array.isArray(session?.highlightStudentIds) ? session.highlightStudentIds : []).forEach((studentId) => {
+    const sid = String(studentId || "").trim();
+    if (!sid) return;
+    fallback[sid] = Number(fallback[sid] || 0) + 1;
+  });
+  return normalizePointsByStudent(fallback);
+}
+
+export async function addSessionPoints(uid, classId, sessionId, pointsPatch = {}, options = {}) {
+  const classKey = String(classId || "").trim();
+  const sessionKey = String(sessionId || "").trim();
+  if (!uid || !classKey || !sessionKey) return { applied: false, patch: {} };
+
+  const patch = {};
+  Object.entries(pointsPatch && typeof pointsPatch === "object" ? pointsPatch : {}).forEach(
+    ([studentId, delta]) => {
+      const sid = String(studentId || "").trim();
+      const safeDelta = Math.trunc(Number(delta || 0));
+      if (!sid || !Number.isFinite(safeDelta) || safeDelta === 0) return;
+      patch[sid] = safeDelta;
+    }
+  );
+
+  if (!Object.keys(patch).length) {
+    return { applied: false, patch: {} };
+  }
+
+  const sessionRef = doc(db, `users/${uid}/classes/${classKey}/sessions/${sessionKey}`);
+  const updatePayload = {
+    updatedAt: Timestamp.now(),
+  };
+  Object.entries(patch).forEach(([studentId, delta]) => {
+    updatePayload[`pointsByStudent.${studentId}`] = increment(delta);
+  });
+  if (options?.touchHighlightLegacy) {
+    const snap = await getDoc(sessionRef);
+    if (snap.exists()) {
+      const data = snap.data() || {};
+      const highlights = Array.isArray(data?.highlightStudentIds)
+        ? [...data.highlightStudentIds]
+        : [];
+      Object.entries(patch).forEach(([studentId, delta]) => {
+        const amount = Math.max(0, Number(delta || 0));
+        for (let idx = 0; idx < amount; idx += 1) {
+          highlights.push(studentId);
+        }
+      });
+      updatePayload.highlightStudentIds = highlights;
+    }
+  }
+
+  await updateDoc(sessionRef, updatePayload);
+  return { applied: true, patch };
+}
+
+export async function appendSessionGameHistory(uid, classId, sessionId, entry = {}) {
+  const classKey = String(classId || "").trim();
+  const sessionKey = String(sessionId || "").trim();
+  if (!uid || !classKey || !sessionKey) return false;
+
+  const sessionRef = doc(db, `users/${uid}/classes/${classKey}/sessions/${sessionKey}`);
+  const normalizedEntry = normalizeGameHistoryEntry(entry);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(sessionRef);
+    if (!snap.exists()) throw new Error("Không tìm thấy buổi học");
+    const data = snap.data() || {};
+    const history = Array.isArray(data?.gameHistory)
+      ? data.gameHistory.map((item) => normalizeGameHistoryEntry(item))
+      : [];
+    history.push(normalizedEntry);
+    tx.update(sessionRef, {
+      gameHistory: history.slice(-80),
+      updatedAt: Timestamp.now(),
+    });
+  });
+
+  return true;
+}
+
+export async function toggleSessionHighlight(uid, classId, sessionId, studentId) {
+  const classKey = String(classId || "").trim();
+  const sessionKey = String(sessionId || "").trim();
+  const studentKey = String(studentId || "").trim();
+  if (!uid || !classKey || !sessionKey || !studentKey) return false;
+  await addSessionPoints(uid, classKey, sessionKey, { [studentKey]: 1 }, { touchHighlightLegacy: true });
+  return true;
+}
+
+export async function toggleSessionUsed(uid, classId, sessionId, studentId) {
+  const classKey = String(classId || "").trim();
+  const sessionKey = String(sessionId || "").trim();
+  const studentKey = String(studentId || "").trim();
+  if (!uid || !classKey || !sessionKey || !studentKey) return false;
+
+  const sessionRef = doc(db, `users/${uid}/classes/${classKey}/sessions/${sessionKey}`);
+  const snap = await getDoc(sessionRef);
+  if (!snap.exists()) throw new Error("Không tìm thấy buổi học");
+  const data = snap.data() || {};
+  const list = new Set(Array.isArray(data?.usedStudentIds) ? data.usedStudentIds : []);
+  if (list.has(studentKey)) list.delete(studentKey);
+  else list.add(studentKey);
+
+  await updateDoc(sessionRef, {
+    usedStudentIds: Array.from(list),
+    updatedAt: Timestamp.now(),
+  });
+  return true;
+}
+
+export async function resetSessionUsed(uid, classId, sessionId) {
+  const classKey = String(classId || "").trim();
+  const sessionKey = String(sessionId || "").trim();
+  if (!uid || !classKey || !sessionKey) return false;
+  await updateDoc(doc(db, `users/${uid}/classes/${classKey}/sessions/${sessionKey}`), {
+    usedStudentIds: [],
+    updatedAt: Timestamp.now(),
+  });
+  return true;
+}
+
+export async function resetSessionPoints(uid, classId, sessionId) {
+  const classKey = String(classId || "").trim();
+  const sessionKey = String(sessionId || "").trim();
+  if (!uid || !classKey || !sessionKey) return false;
+  await updateDoc(doc(db, `users/${uid}/classes/${classKey}/sessions/${sessionKey}`), {
+    pointsByStudent: {},
+    highlightStudentIds: [],
+    updatedAt: Timestamp.now(),
+  });
+  return true;
+}
+
+export async function resetSessionHighlights(uid, classId, sessionId) {
+  const classKey = String(classId || "").trim();
+  const sessionKey = String(sessionId || "").trim();
+  if (!uid || !classKey || !sessionKey) return false;
+  await updateDoc(doc(db, `users/${uid}/classes/${classKey}/sessions/${sessionKey}`), {
+    highlightStudentIds: [],
+    updatedAt: Timestamp.now(),
+  });
+  return true;
+}
+
+export async function deleteClassCascadeHard(uid, classId) {
+  return deleteClass(uid, classId);
 }
 
 export async function addExpense(uid, payload) {

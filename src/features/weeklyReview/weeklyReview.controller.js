@@ -2,10 +2,7 @@ import {
   listExpensesByDateRange,
   listIncomesByDateRange,
   listTransfersByDateRange,
-  listGoals,
-  listHabits,
-  listHabitLogsByRange,
-  listVideoTasks,
+  listClassesOverview,
   listWeeklyReviews,
 } from "../../services/firebase/firestore.js";
 import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
@@ -172,10 +169,6 @@ function sumAmount(list = []) {
   return (Array.isArray(list) ? list : []).reduce((sum, item) => sum + Number(item?.amount || 0), 0);
 }
 
-function parseTaskDeadline(task) {
-  return timestampToDate(task?.deadline);
-}
-
 function buildFinanceSnapshot({ expenses, incomes, transfers }) {
   const totalExpense = sumAmount(expenses);
   const totalIncome = sumAmount(incomes);
@@ -193,152 +186,105 @@ function buildFinanceSnapshot({ expenses, incomes, transfers }) {
   };
 }
 
-function buildGoalsSnapshot({ goals, habits, weekHabitLogs }) {
-  const safeGoals = Array.isArray(goals) ? goals : [];
-  const safeHabits = Array.isArray(habits) ? habits : [];
-  const safeLogs = Array.isArray(weekHabitLogs) ? weekHabitLogs : [];
+function buildClassesSnapshot({ classes = [] } = {}) {
+  const safeClasses = Array.isArray(classes) ? classes : [];
+  const activeClasses = safeClasses.filter((item) => String(item?.status || "active") !== "completed");
+  const completedClasses = safeClasses.filter((item) => String(item?.status || "active") === "completed");
 
-  const doneGoals = safeGoals.filter((goal) => {
-    const target = Number(goal?.targetValue || 0);
-    const current = Number(goal?.currentValue || 0);
-    return goal?.status === "done" || (target > 0 && current >= target);
-  });
-
-  const activeGoals = safeGoals.length - doneGoals.length;
-  const habitLogMap = new Map();
-  safeLogs.forEach((log) => {
-    const key = String(log?.habitId || "").trim();
-    if (!key) return;
-    const prev = Number(habitLogMap.get(key) || 0);
-    habitLogMap.set(key, prev + Number(log?.count || 0));
-  });
-  const habitsReached = safeHabits.filter((habit) => {
-    const done = Number(habitLogMap.get(String(habit.id || "")) || 0);
-    const target = Math.max(1, Number(habit?.targetCount || 1));
-    return done >= target;
-  }).length;
-
-  const checkins = safeLogs.reduce((sum, log) => sum + Number(log?.count || 0), 0);
-  const completionRate = safeHabits.length ? Math.round((habitsReached / safeHabits.length) * 100) : 0;
+  const doneSessions = activeClasses.reduce((sum, item) => sum + Math.max(0, Number(item?.doneSessions || 0)), 0);
+  const totalSessions = activeClasses.reduce(
+    (sum, item) => sum + Math.max(1, Number(item?.totalSessions || 14)),
+    0
+  );
+  const progressRate = totalSessions > 0 ? Math.round((doneSessions / totalSessions) * 100) : 0;
 
   return {
-    activeGoals,
-    doneGoals: doneGoals.length,
-    habitsTotal: safeHabits.length,
-    habitsReached,
-    checkins,
-    completionRate,
+    activeClasses: activeClasses.length,
+    completedClasses: completedClasses.length,
+    doneSessions,
+    totalSessions,
+    progressRate,
   };
 }
 
-function buildVideoSnapshot({ tasks, periodRange, now, deadlineWindowHours, periodMode = "week" }) {
-  const safeTasks = Array.isArray(tasks) ? tasks : [];
+function buildTeachingSnapshot({ classes = [], periodRange, now, deadlineWindowHours }) {
+  const safeClasses = Array.isArray(classes) ? classes : [];
   const safeNow = now instanceof Date ? now : new Date();
   const hours = clampNumber(deadlineWindowHours, 12, 336, DEFAULT_DEADLINE_WINDOW_HOURS);
   const horizon = new Date(safeNow.getTime() + hours * 60 * 60 * 1000);
 
-  const openTasks = safeTasks.filter((task) => task?.status !== "done");
-  const doneTasks = safeTasks.length - openTasks.length;
+  const activeClasses = safeClasses.filter((item) => String(item?.status || "active") !== "completed");
+  let sessionsInPeriod = 0;
+  let sessionsInWindow = 0;
+  let overdueClasses = 0;
 
-  let dueInWeek = 0;
-  let dueInWindow = 0;
-  let overdue = 0;
-
-  openTasks.forEach((task) => {
-    const deadline = parseTaskDeadline(task);
-    if (!deadline) return;
-
-    const dueTime = deadline.getTime();
-    if (dueTime >= periodRange.start.getTime() && dueTime < periodRange.endExclusive.getTime()) {
-      dueInWeek += 1;
+  activeClasses.forEach((item) => {
+    const nextAt = timestampToDate(item?.nextScheduledAt);
+    if (!nextAt) return;
+    const nextMs = nextAt.getTime();
+    if (nextMs >= periodRange.start.getTime() && nextMs < periodRange.endExclusive.getTime()) {
+      sessionsInPeriod += 1;
     }
-    if (dueTime >= safeNow.getTime() && dueTime <= horizon.getTime()) {
-      dueInWindow += 1;
+    if (nextMs >= safeNow.getTime() && nextMs <= horizon.getTime()) {
+      sessionsInWindow += 1;
     }
-    if (dueTime < safeNow.getTime()) {
-      overdue += 1;
+    if (nextMs < safeNow.getTime()) {
+      overdueClasses += 1;
     }
-  });
-
-  const stageCounts = {
-    idea: 0,
-    research: 0,
-    script: 0,
-    shoot: 0,
-    edit: 0,
-    publish: 0,
-  };
-
-  openTasks.forEach((task) => {
-    const stage = String(task?.stage || "idea");
-    if (!Object.prototype.hasOwnProperty.call(stageCounts, stage)) return;
-    stageCounts[stage] += 1;
   });
 
   return {
-    total: safeTasks.length,
-    open: openTasks.length,
-    done: doneTasks,
-    dueInWeek,
-    dueInWindow,
-    overdue,
-    periodMode,
+    activeClasses: activeClasses.length,
+    sessionsInPeriod,
+    sessionsInWindow,
+    overdueClasses,
     deadlineWindowHours: hours,
-    stageCounts,
   };
 }
 
-function buildReleasePlanSnapshot({ video = {}, goals = {}, finance = {} } = {}) {
-  const stageCounts = video?.stageCounts || {};
-  const stageRows = [
-    { key: "idea", label: t("videoPlan.stage.idea", "Ý tưởng"), count: Number(stageCounts.idea || 0) },
-    { key: "research", label: t("videoPlan.stage.research", "Nghiên cứu"), count: Number(stageCounts.research || 0) },
-    { key: "script", label: t("videoPlan.stage.script", "Kịch bản"), count: Number(stageCounts.script || 0) },
-    { key: "shoot", label: t("videoPlan.stage.shoot", "Quay"), count: Number(stageCounts.shoot || 0) },
-    { key: "edit", label: t("videoPlan.stage.edit", "Dựng"), count: Number(stageCounts.edit || 0) },
-    { key: "publish", label: t("videoPlan.stage.publish", "Xuất bản"), count: Number(stageCounts.publish || 0) },
-  ];
-
+function buildReleasePlanSnapshot({ teaching = {}, classes = {}, finance = {}, periodMode = "week" } = {}) {
   const actions = [];
-  if (Number(video?.overdue || 0) > 0) {
+  if (Number(teaching?.overdueClasses || 0) > 0) {
     actions.push(
-      formatTemplate(t("weeklyReview.release.actions.overdue", "Xử lý ngay {{count}} việc video quá hạn."), {
-        count: Number(video?.overdue || 0),
+      formatTemplate(t("weeklyReview.release.actions.overdueClasses", "Có {{count}} lớp quá lịch, mở lớp để cập nhật trạng thái buổi."), {
+        count: Number(teaching?.overdueClasses || 0),
       })
     );
   }
-  if (Number(video?.dueInWeek || 0) > 0) {
+  if (Number(teaching?.sessionsInPeriod || 0) > 0) {
     actions.push(
-      formatTemplate(t("weeklyReview.release.actions.dueWeek", "Chốt timeline cho {{count}} việc có hạn trong tuần."), {
-        count: Number(video?.dueInWeek || 0),
-      })
+      formatTemplate(
+        t(
+          periodMode === "month"
+            ? "weeklyReview.release.actions.sessionsInMonth"
+            : "weeklyReview.release.actions.sessionsInWeek",
+          periodMode === "month"
+            ? "Có {{count}} lớp có buổi trong tháng, chuẩn bị tài liệu trước lịch dạy."
+            : "Có {{count}} lớp có buổi trong tuần, chốt nội dung dạy và bài tập."
+        ),
+        {
+          count: Number(teaching?.sessionsInPeriod || 0),
+        }
+      )
     );
   }
-  if (Number(video?.open || 0) > 0) {
+  if (Number(classes?.activeClasses || 0) > 0) {
     actions.push(
-      formatTemplate(t("weeklyReview.release.actions.openVideo", "Ưu tiên đẩy {{count}} việc video đang mở tiến thêm ít nhất 1 bước."), {
-        count: Number(video?.open || 0),
-      })
-    );
-  }
-  if (Number(goals?.activeGoals || 0) > 0) {
-    actions.push(
-      formatTemplate(t("weeklyReview.release.actions.activeGoals", "Gắn tiến độ video với {{count}} mục tiêu cá nhân đang chạy."), {
-        count: Number(goals?.activeGoals || 0),
+      formatTemplate(t("weeklyReview.release.actions.activeClasses", "Duy trì nhịp cập nhật cho {{count}} lớp đang dạy."), {
+        count: Number(classes?.activeClasses || 0),
       })
     );
   }
   if (Number(finance?.net || 0) < 0) {
-    actions.push(t("weeklyReview.release.actions.netNegative", "Rà soát chi phí sản xuất trước khi chốt lịch quay tuần mới."));
+    actions.push(t("weeklyReview.release.actions.netNegative", "Rà soát chi phí tuần trước khi chốt lịch dạy tuần mới."));
   }
   if (!actions.length) {
     actions.push(
-      t("weeklyReview.release.actions.default", "Tuần này ổn định, tiếp tục theo lịch đăng và nâng chất lượng từng video.")
+      t("weeklyReview.release.actions.default", "Tuần này ổn định, tiếp tục giữ lịch dạy đều và cập nhật ghi chú từng buổi.")
     );
   }
 
   return {
-    stageRows,
     actions: actions.slice(0, 5),
   };
 }
@@ -427,28 +373,25 @@ export async function buildWeeklyReviewVM(uid, weekKey, options = {}) {
     expenses,
     incomes,
     transfers,
-    goals,
-    habits,
-    weekHabitLogs,
-    tasks,
+    classes,
     historyRaw,
   ] = await Promise.all([
     listExpensesByDateRange(uid, periodRange.start, periodRange.endExclusive),
     listIncomesByDateRange(uid, periodRange.start, periodRange.endExclusive),
     listTransfersByDateRange(uid, periodRange.start, periodRange.endExclusive),
-    listGoals(uid),
-    listHabits(uid, { active: true }),
-    listHabitLogsByRange(uid, periodRange.startKey, periodRange.endKey),
-    listVideoTasks(uid),
+    listClassesOverview(uid),
     listWeeklyReviews(uid, historyLimit),
   ]);
 
   const snapshot = {
     finance: buildFinanceSnapshot({ expenses, incomes, transfers }),
-    goals: buildGoalsSnapshot({ goals, habits, weekHabitLogs }),
-    video: buildVideoSnapshot({ tasks, periodRange, now, deadlineWindowHours, periodMode }),
+    classes: buildClassesSnapshot({ classes }),
+    teaching: buildTeachingSnapshot({ classes, periodRange, now, deadlineWindowHours }),
   };
-  const releasePlan = buildReleasePlanSnapshot(snapshot);
+  const releasePlan = buildReleasePlanSnapshot({
+    ...snapshot,
+    periodMode,
+  });
 
   const history = (Array.isArray(historyRaw) ? historyRaw : [])
     .map((item) => normalizeHistoryItem(item))

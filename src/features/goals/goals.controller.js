@@ -1,4 +1,4 @@
-﻿import {
+import {
   addGoal,
   listGoals,
   updateGoal,
@@ -38,7 +38,7 @@ function weekStartLocal(date = new Date()) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   const day = d.getDay();
-  const diff = day === 0 ? 6 : day - 1; // Monday = 0
+  const diff = day === 0 ? 6 : day - 1;
   d.setDate(d.getDate() - diff);
   return d;
 }
@@ -89,6 +89,123 @@ function buildHabitProgressMap(habits, logs, date = new Date()) {
   return map;
 }
 
+function toMs(value) {
+  if (!value) return 0;
+  if (typeof value?.seconds === "number") return Number(value.seconds) * 1000;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 0 : value.getTime();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function toDueMs(value) {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const ms = toMs(value);
+  return ms > 0 ? ms : Number.POSITIVE_INFINITY;
+}
+
+function goalProgress(goal = {}) {
+  const rawTarget = Number(goal?.targetValue || 0);
+  const target = Math.max(1, normalizeTarget(goal?.targetValue));
+  const current = Math.max(0, Number(goal?.currentValue || 0));
+  const percent = Math.min(100, Math.round((current / target) * 100));
+  const isDone = String(goal?.status || "").trim() === "done" || (rawTarget > 0 && current >= rawTarget);
+  return { current, target, percent, isDone };
+}
+
+function normalizeTopPriorities(value) {
+  const list = Array.isArray(value) ? value : [value];
+  return list
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function normalizeWeeklyGoalsPlan(input = {}) {
+  const topPriorities = normalizeTopPriorities(
+    input?.topPriorities || [input?.topPriority1, input?.topPriority2, input?.topPriority3]
+  );
+
+  return {
+    focusTheme: String(input?.focusTheme || "").trim(),
+    topPriorities,
+    actionCommitments: String(input?.actionCommitments || "").trim(),
+    riskNote: String(input?.riskNote || "").trim(),
+  };
+}
+
+export function partitionGoals(goals = []) {
+  const activeGoals = [];
+  const completedGoals = [];
+
+  (Array.isArray(goals) ? goals : []).forEach((goal) => {
+    if (!goal || typeof goal !== "object") return;
+    const progress = goalProgress(goal);
+    if (progress.isDone) {
+      completedGoals.push(goal);
+      return;
+    }
+    activeGoals.push(goal);
+  });
+
+  return { activeGoals, completedGoals };
+}
+
+export function sortActiveGoals(goals = []) {
+  return [...(Array.isArray(goals) ? goals : [])].sort((a, b) => {
+    const dueDiff = toDueMs(a?.dueDate) - toDueMs(b?.dueDate);
+    if (dueDiff !== 0) return dueDiff;
+
+    const progressDiff = goalProgress(b).percent - goalProgress(a).percent;
+    if (progressDiff !== 0) return progressDiff;
+
+    const updatedDiff = toMs(b?.updatedAt) - toMs(a?.updatedAt);
+    if (updatedDiff !== 0) return updatedDiff;
+
+    const createdDiff = toMs(b?.createdAt) - toMs(a?.createdAt);
+    if (createdDiff !== 0) return createdDiff;
+
+    return String(a?.title || "").localeCompare(String(b?.title || ""), "vi");
+  });
+}
+
+export function sortCompletedGoals(goals = []) {
+  return [...(Array.isArray(goals) ? goals : [])].sort((a, b) => {
+    const updatedDiff = toMs(b?.updatedAt) - toMs(a?.updatedAt);
+    if (updatedDiff !== 0) return updatedDiff;
+
+    const createdDiff = toMs(b?.createdAt) - toMs(a?.createdAt);
+    if (createdDiff !== 0) return createdDiff;
+
+    return String(a?.title || "").localeCompare(String(b?.title || ""), "vi");
+  });
+}
+
+export function buildGoalsOverview(goals = [], now = new Date()) {
+  const { activeGoals, completedGoals } = partitionGoals(goals);
+  const nearCompleteCount = activeGoals.filter((goal) => goalProgress(goal).percent >= 80).length;
+  const nowMs = toMs(now);
+  const recentCompleted = completedGoals.some((goal) => {
+    const updatedAtMs = Math.max(toMs(goal?.updatedAt), toMs(goal?.createdAt));
+    return updatedAtMs > 0 && nowMs - updatedAtMs <= 3 * 24 * 60 * 60 * 1000;
+  });
+
+  let motivationLine = "Tiếp tục cập nhật đều để thấy tiến độ rõ ràng hơn.";
+  if (!activeGoals.length) {
+    motivationLine = "Chưa có mục tiêu đang chạy. Tạo một mục tiêu mới để bắt đầu.";
+  } else if (nearCompleteCount > 0) {
+    motivationLine = `Bạn đang rất gần đích ở ${nearCompleteCount} mục tiêu.`;
+  } else if (recentCompleted) {
+    motivationLine = "Bạn đang giữ được nhịp tiến độ.";
+  }
+
+  return {
+    activeCount: activeGoals.length,
+    completedCount: completedGoals.length,
+    nearCompleteCount,
+    motivationLine,
+  };
+}
+
 export function todayKey(date = new Date()) {
   return toLocalDateKey(date);
 }
@@ -115,27 +232,6 @@ export function getHabitPeriodRange(period = "day", date = new Date()) {
 
   const key = toLocalDateKey(date);
   return { fromKey: key, toKey: key };
-}
-
-function normalizeTopPriorities(value) {
-  const list = Array.isArray(value) ? value : [value];
-  return list
-    .map((item) => String(item || "").trim())
-    .filter(Boolean)
-    .slice(0, 3);
-}
-
-function normalizeWeeklyGoalsPlan(input = {}) {
-  const topPriorities = normalizeTopPriorities(
-    input?.topPriorities || [input?.topPriority1, input?.topPriority2, input?.topPriority3]
-  );
-
-  return {
-    focusTheme: String(input?.focusTheme || "").trim(),
-    topPriorities,
-    actionCommitments: String(input?.actionCommitments || "").trim(),
-    riskNote: String(input?.riskNote || "").trim(),
-  };
 }
 
 export function getCurrentGoalsWeekKey(date = new Date()) {
@@ -171,7 +267,9 @@ export async function saveWeeklyGoalsPlan(uid, weekKey, planInput = {}) {
   const incomingPlan = normalizeWeeklyGoalsPlan(planInput);
   const plan = {
     focusTheme: incomingPlan.focusTheme || currentPlan.focusTheme || "",
-    topPriorities: incomingPlan.topPriorities.length ? incomingPlan.topPriorities : currentPlan.topPriorities,
+    topPriorities: incomingPlan.topPriorities.length
+      ? incomingPlan.topPriorities
+      : currentPlan.topPriorities,
     actionCommitments: incomingPlan.actionCommitments || currentPlan.actionCommitments || "",
     riskNote: incomingPlan.riskNote || currentPlan.riskNote || "",
   };
@@ -215,7 +313,7 @@ export async function createGoal(uid, payload) {
 }
 
 export async function saveGoalProgress(uid, goalId, currentValue, targetValue) {
-  const next = Number(currentValue || 0);
+  const next = Math.max(0, Number(currentValue || 0));
   const target = Number(targetValue || 0);
   const status = next >= target && target > 0 ? "done" : "active";
   await updateGoal(uid, goalId, { currentValue: next, status });

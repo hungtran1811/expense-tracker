@@ -32,11 +32,13 @@ const AREA_LABEL = {
   "suc-khoe": "Sức khỏe",
 };
 
-function goalProgress(goal) {
-  const target = Math.max(1, safeNum(goal?.targetValue));
+function goalProgress(goal = {}) {
+  const rawTarget = Number(goal?.targetValue || 0);
+  const target = Math.max(1, safeNum(goal?.targetValue || 1));
   const current = Math.max(0, safeNum(goal?.currentValue));
   const percent = Math.min(100, Math.round((current / target) * 100));
-  return { target, current, percent };
+  const isDone = goal?.status === "done" || (rawTarget > 0 && current >= rawTarget);
+  return { target, current, percent, isDone };
 }
 
 function normalizeHabitProgress(habits, payload) {
@@ -71,11 +73,69 @@ function statusBadge(done, activeLabel = t("goals.status.active", "Đang chạy"
     : `<span class="badge status-badge status-active">${activeLabel}</span>`;
 }
 
-export function renderGoalsDailyFocus(container, habits = [], habitProgressPayload = {}) {
+function toDateLabel(rawValue) {
+  if (!rawValue) return "";
+  const dt = rawValue?.seconds ? new Date(rawValue.seconds * 1000) : new Date(rawValue);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleDateString("vi-VN");
+}
+
+function toUpdatedLabel(goal = {}) {
+  const updated = toDateLabel(goal?.updatedAt || goal?.createdAt || null);
+  if (!updated) return "";
+  return formatTemplate(t("goals.completed.updatedAt", "Cập nhật gần nhất {{date}}"), {
+    date: updated,
+  });
+}
+
+export function renderGoalsSummaryStrip(container, overview = {}) {
+  if (!container) return;
+
+  const activeCount = Number(overview?.activeCount || 0);
+  const completedCount = Number(overview?.completedCount || 0);
+  const nearCompleteCount = Number(overview?.nearCompleteCount || 0);
+  const motivationLine = safeText(
+    overview?.motivationLine,
+    "Chưa có mục tiêu đang chạy. Tạo một mục tiêu mới để bắt đầu."
+  );
+
+  container.innerHTML = `
+    <div class="goals-summary-grid">
+      <article class="goals-summary-card">
+        <span class="goals-summary-label">Đang chạy</span>
+        <strong class="goals-summary-value">${activeCount}</strong>
+      </article>
+      <article class="goals-summary-card">
+        <span class="goals-summary-label">Đã xong</span>
+        <strong class="goals-summary-value">${completedCount}</strong>
+      </article>
+      <article class="goals-summary-card">
+        <span class="goals-summary-label">Gần chạm đích</span>
+        <strong class="goals-summary-value">${nearCompleteCount}</strong>
+      </article>
+    </div>
+    <div class="goals-summary-message">${escapeHtml(motivationLine)}</div>
+  `;
+}
+
+export function renderGoalsEmptyState(container) {
+  if (!container) return;
+  container.innerHTML = `
+    <div class="goals-empty-state">
+      <strong>Chưa có mục tiêu đang chạy.</strong>
+      <p class="small text-muted mb-3">Tạo một mục tiêu mới để bắt đầu và cập nhật tiến độ từ đây.</p>
+      <button class="btn btn-primary btn-sm" type="button" data-goal-open-composer="1">
+        Thêm mục tiêu
+      </button>
+    </div>
+  `;
+}
+
+export function renderGoalsSupportHabits(container, habits = [], habitProgressPayload = {}) {
   if (!container) return;
 
   const progressMap = normalizeHabitProgress(habits, habitProgressPayload);
-  const focusItems = (Array.isArray(habits) ? habits : [])
+  const supportItems = (Array.isArray(habits) ? habits : [])
     .map((habit) => {
       const progress = progressMap[habit.id] || {};
       const target = Math.max(1, Number(progress.target || habit.targetCount || 1));
@@ -91,79 +151,119 @@ export function renderGoalsDailyFocus(container, habits = [], habitProgressPaylo
       };
     })
     .filter((item) => item.remaining > 0)
-    .sort((a, b) => b.remaining - a.remaining)
-    .slice(0, 4);
+    .sort((a, b) => {
+      if (b.remaining !== a.remaining) return b.remaining - a.remaining;
+      if (b.target !== a.target) return b.target - a.target;
+      return String(a.habit?.name || "").localeCompare(String(b.habit?.name || ""), "vi");
+    })
+    .slice(0, 3);
 
-  if (!focusItems.length) {
-    container.innerHTML = `<div class="text-muted small">${t(
-      "goals.dailyFocus.empty",
-      "Tuyệt vời! Bạn đã hoàn thành toàn bộ quota kỳ hiện tại."
-    )}</div>`;
+  if (!supportItems.length) {
+    container.innerHTML = `
+      <div class="goals-support-empty">
+        <p class="small text-muted mb-3">Chưa có thói quen hỗ trợ nào cần check-in lúc này.</p>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-goal-open-advanced="1">
+          Mở Nâng cao để thêm thói quen
+        </button>
+      </div>
+    `;
     return;
   }
 
-  container.innerHTML = focusItems
-    .map(({ habit, done, target, remaining, locked }) => {
-      const remainingLabel = formatTemplate(t("goals.dailyFocus.remaining", "Còn {{remaining}} lượt"), {
-        remaining,
-      });
-      const habitId = safeText(habit?.id);
-      const title = escapeHtml(safeText(habit?.name, "(Không tên)"));
-      const periodLabel = PERIOD_LABEL[habit?.period] || "Ngày";
-      const disabled = locked || !habitId;
-
-      return `
-        <article class="daily-focus-item" data-id="${escapeHtml(habitId)}">
-          <div class="daily-focus-main">
-            <div class="daily-focus-title">${title}</div>
-            <div class="daily-focus-meta">${periodLabel} • ${done}/${target}</div>
-            <div class="daily-focus-remaining">${remainingLabel}</div>
-          </div>
-          <button
-            class="btn btn-sm ${disabled ? "btn-success" : "btn-primary"} btn-habit-focus-checkin"
-            data-id="${escapeHtml(habitId)}"
-            ${disabled ? "disabled" : ""}
-          >
-            ${disabled ? t("goals.status.reached", "Đã đạt") : t("goals.dailyFocus.action", "Điểm danh nhanh")}
-          </button>
-        </article>
-      `;
-    })
-    .join("");
+  container.innerHTML = `
+    <div class="goals-support-list">
+      ${supportItems
+        .map(({ habit, done, target, remaining, locked }) => {
+          const habitId = safeText(habit?.id);
+          const title = escapeHtml(safeText(habit?.name, "(Không tên)"));
+          const periodLabel = PERIOD_LABEL[habit?.period] || "Ngày";
+          return `
+            <article class="goals-support-item" data-id="${escapeHtml(habitId)}">
+              <div class="goals-support-main">
+                <strong>${title}</strong>
+                <div class="small text-muted">${periodLabel} • ${done}/${target} • Còn ${remaining} lượt</div>
+              </div>
+              <button
+                class="btn btn-sm ${locked ? "btn-success" : "btn-primary"} btn-habit-focus-checkin"
+                data-id="${escapeHtml(habitId)}"
+                ${locked || !habitId ? "disabled" : ""}
+              >
+                ${locked ? "Đã đạt" : "Điểm danh nhanh"}
+              </button>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
 }
 
-export function renderGoalsTable(tbody, goals = []) {
+export function renderGoalsDailyFocus(container, habits = [], habitProgressPayload = {}) {
+  renderGoalsSupportHabits(container, habits, habitProgressPayload);
+}
+
+export function renderGoalsTable(tbody, goals = [], options = {}) {
   if (!tbody) return;
+
+  const mode = String(options?.mode || "active").trim() === "completed" ? "completed" : "active";
   const safeGoals = Array.isArray(goals) ? goals : [];
 
   if (!safeGoals.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">${t(
-      "goals.table.emptyGoals",
-      "Chưa có mục tiêu nào."
-    )}</td></tr>`;
+    const message =
+      mode === "completed" ? "Chưa có mục tiêu nào hoàn thành." : "Chưa có mục tiêu nào đang chạy.";
+    const cols = mode === "completed" ? 3 : 4;
+    tbody.innerHTML = `<tr><td colspan="${cols}" class="text-center text-muted py-3">${message}</td></tr>`;
     return;
   }
 
   tbody.innerHTML = safeGoals
     .map((goal) => {
       const progress = goalProgress(goal);
-      const isDone = goal.status === "done" || progress.current >= progress.target;
-      const hasId = !!safeText(goal?.id);
-      const lockAttrs = isDone || !hasId ? "disabled" : "";
+      const goalId = safeText(goal?.id);
       const title = escapeHtml(safeText(goal?.title, "(Không tên)"));
-      const area = AREA_LABEL[goal?.area] || "Cá nhân";
       const period = PERIOD_LABEL[goal?.period] || "Tháng";
       const unit = escapeHtml(safeText(goal?.unit, "lần"));
+      const dueLabel = toDateLabel(goal?.dueDate);
 
+      if (mode === "completed") {
+        return `
+          <tr data-id="${escapeHtml(goalId)}">
+            <td>
+              <div class="goal-table-title">${title}</div>
+              <div class="goal-meta-list">
+                <span class="badge text-bg-light">${period}</span>
+                ${dueLabel ? `<span class="small text-muted">Hạn ${escapeHtml(dueLabel)}</span>` : ""}
+              </div>
+            </td>
+            <td>
+              <div class="goal-progress-stack">
+                <div class="small">${progress.current}/${progress.target} ${unit} • ${progress.percent}%</div>
+                <div class="goal-completed-note">${escapeHtml(toUpdatedLabel(goal))}</div>
+              </div>
+            </td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-danger btn-goal-del">Xóa</button>
+            </td>
+          </tr>
+        `;
+      }
+
+      const lockAttrs = progress.isDone || !goalId ? "disabled" : "";
       return `
-        <tr data-id="${escapeHtml(safeText(goal?.id))}">
-          <td>${title}</td>
-          <td>${area}</td>
-          <td>${period}</td>
+        <tr data-id="${escapeHtml(goalId)}">
           <td>
-            <div class="small">${progress.current}/${progress.target} ${unit} (${progress.percent}%)</div>
-            <div class="progress mt-1" style="height:6px">
-              <div class="progress-bar ${isDone ? "bg-success" : ""}" role="progressbar" style="width:${progress.percent}%"></div>
+            <div class="goal-table-title">${title}</div>
+            <div class="goal-meta-list">
+              <span class="badge text-bg-light">${period}</span>
+              ${dueLabel ? `<span class="small text-muted">Hạn ${escapeHtml(dueLabel)}</span>` : ""}
+            </div>
+          </td>
+          <td>
+            <div class="goal-progress-stack">
+              <div class="small">${progress.current}/${progress.target} ${unit} • ${progress.percent}%</div>
+              <div class="progress mt-1" style="height: 6px">
+                <div class="progress-bar ${progress.isDone ? "bg-success" : ""}" role="progressbar" style="width:${progress.percent}%"></div>
+              </div>
             </div>
           </td>
           <td>
@@ -175,7 +275,6 @@ export function renderGoalsTable(tbody, goals = []) {
               ${lockAttrs}
             />
           </td>
-          <td>${statusBadge(isDone)}</td>
           <td class="text-end">
             <div class="btn-group btn-group-sm">
               <button class="btn btn-outline-primary btn-goal-save" ${lockAttrs}>Lưu</button>
@@ -251,8 +350,7 @@ export function renderGoalsSummary(container, goals = []) {
     .slice(0, 3)
     .map((goal) => {
       const progress = goalProgress(goal);
-      const isDone = goal.status === "done" || progress.current >= progress.target;
-      const right = isDone
+      const right = progress.isDone
         ? `<span class="badge status-badge status-done">${t("goals.status.done", "Hoàn thành")}</span>`
         : `<span class="badge status-badge status-active">${progress.percent}%</span>`;
 
