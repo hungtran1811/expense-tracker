@@ -175,9 +175,21 @@ function sortClasses(list = []) {
       (String(a?.status || "active") === "completed" ? 1 : 0) -
       (String(b?.status || "active") === "completed" ? 1 : 0);
     if (byStatus !== 0) return byStatus;
-    const byUpdated = toMs(b?.updatedAt) - toMs(a?.updatedAt);
-    if (byUpdated !== 0) return byUpdated;
-    return String(a?.code || "").localeCompare(String(b?.code || ""), "vi");
+
+    const aNext = toMs(a?.nextScheduledAt);
+    const bNext = toMs(b?.nextScheduledAt);
+    const aHasNext = aNext > 0;
+    const bHasNext = bNext > 0;
+    if (aHasNext !== bHasNext) return aHasNext ? -1 : 1;
+    if (aHasNext && bHasNext) {
+      const byNext = aNext - bNext;
+      if (byNext !== 0) return byNext;
+    }
+
+    const byCode = String(a?.code || "").localeCompare(String(b?.code || ""), "vi");
+    if (byCode !== 0) return byCode;
+
+    return String(a?.id || "").localeCompare(String(b?.id || ""), "vi");
   });
 }
 

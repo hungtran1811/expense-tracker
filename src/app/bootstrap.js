@@ -1893,14 +1893,20 @@ async function loadClasses(uid, options = {}) {
   hydrateClassesUiPrefsOnce();
   await ensureClassesModule();
   const previousSelectedClassId = String(state.classSelectedId || "").trim();
-
-  const classesList = await classesModule.loadClassesOverview(uid);
-  state.classes = Array.isArray(classesList) ? classesList : [];
+  const shouldReloadOverview =
+    options?.reloadOverview !== false || !Array.isArray(state.classes) || !state.classes.length;
+  if (shouldReloadOverview) {
+    const classesList = await classesModule.loadClassesOverview(uid);
+    state.classes = Array.isArray(classesList) ? classesList : [];
+  }
 
   const preferredClassId = String(
     options?.classId || state.classSelectedId || state.presentationClassId || ""
   ).trim();
-  const selectedClassId = pickDefaultClassId(state.classes, preferredClassId);
+  let selectedClassId = pickDefaultClassId(state.classes, preferredClassId);
+  if (!selectedClassId && preferredClassId) {
+    selectedClassId = preferredClassId;
+  }
   state.classSelectedId = selectedClassId;
 
   const hasPresentationClass = state.classes.some(
@@ -1924,8 +1930,28 @@ async function loadClasses(uid, options = {}) {
   }
 
   const detail = await classesModule.loadClassDetail(uid, selectedClassId, {
-    autoCompletePastSessions: options?.autoCompletePastSessions !== false,
+    ensureSessions:
+      options?.ensureSessions === true
+        ? true
+        : options?.ensureSessions === false
+          ? false
+          : shouldReloadOverview,
+    autoCompletePastSessions:
+      options?.autoCompletePastSessions === true
+        ? true
+        : options?.autoCompletePastSessions === false
+          ? false
+          : shouldReloadOverview,
   });
+  if (detail?.classItem && detail.classItem?.id) {
+    const nextItem = detail.classItem;
+    const idx = state.classes.findIndex((item) => String(item?.id || "").trim() === String(nextItem.id).trim());
+    if (idx >= 0) {
+      state.classes[idx] = nextItem;
+    } else {
+      state.classes = [...state.classes, nextItem];
+    }
+  }
   state.classStudents = Array.isArray(detail?.students) ? detail.students : [];
   state.classSessions = Array.isArray(detail?.sessions) ? detail.sessions : [];
   if (options?.sessionId !== undefined) {
@@ -4055,6 +4081,9 @@ async function bindClassesModule() {
           classId,
           sessionId: state.classSelectedSessionId,
           syncPresentationClass: false,
+          reloadOverview: false,
+          ensureSessions: false,
+          autoCompletePastSessions: false,
         });
         showToast(t("toast.classUpdated", "Đã cập nhật lớp học."), "success");
       } catch (err) {
@@ -4093,11 +4122,20 @@ async function bindClassesModule() {
       if (!id) return;
       state.classSelectedId = id;
       state.classSelectedSessionId = "";
+      state.classStudents = [];
+      state.classSessions = [];
       if (!state.presentationClassId) {
         state.presentationClassId = id;
         persistClassUiPref("presentationClass", state.presentationClassId);
       }
-      await loadClasses(uid, { classId: id, syncPresentationClass: false });
+      renderClassesRoute();
+      await loadClasses(uid, {
+        classId: id,
+        syncPresentationClass: false,
+        reloadOverview: false,
+        ensureSessions: false,
+        autoCompletePastSessions: false,
+      });
     },
     onSelectSession: (sessionId = "") => {
       state.classSelectedSessionId = String(sessionId || "").trim();
@@ -4121,6 +4159,9 @@ async function bindClassesModule() {
           classId,
           sessionId: state.classSelectedSessionId,
           syncPresentationClass: false,
+          reloadOverview: false,
+          ensureSessions: false,
+          autoCompletePastSessions: false,
         });
         showToast(t("toast.classStudentAdded", "Đã thêm học sinh vào lớp."), "success");
       } catch (err) {
@@ -4148,6 +4189,9 @@ async function bindClassesModule() {
           classId,
           sessionId: state.classSelectedSessionId,
           syncPresentationClass: false,
+          reloadOverview: false,
+          ensureSessions: false,
+          autoCompletePastSessions: false,
         });
         showToast(
           nextStatus === "active"
@@ -4172,7 +4216,14 @@ async function bindClassesModule() {
       try {
         await classesModule.saveSessionFlow(uid, classId, sessionId, payload);
         setInputValue("sessionRescheduleReason", "");
-        await loadClasses(uid, { classId, sessionId, syncPresentationClass: false });
+        await loadClasses(uid, {
+          classId,
+          sessionId,
+          syncPresentationClass: false,
+          reloadOverview: false,
+          ensureSessions: false,
+          autoCompletePastSessions: false,
+        });
         showToast(t("toast.classSessionSaved", "Đã lưu ghi chú và nhận xét buổi học."), "success");
       } catch (err) {
         console.error("save session error", err);
@@ -4190,7 +4241,14 @@ async function bindClassesModule() {
       try {
         await classesModule.rescheduleSessionFlow(uid, classId, sid, reason);
         setInputValue("sessionRescheduleReason", "");
-        await loadClasses(uid, { classId, sessionId: sid, syncPresentationClass: false });
+        await loadClasses(uid, {
+          classId,
+          sessionId: sid,
+          syncPresentationClass: false,
+          reloadOverview: false,
+          ensureSessions: false,
+          autoCompletePastSessions: false,
+        });
         showToast(t("toast.classSessionShifted", "Đã dời buổi học và cập nhật lịch chuỗi kế tiếp."), "success");
       } catch (err) {
         console.error("reschedule session error", err);
@@ -4215,8 +4273,17 @@ async function bindClassesModule() {
       if (nextClassId !== state.classSelectedId) {
         state.classSelectedId = nextClassId;
         state.classSelectedSessionId = "";
+        state.classStudents = [];
+        state.classSessions = [];
       }
-      await loadClasses(uid, { classId: nextClassId, syncPresentationClass: false });
+      renderClassesRoute();
+      await loadClasses(uid, {
+        classId: nextClassId,
+        syncPresentationClass: false,
+        reloadOverview: false,
+        ensureSessions: false,
+        autoCompletePastSessions: false,
+      });
     },
     onSelectPresentationSession: (sessionId = "") => {
       const sid = String(sessionId || "").trim();

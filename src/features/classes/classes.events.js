@@ -69,7 +69,6 @@ function readSessionPayload(root) {
     sessionStartTime: safeText(byId("sessionStartTime")?.value) || "08:00",
     sessionEndTime: safeText(byId("sessionEndTime")?.value) || "10:00",
     lessonPlan: safeText(byId("sessionLessonPlan")?.value),
-    sessionNote: safeText(byId("sessionNote")?.value),
     attendance,
     reviews,
   };

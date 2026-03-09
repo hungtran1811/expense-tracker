@@ -266,7 +266,6 @@ function renderSessionEditor(vm = {}) {
   setValue("sessionStartTime", safeText(session?.startTime, "08:00"));
   setValue("sessionEndTime", safeText(session?.endTime, "10:00"));
   setValue("sessionLessonPlan", safeText(session?.lessonPlan));
-  setValue("sessionNote", safeText(session?.sessionNote));
   setText("sessionWeekdayText", weekdayLabel(session?.weekday));
 
   const attendanceRows = students
