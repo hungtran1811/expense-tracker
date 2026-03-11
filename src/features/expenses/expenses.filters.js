@@ -1,27 +1,40 @@
 ﻿import { renderExpensesTable } from "../../shared/ui/tables.js";
 import { formatVND } from "../../shared/ui/core.js";
-import { toCategoryLabelVi } from "../../shared/constants/categoryMap.vi.js";
+import { toCategoryLabelVi, toCategoryValueDb } from "../../shared/constants/categoryMap.vi.js";
+
+function normalizeCategoryValue(value = "") {
+  return String(toCategoryValueDb(value) || "").trim();
+}
 
 export function populateExpenseFiltersOptions(list) {
   const catSel = document.getElementById("filterCategory");
   const accSel = document.getElementById("filterAccount");
   if (!catSel && !accSel) return;
 
-  const categories = [
-    ...new Set((Array.isArray(list) ? list : []).map((e) => (e.category || "").trim()).filter(Boolean)),
-  ].sort((a, b) => toCategoryLabelVi(a).localeCompare(toCategoryLabelVi(b), "vi"));
+  const categoriesMap = new Map();
+  (Array.isArray(list) ? list : []).forEach((item) => {
+    const normalized = normalizeCategoryValue(item?.category);
+    if (!normalized) return;
+    if (!categoriesMap.has(normalized)) {
+      categoriesMap.set(normalized, toCategoryLabelVi(normalized));
+    }
+  });
+  const categories = Array.from(categoriesMap.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => String(a.label || "").localeCompare(String(b.label || ""), "vi"));
 
   const accounts = [
     ...new Set((Array.isArray(list) ? list : []).map((e) => (e.account || "").trim()).filter(Boolean)),
   ].sort((a, b) => a.localeCompare(b, "vi"));
 
-  const prevCat = catSel?.value || "all";
+  const prevCatRaw = catSel?.value || "all";
+  const prevCat = prevCatRaw === "all" ? "all" : normalizeCategoryValue(prevCatRaw);
   const prevAcc = accSel?.value || "all";
 
   if (catSel) {
     catSel.innerHTML =
       '<option value="all">Tất cả danh mục</option>' +
-      categories.map((c) => `<option value="${c}">${toCategoryLabelVi(c)}</option>`).join("");
+      categories.map((item) => `<option value="${item.value}">${item.label}</option>`).join("");
     if ([...catSel.options].some((o) => o.value === prevCat)) catSel.value = prevCat;
   }
 
@@ -50,8 +63,8 @@ export function applyExpenseFiltersAndRender(allExpenses, currentFilters = {}) {
   let list = Array.isArray(allExpenses) ? [...allExpenses] : [];
 
   if (category !== "all") {
-    const target = category.toLowerCase();
-    list = list.filter((e) => (e.category || "").toLowerCase() === target);
+    const target = normalizeCategoryValue(category);
+    list = list.filter((item) => normalizeCategoryValue(item?.category) === target);
   }
 
   if (account !== "all") {

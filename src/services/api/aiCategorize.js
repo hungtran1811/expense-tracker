@@ -38,8 +38,8 @@ export async function suggestCategory({ name, note, categories, history }) {
     confidence: Number.isFinite(confidence) ? confidence : 0,
     reason,
     matchType,
-    model: String(data?.model || "gemini-3-flash-latest"),
-    promptVersion: String(data?.promptVersion || "2.7.0"),
+    model: String(data?.model || "gemini-2.5-flash"),
+    promptVersion: String(data?.promptVersion || "2.9.0"),
   };
 }
 

@@ -385,6 +385,7 @@ export function buildDashboardHeroVM(state = {}, now = new Date()) {
 
 export function buildDashboardModulesVM(state = {}, now = new Date()) {
   const safeNow = now instanceof Date ? now : new Date();
+  const nowMs = safeNow.getTime();
   const classes = (Array.isArray(state.classes) ? state.classes : [])
     .filter((item) => String(item?.status || "active").trim() !== "completed")
     .map((item) => {
@@ -398,7 +399,10 @@ export function buildDashboardModulesVM(state = {}, now = new Date()) {
         isToday: isSameLocalDate(nextScheduledAt, safeNow),
       };
     })
-    .filter((item) => item.classId && item.nextScheduledAt instanceof Date)
+    .filter((item) => {
+      if (!item.classId || !(item.nextScheduledAt instanceof Date)) return false;
+      return item.nextScheduledAt.getTime() >= nowMs;
+    })
     .sort((a, b) => {
       const byTime = a.nextScheduledAt.getTime() - b.nextScheduledAt.getTime();
       if (byTime !== 0) return byTime;

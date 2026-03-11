@@ -3,9 +3,51 @@ const MODEL_CANDIDATES_DEFAULT = Object.freeze([
   "gemini-2.0-flash",
   "gemini-1.5-flash",
 ]);
-const MODEL = String(process.env.GEMINI_CATEGORIZE_MODEL || MODEL_CANDIDATES_DEFAULT[0] || "").trim() || MODEL_CANDIDATES_DEFAULT[0];
-const PROMPT_VERSION = "2.8.1";
+const MODEL =
+  String(process.env.GEMINI_CATEGORIZE_MODEL || MODEL_CANDIDATES_DEFAULT[0] || "").trim() ||
+  MODEL_CANDIDATES_DEFAULT[0];
+const PROMPT_VERSION = "2.9.0";
 const { guardAiRequest, jsonResponse } = require("../utils/aiGuard.js");
+
+const CATEGORY_ALIAS_MAP = Object.freeze({
+  "food drink": "Food & Drink",
+  "food and drink": "Food & Drink",
+  "an uong": "Food & Drink",
+  food: "Food & Drink",
+  drink: "Food & Drink",
+  coffee: "Coffee",
+  cafe: "Coffee",
+  "ca phe": "Coffee",
+  cf: "Coffee",
+  personal: "Personal",
+  "ca nhan": "Personal",
+  rent: "Rent",
+  housing: "Rent",
+  "nha o": "Rent",
+  fitness: "Fitness",
+  gym: "Fitness",
+  sport: "Fitness",
+  "the thao": "Fitness",
+  groceries: "Groceries",
+  grocery: "Groceries",
+  "di cho": "Groceries",
+  "tap hoa": "Groceries",
+  transport: "Transport",
+  travel: "Transport",
+  "di chuyen": "Transport",
+  "xang xe": "Transport",
+  healthcare: "Healthcare",
+  health: "Healthcare",
+  "suc khoe": "Healthcare",
+  "benh vien": "Healthcare",
+  lending: "Lending",
+  loan: "Lending",
+  "cho vay": "Lending",
+  other: "Other",
+  khac: "Other",
+  misc: "Other",
+  miscellaneous: "Other",
+});
 
 function safeText(value, fallback = "") {
   const text = String(value ?? "").trim();
@@ -18,41 +60,25 @@ function clampConfidence(value) {
   return Math.max(0, Math.min(1, n));
 }
 
-function normalizeHistory(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => ({
-      name: safeText(item?.name, ""),
-      note: safeText(item?.note, ""),
-      category: safeText(item?.category, ""),
-      appliedAt: item?.appliedAt || null,
-      source: safeText(item?.source, ""),
-      mode: safeText(item?.mode, ""),
-      weight: Number(item?.weight || 1),
-    }))
-    .filter((item) => item.name && item.category)
-    .slice(0, 120);
-}
-
 function stripAccents(value = "") {
   return String(value || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-function tokenize(value = "") {
-  return stripAccents(safeText(value, "").toLowerCase())
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .map((item) => item.trim())
-    .filter((item) => item.length >= 2);
-}
-
 function normalizeKey(value = "") {
   return stripAccents(safeText(value, "").toLowerCase())
+    .replace(/&/g, " and ")
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function tokenize(value = "") {
+  return normalizeKey(value)
+    .split(" ")
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 2);
 }
 
 function toMs(value) {
@@ -115,77 +141,168 @@ function scoreHistoryMatch(inputTokens = [], sampleTokens = []) {
   };
 }
 
+function normalizeCategories(value) {
+  if (!Array.isArray(value)) return [];
+  const set = new Set();
+  value.forEach((item) => {
+    const text = safeText(item, "");
+    if (!text) return;
+    if (normalizeKey(text) === "all") return;
+    set.add(text);
+  });
+  return Array.from(set);
+}
+
+function canonicalizeCategory(value = "", categories = []) {
+  const raw = safeText(value, "");
+  if (!raw) return "";
+  if (categories.includes(raw)) return raw;
+
+  const key = normalizeKey(raw);
+  if (!key) return "";
+
+  const exactByKey = categories.find((item) => normalizeKey(item) === key);
+  if (exactByKey) return exactByKey;
+
+  const aliased = CATEGORY_ALIAS_MAP[key] || "";
+  if (aliased && categories.includes(aliased)) return aliased;
+
+  return "";
+}
+
+function normalizeHistory(value, categories = []) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => ({
+      name: safeText(item?.name, ""),
+      note: safeText(item?.note, ""),
+      category: canonicalizeCategory(item?.category, categories),
+      appliedAt: item?.appliedAt || null,
+      source: safeText(item?.source, ""),
+      mode: safeText(item?.mode, ""),
+      weight: Number(item?.weight || 1),
+    }))
+    .filter((item) => item.name && item.category)
+    .slice(0, 120);
+}
+
 function pickExactHistoryMatch(payload = {}) {
   const categories = Array.isArray(payload?.categories) ? payload.categories : [];
-  const history = normalizeHistory(payload?.history);
+  const history = Array.isArray(payload?.history) ? payload.history : [];
   if (!categories.length || !history.length) return null;
 
-  const inputKey = normalizeKey(`${safeText(payload?.name, "")} ${safeText(payload?.note, "")}`);
-  if (!inputKey) return null;
+  const inputNameKey = normalizeKey(safeText(payload?.name, ""));
+  const inputCombinedKey = normalizeKey(`${safeText(payload?.name, "")} ${safeText(payload?.note, "")}`);
+  if (!inputNameKey) return null;
 
   let best = null;
   history.forEach((sample) => {
     if (!categories.includes(sample.category)) return;
-    const sampleKey = normalizeKey(`${sample.name} ${sample.note}`);
-    if (!sampleKey || sampleKey !== inputKey) return;
+    const sampleNameKey = normalizeKey(sample?.name || "");
+    const sampleCombinedKey = normalizeKey(`${sample?.name || ""} ${sample?.note || ""}`);
+
+    let exactLevel = 0;
+    if (sampleCombinedKey && inputCombinedKey && sampleCombinedKey === inputCombinedKey) {
+      exactLevel = 2;
+    } else if (sampleNameKey && sampleNameKey === inputNameKey) {
+      exactLevel = 1;
+    }
+    if (!exactLevel) return;
+
     const score =
       1 +
+      exactLevel * 0.22 +
       normalizeWeight(sample?.weight) * 0.35 +
       scoreRecency(sample) +
       scoreSource(sample) +
       scoreMode(sample);
+
     if (!best || score > best.score) {
-      best = { sample, score };
+      best = { sample, score, exactLevel };
     }
   });
 
   if (!best) return null;
+  const confidenceBase = best.exactLevel >= 2 ? 0.95 : 0.92;
   return {
     category: best.sample.category,
-    confidence: clampConfidence(0.93 + Math.min(0.05, (best.score - 1) * 0.02)),
-    reason: `Trùng khớp chính xác với lịch sử đã gán nhãn: "${best.sample.name}".`,
+    confidence: clampConfidence(confidenceBase + Math.min(0.04, (best.score - 1) * 0.02)),
+    reason:
+      best.exactLevel >= 2
+        ? `Trùng khớp chính xác với lịch sử đã gán nhãn: "${best.sample.name}".`
+        : `Trùng tên giao dịch với lịch sử đã gán nhãn: "${best.sample.name}".`,
     matchType: "exact_history",
   };
 }
 
 function pickHistoryMatch(payload = {}) {
   const categories = Array.isArray(payload?.categories) ? payload.categories : [];
-  const history = normalizeHistory(payload?.history);
+  const history = Array.isArray(payload?.history) ? payload.history : [];
   if (!categories.length || !history.length) return null;
 
+  const inputNameKey = normalizeKey(safeText(payload?.name, ""));
   const inputTokens = tokenize(`${safeText(payload?.name, "")} ${safeText(payload?.note, "")}`);
   if (!inputTokens.length) return null;
 
-  let best = null;
+  const categoryScores = new Map();
   history.forEach((sample) => {
     if (!categories.includes(sample.category)) return;
     const sampleTokens = tokenize(`${sample.name} ${sample.note}`);
     const { score, overlap } = scoreHistoryMatch(inputTokens, sampleTokens);
     if (!score || !overlap) return;
 
-    const exactName = normalizeKey(sample.name) && normalizeKey(sample.name) === normalizeKey(payload?.name || "");
+    const exactName = normalizeKey(sample.name) === inputNameKey;
     const weightedScore =
       score +
-      (exactName ? 0.24 : 0) +
+      (exactName ? 0.28 : 0) +
       scoreRecency(sample) +
       scoreSource(sample) +
       scoreMode(sample) +
-      (normalizeWeight(sample?.weight) - 1) * 0.2;
+      (normalizeWeight(sample?.weight) - 1) * 0.22;
+    if (!(weightedScore > 0)) return;
 
-    if (!best || weightedScore > best.score) {
-      best = { sample, score: weightedScore, overlap };
+    const key = sample.category;
+    const current = categoryScores.get(key) || {
+      category: key,
+      score: 0,
+      bestSample: sample,
+      bestSampleScore: -1,
+      overlapMax: 0,
+    };
+    current.score += weightedScore;
+    current.overlapMax = Math.max(current.overlapMax, overlap);
+    if (weightedScore > current.bestSampleScore) {
+      current.bestSample = sample;
+      current.bestSampleScore = weightedScore;
     }
+    categoryScores.set(key, current);
   });
 
-  if (!best) return null;
-  if (best.overlap < 2 || best.score < 0.42) return null;
+  const ranked = Array.from(categoryScores.values()).sort((a, b) => b.score - a.score);
+  if (!ranked.length) return null;
+  const best = ranked[0];
+  const secondScore = Number(ranked[1]?.score || 0);
+  const margin = best.score - secondScore;
+
+  if (best.overlapMax < 1) return null;
+  if (best.score < 0.7) return null;
+  if (margin < 0.18 && best.score < 1.2) return null;
 
   return {
-    category: best.sample.category,
-    confidence: clampConfidence(0.72 + best.score * 0.22),
-    reason: `Khớp với giao dịch trước đây: "${best.sample.name}".`,
+    category: best.category,
+    confidence: clampConfidence(0.72 + Math.min(0.2, best.score * 0.12) + Math.min(0.06, margin * 0.05)),
+    reason: `Khớp với lịch sử giao dịch gần đây: "${safeText(best.bestSample?.name, "giao dịch tương tự")}".`,
     matchType: "fuzzy_history",
   };
+}
+
+function containsAnyFragment(textKey = "", fragments = []) {
+  const safeKey = normalizeKey(textKey);
+  if (!safeKey) return false;
+  return (Array.isArray(fragments) ? fragments : []).some((frag) => {
+    const key = normalizeKey(frag);
+    return key && safeKey.includes(key);
+  });
 }
 
 function parseJsonSafe(text = "") {
@@ -226,7 +343,9 @@ function getModelCandidates() {
 async function requestGeminiWithFallback(apiKey, prompt, modelCandidates = []) {
   const tried = [];
   for (const model of modelCandidates) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+      model
+    )}:generateContent?key=${apiKey}`;
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -234,7 +353,7 @@ async function requestGeminiWithFallback(apiKey, prompt, modelCandidates = []) {
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 0.2,
+            temperature: 0.12,
             maxOutputTokens: 240,
           },
         }),
@@ -262,7 +381,7 @@ function localFallback(payload = {}) {
   const categories = Array.isArray(payload?.categories) ? payload.categories : [];
   const exactHistory = pickExactHistoryMatch(payload);
   const historyMatch = pickHistoryMatch(payload);
-  const text = `${safeText(payload?.name, "").toLowerCase()} ${safeText(payload?.note, "").toLowerCase()}`.trim();
+  const textKey = normalizeKey(`${safeText(payload?.name, "")} ${safeText(payload?.note, "")}`);
 
   const pick = (matches = [], fallback = "Other") => {
     for (const key of matches) {
@@ -286,21 +405,41 @@ function localFallback(payload = {}) {
     reason = historyMatch.reason;
     confidence = historyMatch.confidence;
     matchType = historyMatch.matchType;
-  } else if (/(ăn|uống|cơm|trà|cafe|cà phê|đồ ăn)/i.test(text)) {
-    category = pick(["Food & Drink", "Coffee"], category);
-    reason = "Mô tả giao dịch liên quan ăn uống hoặc đồ uống.";
+  } else if (
+    containsAnyFragment(textKey, ["cf", "cafe", "ca phe", "coffee", "tra sua", "matcha"])
+  ) {
+    category = pick(["Coffee"], category);
+    reason = "Mô tả giao dịch gần với nhóm cà phê/đồ uống.";
+    confidence = 0.84;
+  } else if (
+    containsAnyFragment(textKey, ["an", "uong", "com", "bun", "pho", "do an", "nha hang", "quan an"])
+  ) {
+    category = pick(["Food & Drink"], category);
+    reason = "Mô tả giao dịch liên quan ăn uống.";
     confidence = 0.82;
-  } else if (/(xăng|xe|grab|taxi|di chuyển|vé xe)/i.test(text)) {
+  } else if (
+    containsAnyFragment(textKey, ["xang", "xe", "grab", "taxi", "di chuyen", "ve xe", "gui xe"])
+  ) {
     category = pick(["Transport"], category);
     reason = "Mô tả giao dịch liên quan chi phí di chuyển.";
     confidence = 0.8;
-  } else if (/(siêu thị|đi chợ|tạp hóa|groceries)/i.test(text)) {
+  } else if (
+    containsAnyFragment(textKey, ["sieu thi", "di cho", "tap hoa", "groceries", "thuc pham"])
+  ) {
     category = pick(["Groceries"], category);
-    reason = "Mô tả giao dịch liên quan nhu yếu phẩm hằng ngày.";
+    reason = "Mô tả giao dịch liên quan mua sắm nhu yếu phẩm.";
     confidence = 0.8;
-  } else if (/(thuốc|khám|bệnh viện|health)/i.test(text)) {
+  } else if (
+    containsAnyFragment(textKey, ["thuoc", "kham", "benh vien", "y te", "health"])
+  ) {
     category = pick(["Healthcare"], category);
     reason = "Mô tả giao dịch liên quan chăm sóc sức khỏe.";
+    confidence = 0.78;
+  } else if (
+    containsAnyFragment(textKey, ["thue nha", "tien nha", "rent", "phong tro", "dien nuoc"])
+  ) {
+    category = pick(["Rent"], category);
+    reason = "Mô tả giao dịch liên quan nhà ở/sinh hoạt.";
     confidence = 0.78;
   }
 
@@ -319,15 +458,14 @@ function normalizeResult(result = {}, payload = {}, modelUsed = MODEL) {
   const categories = Array.isArray(payload?.categories) ? payload.categories : [];
   const fallback = localFallback(payload);
 
-  const category = safeText(result?.category, fallback.category);
-  const validCategory = categories.includes(category) ? category : fallback.category;
+  const category = canonicalizeCategory(result?.category, categories) || fallback.category;
   const matchTypeRaw = safeText(result?.matchType, "model");
   const matchType = ["model", "fuzzy_history", "exact_history", "heuristic"].includes(matchTypeRaw)
     ? matchTypeRaw
     : "model";
 
   return {
-    category: validCategory,
+    category,
     confidence: clampConfidence(result?.confidence ?? fallback.confidence),
     reason: safeText(result?.reason, fallback.reason),
     matchType,
@@ -336,8 +474,44 @@ function normalizeResult(result = {}, payload = {}, modelUsed = MODEL) {
   };
 }
 
+function reconcileModelWithHistory(payload = {}, modelResult = {}) {
+  const historyStrong = pickHistoryMatch(payload);
+  if (!historyStrong) return modelResult;
+
+  const modelMatchType = safeText(modelResult?.matchType, "model");
+  if (modelMatchType === "exact_history" || modelMatchType === "fuzzy_history") {
+    return modelResult;
+  }
+
+  const modelCategory = safeText(modelResult?.category, "");
+  const modelConfidence = clampConfidence(modelResult?.confidence || 0);
+  if (modelCategory === historyStrong.category) return modelResult;
+
+  if (historyStrong.confidence >= 0.82 && modelConfidence < 0.9) {
+    return {
+      ...modelResult,
+      category: historyStrong.category,
+      confidence: historyStrong.confidence,
+      reason: `${historyStrong.reason} Ưu tiên lịch sử gán nhãn cá nhân để giảm gán sai.`,
+      matchType: "fuzzy_history",
+    };
+  }
+
+  if (historyStrong.confidence >= modelConfidence + 0.08) {
+    return {
+      ...modelResult,
+      category: historyStrong.category,
+      confidence: historyStrong.confidence,
+      reason: `${historyStrong.reason} Tín hiệu lịch sử mạnh hơn model hiện tại.`,
+      matchType: "fuzzy_history",
+    };
+  }
+
+  return modelResult;
+}
+
 function buildPrompt(payload = {}) {
-  const history = normalizeHistory(payload?.history).slice(0, 30);
+  const history = (Array.isArray(payload?.history) ? payload.history : []).slice(0, 36);
   return `
 Bạn là AI phân loại nhãn chi tiêu cá nhân.
 
@@ -383,15 +557,15 @@ exports.handler = async function handler(event) {
     return jsonResponse(400, { error: "Invalid JSON body" });
   }
 
+  const categories = normalizeCategories(payload?.categories);
   const normalizedPayload = {
-    ...payload,
-    categories: Array.isArray(payload?.categories)
-      ? payload.categories.map((item) => String(item || "").trim()).filter(Boolean)
-      : [],
-    history: normalizeHistory(payload?.history),
+    name: safeText(payload?.name, ""),
+    note: safeText(payload?.note, ""),
+    categories,
+    history: normalizeHistory(payload?.history, categories),
   };
 
-  if (!safeText(normalizedPayload?.name, "") || !normalizedPayload.categories.length) {
+  if (!normalizedPayload.name || !normalizedPayload.categories.length) {
     return jsonResponse(400, { error: "Missing name or categories" });
   }
 
@@ -416,7 +590,9 @@ exports.handler = async function handler(event) {
 
     if (!geminiResult.ok) {
       const tried = Array.isArray(geminiResult?.tried) ? geminiResult.tried : [];
-      const hasUnexpected = tried.some((item) => Number(item?.status || 0) !== 404 && Number(item?.status || 0) !== 400);
+      const hasUnexpected = tried.some(
+        (item) => Number(item?.status || 0) !== 404 && Number(item?.status || 0) !== 400
+      );
       if (hasUnexpected) {
         console.warn("ai-categorize Gemini model fallback exhausted:", tried);
       }
@@ -425,7 +601,9 @@ exports.handler = async function handler(event) {
 
     const text = extractText(geminiResult.data || {});
     const parsed = parseJsonSafe(text);
-    return jsonResponse(200, normalizeResult(parsed || {}, normalizedPayload, geminiResult.model || MODEL));
+    const normalizedModel = normalizeResult(parsed || {}, normalizedPayload, geminiResult.model || MODEL);
+    const finalResult = reconcileModelWithHistory(normalizedPayload, normalizedModel);
+    return jsonResponse(200, finalResult);
   } catch (err) {
     console.error("ai-categorize error:", err);
     return jsonResponse(200, localFallback(normalizedPayload));

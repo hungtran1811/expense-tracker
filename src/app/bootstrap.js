@@ -112,6 +112,7 @@ import {
   bindSettingsEvents,
 } from "../features/settings/settings.ui.js";
 import { t, formatTemplate } from "../shared/constants/copy.vi.js";
+import { toCategoryValueDb } from "../shared/constants/categoryMap.vi.js";
 import {
   AUTH_BOOTSTRAP_TIMEOUT_MS,
   AUTH_WARM_HINT_KEY,
@@ -1941,7 +1942,7 @@ async function loadClasses(uid, options = {}) {
         ? true
         : options?.autoCompletePastSessions === false
           ? false
-          : shouldReloadOverview,
+          : true,
   });
   if (detail?.classItem && detail.classItem?.id) {
     const nextItem = detail.classItem;
@@ -2594,7 +2595,7 @@ async function ensureExpenseAiHistory(uid, { force = false } = {}) {
         .map((item) => ({
           name: String(item?.name || "").trim(),
           note: String(item?.note || "").trim(),
-          category: String(item?.category || "").trim(),
+          category: toCategoryValueDb(String(item?.category || "").trim()),
           appliedAt: item?.date || item?.updatedAt || item?.createdAt || null,
           source: "expense",
           mode: "manual-label",
@@ -2610,7 +2611,7 @@ async function ensureExpenseAiHistory(uid, { force = false } = {}) {
           return {
             name: String(inputSnapshot?.name || "").trim(),
             note: String(inputSnapshot?.note || "").trim(),
-            category: String(appliedOutput?.category || "").trim(),
+            category: toCategoryValueDb(String(appliedOutput?.category || "").trim()),
             appliedAt: item?.appliedAt || item?.updatedAt || item?.createdAt || null,
             source: "ai-feedback",
             mode,
@@ -2673,7 +2674,7 @@ async function ensureExpenseAiHistory(uid, { force = false } = {}) {
 function buildExpenseAiHistorySamples(allowedCategories = [], limitCount = 30, currentText = "") {
   const categorySet = new Set(
     (Array.isArray(allowedCategories) ? allowedCategories : [])
-      .map((item) => String(item || "").trim())
+      .map((item) => toCategoryValueDb(String(item || "").trim()))
       .filter(Boolean)
   );
   const safeLimit = Math.min(120, Math.max(0, Number(limitCount || 30)));
@@ -2687,7 +2688,7 @@ function buildExpenseAiHistorySamples(allowedCategories = [], limitCount = 30, c
         ? state.allExpenses.map((item) => ({
             name: String(item?.name || "").trim(),
             note: String(item?.note || "").trim(),
-            category: String(item?.category || "").trim(),
+            category: toCategoryValueDb(String(item?.category || "").trim()),
             appliedAt: item?.date || item?.updatedAt || item?.createdAt || null,
             source: "expense",
             mode: "manual-label",
@@ -2696,7 +2697,7 @@ function buildExpenseAiHistorySamples(allowedCategories = [], limitCount = 30, c
         : []
   )
     .filter((item) => item?.name && item?.category)
-    .filter((item) => !categorySet.size || categorySet.has(String(item?.category || "").trim()))
+    .filter((item) => !categorySet.size || categorySet.has(toCategoryValueDb(String(item?.category || "").trim())))
     .map((item, index) => {
       const sampleTokens = tokenizeAiText(`${item?.name || ""} ${item?.note || ""}`);
       const overlap = overlapAiTokenCount(currentTokens, sampleTokens);
@@ -2720,7 +2721,7 @@ function buildExpenseAiHistorySamples(allowedCategories = [], limitCount = 30, c
     .map((item) => ({
       name: String(item?.name || "").trim(),
       note: String(item?.note || "").trim(),
-      category: String(item?.category || "").trim(),
+      category: toCategoryValueDb(String(item?.category || "").trim()),
       appliedAt: item?.appliedAt || null,
       source: String(item?.source || "expense"),
       mode: String(item?.mode || ""),
@@ -2876,7 +2877,7 @@ function bindExpenseEvents() {
       name: (byId("eName")?.value || "").trim(),
       amount: byId("eAmount")?.value,
       date: byId("eDate")?.value,
-      category: byId("eCategory")?.value || "Other",
+      category: toCategoryValueDb(byId("eCategory")?.value || "Other"),
       account: byId("eAccount")?.value,
       note: (byId("eNote")?.value || "").trim(),
     };
@@ -2910,7 +2911,7 @@ function bindExpenseEvents() {
       name: (byId("edName")?.value || "").trim(),
       amount: byId("edAmount")?.value,
       date: byId("edDate")?.value,
-      category: byId("edCategory")?.value || "Other",
+      category: toCategoryValueDb(byId("edCategory")?.value || "Other"),
       account: byId("edAccount")?.value,
       note: (byId("edNote")?.value || "").trim(),
     };
@@ -2957,7 +2958,7 @@ function bindExpenseEvents() {
       byId("edName").value = expense.name || "";
       byId("edAmount").value = Number(expense.amount || 0);
       byId("edDate").value = toInputDate(expense.date);
-      byId("edCategory").value = expense.category || "Other";
+      byId("edCategory").value = toCategoryValueDb(expense.category || "Other");
 
       const editAccount = byId("edAccount");
       if (editAccount) {
@@ -3744,6 +3745,9 @@ function bindRouteSyncEvents() {
       void bindDashboardEvents().then(() => {
         renderDashboardCenter();
       });
+      void loadClassesOverviewForDashboard(uid).catch((err) => {
+        console.error("loadClassesOverviewForDashboard error", err);
+      });
     }
 
     if (isWeeklyReviewRouteActive()) {
@@ -4134,7 +4138,7 @@ async function bindClassesModule() {
         syncPresentationClass: false,
         reloadOverview: false,
         ensureSessions: false,
-        autoCompletePastSessions: false,
+        autoCompletePastSessions: true,
       });
     },
     onSelectSession: (sessionId = "") => {
@@ -4282,7 +4286,7 @@ async function bindClassesModule() {
         syncPresentationClass: false,
         reloadOverview: false,
         ensureSessions: false,
-        autoCompletePastSessions: false,
+        autoCompletePastSessions: true,
       });
     },
     onSelectPresentationSession: (sessionId = "") => {
