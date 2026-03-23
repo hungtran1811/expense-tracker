@@ -26,6 +26,9 @@ export const colExpenses = (uid) => collection(db, `users/${uid}/expenses`);
 export const colAccounts = (uid) => collection(db, `users/${uid}/accounts`);
 export const colIncomes = (uid) => collection(db, `users/${uid}/incomes`);
 export const colTransfers = (uid) => collection(db, `users/${uid}/transfers`);
+export const colTransactions = (uid) => collection(db, `users/${uid}/transactions`);
+export const colExpenseScopes = (uid) => collection(db, `users/${uid}/expenseScopes`);
+export const colScopeBudgets = (uid) => collection(db, `users/${uid}/scopeBudgets`);
 export const colGoals = (uid) => collection(db, `users/${uid}/goals`);
 export const colHabits = (uid) => collection(db, `users/${uid}/habits`);
 export const colHabitLogs = (uid) => collection(db, `users/${uid}/habitLogs`);
@@ -157,6 +160,750 @@ function parseLocalDate(ymd) {
   if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y, m - 1, d, 12, 0, 0);
+}
+
+const LEDGER_SCHEMA_VERSION = 2;
+const LEDGER_TRANSACTION_TYPES = new Set(["expense", "income", "transfer", "adjustment"]);
+const LEDGER_ACCOUNT_TYPES = new Set(["bank", "wallet", "cash", "savings", "other"]);
+const DEFAULT_EXPENSE_SCOPES = Object.freeze(["Tôi", "P102", "Mẹ", "Bo", "Nấm"]);
+
+function normalizeLedgerAccountType(value = "") {
+  const text = String(value || "").trim();
+  return LEDGER_ACCOUNT_TYPES.has(text) ? text : "other";
+}
+
+function normalizeLedgerTransactionType(value = "") {
+  const text = String(value || "").trim();
+  return LEDGER_TRANSACTION_TYPES.has(text) ? text : "expense";
+}
+
+function normalizeExpenseScopeName(value = "") {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function normalizeMonthKey(value = "") {
+  const raw = String(value || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(raw)) {
+    throw new Error("Tháng ngân sách không hợp lệ.");
+  }
+  return raw;
+}
+
+function docAccount(uid, accountId) {
+  return doc(db, `users/${uid}/accounts/${accountId}`);
+}
+
+function docTransaction(uid, transactionId) {
+  return doc(db, `users/${uid}/transactions/${transactionId}`);
+}
+
+function docScopeBudget(uid, budgetId) {
+  return doc(db, `users/${uid}/scopeBudgets/${budgetId}`);
+}
+
+function sortLedgerAccounts(items = []) {
+  return [...items].sort((a, b) => {
+    const archivedA = String(a?.status || "active") === "archived" ? 1 : 0;
+    const archivedB = String(b?.status || "active") === "archived" ? 1 : 0;
+    if (archivedA !== archivedB) return archivedA - archivedB;
+    const defaultA = a?.isDefault ? -1 : 0;
+    const defaultB = b?.isDefault ? -1 : 0;
+    if (defaultA !== defaultB) return defaultA - defaultB;
+    return String(a?.name || "").localeCompare(String(b?.name || ""), "vi");
+  });
+}
+
+function addLedgerEffect(map, accountId, delta) {
+  const id = String(accountId || "").trim();
+  const amount = Number(delta || 0);
+  if (!id || !Number.isFinite(amount) || amount === 0) return;
+  map.set(id, (map.get(id) || 0) + amount);
+}
+
+function buildLedgerEffects(transactionData = {}) {
+  const effects = new Map();
+  const type = normalizeLedgerTransactionType(transactionData?.type);
+  const amount = Number(transactionData?.amount || 0);
+  const accountId = String(transactionData?.accountId || "").trim();
+  const toAccountId = String(transactionData?.toAccountId || "").trim();
+
+  if (!Number.isFinite(amount)) return effects;
+  if (type === "expense") {
+    addLedgerEffect(effects, accountId, -Math.abs(amount));
+    return effects;
+  }
+  if (type === "income") {
+    addLedgerEffect(effects, accountId, Math.abs(amount));
+    return effects;
+  }
+  if (type === "transfer") {
+    addLedgerEffect(effects, accountId, -Math.abs(amount));
+    addLedgerEffect(effects, toAccountId, Math.abs(amount));
+    return effects;
+  }
+  addLedgerEffect(effects, accountId, amount);
+  return effects;
+}
+
+function diffLedgerEffects(previousEffects, nextEffects) {
+  const diff = new Map();
+  previousEffects.forEach((value, accountId) => {
+    addLedgerEffect(diff, accountId, -value);
+  });
+  nextEffects.forEach((value, accountId) => {
+    addLedgerEffect(diff, accountId, value);
+  });
+  return diff;
+}
+
+function normalizeLedgerTransactionInput(payload = {}) {
+  const type = normalizeLedgerTransactionType(payload?.type);
+  const accountId = String(payload?.accountId || "").trim();
+  const toAccountId = String(payload?.toAccountId || "").trim();
+  const scopeId = String(payload?.scopeId || "").trim();
+  const note = String(payload?.note || "").trim();
+  const occurredDate = parseLocalDate(payload?.occurredAt);
+  if (!accountId) throw new Error("Vui lòng chọn tài khoản.");
+  if (!occurredDate) throw new Error("Ngày ghi nhận không hợp lệ.");
+
+  const rawAmount = Number(payload?.amount || 0);
+  if (!Number.isFinite(rawAmount)) throw new Error("Số tiền không hợp lệ.");
+
+  if (type === "transfer") {
+    if (!toAccountId) throw new Error("Vui lòng chọn tài khoản nhận.");
+    if (toAccountId === accountId) throw new Error("Tài khoản chuyển và nhận phải khác nhau.");
+    if (!(rawAmount > 0)) throw new Error("Số tiền chuyển phải lớn hơn 0.");
+  } else if (type === "adjustment") {
+    if (rawAmount === 0) throw new Error("Bút toán điều chỉnh cần số tiền khác 0.");
+  } else if (!(rawAmount > 0)) {
+    throw new Error("Số tiền phải lớn hơn 0.");
+  }
+
+  if (type === "expense" && !scopeId) {
+    throw new Error("Vui lòng chọn phạm vi chi.");
+  }
+
+  return {
+    type,
+    amount: type === "adjustment" ? rawAmount : Math.abs(rawAmount),
+    occurredAt: Timestamp.fromDate(occurredDate),
+    accountId,
+    toAccountId: type === "transfer" ? toAccountId : "",
+    categoryKey: type === "expense" ? String(payload?.categoryKey || "other").trim() || "other" : "",
+    scopeId: type === "expense" ? scopeId : "",
+    note,
+    schemaVersion: LEDGER_SCHEMA_VERSION,
+  };
+}
+
+function dateInputRangeToTimestamps(fromDate = "", toDate = "") {
+  const startDate = parseLocalDate(fromDate);
+  const endDate = parseLocalDate(toDate);
+  if (!startDate && !endDate) return null;
+
+  const range = {};
+  if (startDate) {
+    range.start = Timestamp.fromDate(startDate);
+  }
+
+  if (endDate) {
+    const exclusiveEnd = new Date(endDate);
+    exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
+    range.end = Timestamp.fromDate(exclusiveEnd);
+  }
+
+  return range;
+}
+
+async function clearDefaultFlagForOtherAccounts(uid, keepId = "") {
+  const snap = await getDocs(colAccounts(uid));
+  const batch = writeBatch(db);
+  let hasChanges = false;
+
+  snap.docs.forEach((item) => {
+    if (item.id === keepId) return;
+    const data = item.data() || {};
+    if (Number(data?.schemaVersion || 0) !== LEDGER_SCHEMA_VERSION) return;
+    if (!data?.isDefault) return;
+    batch.update(item.ref, {
+      isDefault: false,
+      updatedAt: Timestamp.now(),
+    });
+    hasChanges = true;
+  });
+
+  if (hasChanges) {
+    await batch.commit();
+  }
+}
+
+async function ensureActiveDefaultAccount(uid) {
+  const snap = await getDocs(colAccounts(uid));
+  const accounts = snap.docs
+    .map((item) => ({ id: item.id, ...item.data() }))
+    .filter(
+      (item) =>
+        Number(item?.schemaVersion || 0) === LEDGER_SCHEMA_VERSION &&
+        String(item?.status || "active") !== "archived"
+    );
+
+  if (!accounts.length) return;
+  if (accounts.some((item) => item?.isDefault)) return;
+
+  const target = sortLedgerAccounts(accounts)[0];
+  if (!target?.id) return;
+  await updateDoc(docAccount(uid, target.id), {
+    isDefault: true,
+    updatedAt: Timestamp.now(),
+  });
+}
+
+async function hasAnyTransactionForAccount(uid, accountId = "") {
+  const id = String(accountId || "").trim();
+  if (!id) return false;
+
+  const [fromSnap, toSnap] = await Promise.all([
+    getDocs(query(colTransactions(uid), where("accountId", "==", id), limit(1))),
+    getDocs(query(colTransactions(uid), where("toAccountId", "==", id), limit(1))),
+  ]);
+
+  return !fromSnap.empty || !toSnap.empty;
+}
+
+export async function listAccountsWithBalances(uid) {
+  const snap = await getDocs(colAccounts(uid));
+  return sortLedgerAccounts(
+    snap.docs
+      .map((item) => ({ id: item.id, ...item.data() }))
+      .filter((item) => Number(item?.schemaVersion || 0) === LEDGER_SCHEMA_VERSION)
+      .map((item) => ({
+        id: item.id,
+        name: String(item?.name || "").trim(),
+        type: normalizeLedgerAccountType(item?.type),
+        openingBalance: Number(item?.openingBalance || 0),
+        currentBalance: Number(item?.currentBalance || 0),
+        isDefault: !!item?.isDefault,
+        status: String(item?.status || "active") === "archived" ? "archived" : "active",
+        createdAt: item?.createdAt || null,
+        updatedAt: item?.updatedAt || null,
+      }))
+  );
+}
+
+function mapExpenseScopeDoc(item) {
+  return {
+    id: item.id,
+    name: normalizeExpenseScopeName(item?.name),
+    nameLower: String(item?.nameLower || normalizeExpenseScopeName(item?.name).toLowerCase()).trim(),
+    sortOrder: Number(item?.sortOrder || 0),
+    createdAt: item?.createdAt || null,
+    updatedAt: item?.updatedAt || null,
+  };
+}
+
+function sortExpenseScopes(items = []) {
+  return [...items].sort((a, b) => {
+    const orderDiff = Number(a?.sortOrder || 0) - Number(b?.sortOrder || 0);
+    if (orderDiff !== 0) return orderDiff;
+    return String(a?.name || "").localeCompare(String(b?.name || ""), "vi");
+  });
+}
+
+function mapScopeBudgetDoc(item) {
+  return {
+    id: item.id,
+    scopeId: String(item?.scopeId || "").trim(),
+    monthKey: String(item?.monthKey || "").trim(),
+    limitAmount: Number(item?.limitAmount || 0),
+    createdAt: item?.createdAt || null,
+    updatedAt: item?.updatedAt || null,
+  };
+}
+
+function sortScopeBudgets(items = []) {
+  return [...items].sort((a, b) => {
+    const monthDiff = String(a?.monthKey || "").localeCompare(String(b?.monthKey || ""));
+    if (monthDiff !== 0) return monthDiff;
+    return String(a?.scopeId || "").localeCompare(String(b?.scopeId || ""));
+  });
+}
+
+async function ensureDefaultExpenseScopes(uid) {
+  const snap = await getDocs(colExpenseScopes(uid));
+  if (!snap.empty) {
+    return sortExpenseScopes(snap.docs.map((item) => mapExpenseScopeDoc({ id: item.id, ...item.data() })));
+  }
+
+  const batch = writeBatch(db);
+  DEFAULT_EXPENSE_SCOPES.forEach((name, index) => {
+    const ref = doc(colExpenseScopes(uid));
+    batch.set(ref, {
+      name,
+      nameLower: name.toLowerCase(),
+      sortOrder: index + 1,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+  });
+  await batch.commit();
+
+  return DEFAULT_EXPENSE_SCOPES.map((name, index) => ({
+    id: `${index + 1}`,
+    name,
+    nameLower: name.toLowerCase(),
+    sortOrder: index + 1,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  }));
+}
+
+export async function listExpenseScopes(uid) {
+  const seeded = await ensureDefaultExpenseScopes(uid);
+  const snap = await getDocs(colExpenseScopes(uid));
+  if (snap.empty) return seeded;
+  return sortExpenseScopes(snap.docs.map((item) => mapExpenseScopeDoc({ id: item.id, ...item.data() })));
+}
+
+export async function listScopeBudgets(uid, monthKey = "") {
+  const normalizedMonth = normalizeMonthKey(monthKey);
+  const snap = await getDocs(query(colScopeBudgets(uid), where("monthKey", "==", normalizedMonth)));
+  return sortScopeBudgets(
+    snap.docs.map((item) => mapScopeBudgetDoc({ id: item.id, ...item.data() }))
+  );
+}
+
+export async function saveScopeBudget(uid, payload = {}) {
+  const scopeId = String(payload?.scopeId || "").trim();
+  const monthKey = normalizeMonthKey(payload?.monthKey);
+  const limitAmount = Number(payload?.limitAmount || 0);
+
+  if (!scopeId) throw new Error("Thiếu phạm vi chi cho ngân sách.");
+  if (!Number.isFinite(limitAmount) || !(limitAmount > 0)) {
+    throw new Error("Ngân sách phải lớn hơn 0.");
+  }
+
+  const scopeItems = await listExpenseScopes(uid);
+  if (!scopeItems.some((item) => item.id === scopeId)) {
+    throw new Error("Không tìm thấy phạm vi chi cho ngân sách.");
+  }
+
+  const currentItems = await listScopeBudgets(uid, monthKey);
+  const existing = currentItems.find((item) => item.scopeId === scopeId);
+  const nextPayload = {
+    scopeId,
+    monthKey,
+    limitAmount,
+    updatedAt: Timestamp.now(),
+  };
+
+  if (existing?.id) {
+    await updateDoc(docScopeBudget(uid, existing.id), nextPayload);
+    return { id: existing.id, action: "updated" };
+  }
+
+  const ref = await addDoc(colScopeBudgets(uid), {
+    ...nextPayload,
+    createdAt: Timestamp.now(),
+  });
+  return { id: ref.id, action: "created" };
+}
+
+export async function deleteScopeBudget(uid, budgetId = "") {
+  const id = String(budgetId || "").trim();
+  if (!id) throw new Error("Thiếu ngân sách cần xóa.");
+  await deleteDoc(docScopeBudget(uid, id));
+  return true;
+}
+
+export async function createExpenseScope(uid, payload = {}) {
+  const name = normalizeExpenseScopeName(payload?.name);
+  if (!name) throw new Error("Vui lòng nhập tên phạm vi chi.");
+
+  const currentItems = await listExpenseScopes(uid);
+  const nextNameLower = name.toLowerCase();
+  if (currentItems.some((item) => item.nameLower === nextNameLower)) {
+    throw new Error("Phạm vi chi này đã tồn tại.");
+  }
+
+  const maxSortOrder = currentItems.reduce((acc, item) => Math.max(acc, Number(item?.sortOrder || 0)), 0);
+  const ref = await addDoc(colExpenseScopes(uid), {
+    name,
+    nameLower: nextNameLower,
+    sortOrder: maxSortOrder + 1,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+  return { id: ref.id };
+}
+
+export async function updateExpenseScope(uid, scopeId, payload = {}) {
+  const id = String(scopeId || "").trim();
+  if (!id) throw new Error("Thiếu phạm vi chi cần cập nhật.");
+
+  const name = normalizeExpenseScopeName(payload?.name);
+  if (!name) throw new Error("Vui lòng nhập tên phạm vi chi.");
+
+  const currentItems = await listExpenseScopes(uid);
+  const nextNameLower = name.toLowerCase();
+  if (currentItems.some((item) => item.id !== id && item.nameLower === nextNameLower)) {
+    throw new Error("Phạm vi chi này đã tồn tại.");
+  }
+
+  await updateDoc(doc(db, `users/${uid}/expenseScopes/${id}`), {
+    name,
+    nameLower: nextNameLower,
+    updatedAt: Timestamp.now(),
+  });
+  return true;
+}
+
+async function hasAnyTransactionForScope(uid, scopeId = "") {
+  const id = String(scopeId || "").trim();
+  if (!id) return false;
+
+  const snap = await getDocs(query(colTransactions(uid), where("scopeId", "==", id), limit(1)));
+  return !snap.empty;
+}
+
+async function hasAnyBudgetForScope(uid, scopeId = "") {
+  const id = String(scopeId || "").trim();
+  if (!id) return false;
+
+  const snap = await getDocs(query(colScopeBudgets(uid), where("scopeId", "==", id), limit(1)));
+  return !snap.empty;
+}
+
+async function reassignTransactionsToExpenseScope(uid, fromScopeId = "", toScopeId = "") {
+  const fromId = String(fromScopeId || "").trim();
+  const toId = String(toScopeId || "").trim();
+  if (!fromId || !toId || fromId === toId) return 0;
+
+  const snap = await getDocs(query(colTransactions(uid), where("scopeId", "==", fromId)));
+  if (snap.empty) return 0;
+
+  const docs = [...snap.docs];
+  let updatedCount = 0;
+  while (docs.length) {
+    const chunk = docs.splice(0, 400);
+    const batch = writeBatch(db);
+    const now = Timestamp.now();
+    chunk.forEach((item) => {
+      batch.update(item.ref, {
+        scopeId: toId,
+        updatedAt: now,
+      });
+    });
+    await batch.commit();
+    updatedCount += chunk.length;
+  }
+
+  return updatedCount;
+}
+
+async function reassignScopeBudgets(uid, fromScopeId = "", toScopeId = "") {
+  const fromId = String(fromScopeId || "").trim();
+  const toId = String(toScopeId || "").trim();
+  if (!fromId || !toId || fromId === toId) return 0;
+
+  const snap = await getDocs(query(colScopeBudgets(uid), where("scopeId", "==", fromId)));
+  if (snap.empty) return 0;
+
+  const currentBudgets = snap.docs.map((item) => ({
+    ref: item.ref,
+    ...mapScopeBudgetDoc({ id: item.id, ...item.data() }),
+  }));
+  const replacementSnap = await getDocs(query(colScopeBudgets(uid), where("scopeId", "==", toId)));
+  const replacementByMonth = new Map(
+    replacementSnap.docs.map((item) => {
+      const mapped = mapScopeBudgetDoc({ id: item.id, ...item.data() });
+      return [mapped.monthKey, { ref: item.ref, ...mapped }];
+    })
+  );
+
+  let updatedCount = 0;
+  while (currentBudgets.length) {
+    const chunk = currentBudgets.splice(0, 200);
+    const batch = writeBatch(db);
+    const now = Timestamp.now();
+
+    chunk.forEach((budget) => {
+      const replacement = replacementByMonth.get(budget.monthKey);
+      if (replacement?.ref) {
+        const nextLimitAmount =
+          Number(replacement.limitAmount || 0) + Number(budget.limitAmount || 0);
+        batch.update(replacement.ref, {
+          limitAmount: nextLimitAmount,
+          updatedAt: now,
+        });
+        replacement.limitAmount = nextLimitAmount;
+        batch.delete(budget.ref);
+      } else {
+        batch.update(budget.ref, {
+          scopeId: toId,
+          updatedAt: now,
+        });
+        replacementByMonth.set(budget.monthKey, {
+          ...budget,
+          ref: budget.ref,
+          scopeId: toId,
+        });
+      }
+      updatedCount += 1;
+    });
+
+    await batch.commit();
+  }
+
+  return updatedCount;
+}
+
+export async function deleteExpenseScope(uid, scopeId, options = {}) {
+  const id = String(scopeId || "").trim();
+  if (!id) throw new Error("Thiếu phạm vi chi cần xóa.");
+
+  const currentItems = await listExpenseScopes(uid);
+  const currentScope = currentItems.find((item) => item.id === id);
+  if (!currentScope) throw new Error("Không tìm thấy phạm vi chi cần xóa.");
+  if (currentItems.length <= 1) {
+    throw new Error("Cần giữ lại ít nhất 1 phạm vi chi.");
+  }
+
+  const replacementScopeId = String(options?.replacementScopeId || "").trim();
+  const hasUsage = await hasAnyTransactionForScope(uid, id);
+  const hasBudgets = await hasAnyBudgetForScope(uid, id);
+
+  if (hasUsage) {
+    if (!replacementScopeId || replacementScopeId === id) {
+      throw new Error("Phạm vi chi này đang có giao dịch. Vui lòng chọn phạm vi khác để chuyển dữ liệu.");
+    }
+    if (!currentItems.some((item) => item.id === replacementScopeId)) {
+      throw new Error("Phạm vi chi thay thế không hợp lệ.");
+    }
+    await reassignTransactionsToExpenseScope(uid, id, replacementScopeId);
+  }
+
+  if (hasBudgets) {
+    if (!replacementScopeId || replacementScopeId === id) {
+      throw new Error("Phạm vi chi này đang có ngân sách tháng. Vui lòng chọn phạm vi khác để chuyển dữ liệu.");
+    }
+    if (!currentItems.some((item) => item.id === replacementScopeId)) {
+      throw new Error("Phạm vi chi thay thế không hợp lệ.");
+    }
+    await reassignScopeBudgets(uid, id, replacementScopeId);
+  }
+
+  await deleteDoc(doc(db, `users/${uid}/expenseScopes/${id}`));
+  return true;
+}
+
+export async function createAccount(uid, payload = {}) {
+  const name = String(payload?.name || "").trim();
+  const openingBalance = Number(payload?.openingBalance || 0);
+  if (!name) throw new Error("Vui lòng nhập tên tài khoản.");
+  if (!Number.isFinite(openingBalance)) throw new Error("Số dư đầu kỳ không hợp lệ.");
+
+  const currentAccounts = await listAccountsWithBalances(uid);
+  if (
+    currentAccounts.some((item) => String(item?.name || "").trim().toLowerCase() === name.toLowerCase())
+  ) {
+    throw new Error("Tên tài khoản đã tồn tại.");
+  }
+
+  const isDefault = currentAccounts.length === 0 ? true : !!payload?.isDefault;
+  const ref = await addDoc(colAccounts(uid), {
+    name,
+    type: normalizeLedgerAccountType(payload?.type),
+    openingBalance,
+    currentBalance: openingBalance,
+    isDefault,
+    status: "active",
+    schemaVersion: LEDGER_SCHEMA_VERSION,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+
+  if (isDefault) {
+    await clearDefaultFlagForOtherAccounts(uid, ref.id);
+  }
+
+  return { id: ref.id };
+}
+
+async function applyLedgerDiffTransaction(txContext, uid, diff = new Map()) {
+  for (const [accountId, delta] of diff.entries()) {
+    if (!accountId || !Number.isFinite(delta) || delta === 0) continue;
+    const accountRef = docAccount(uid, accountId);
+    const accountSnap = await txContext.get(accountRef);
+    if (!accountSnap.exists()) throw new Error("Tài khoản không tồn tại.");
+    const accountData = accountSnap.data() || {};
+    if (Number(accountData?.schemaVersion || 0) !== LEDGER_SCHEMA_VERSION) {
+      throw new Error("Tài khoản không thuộc workspace tài chính mới.");
+    }
+    const currentBalance = Number(accountData?.currentBalance || 0);
+    txContext.update(accountRef, {
+      currentBalance: currentBalance + delta,
+      updatedAt: Timestamp.now(),
+    });
+  }
+}
+
+export async function createTransaction(uid, payload = {}) {
+  const normalized = normalizeLedgerTransactionInput(payload);
+  const transactionRef = doc(colTransactions(uid));
+  await runTransaction(db, async (txContext) => {
+    const nextEffects = buildLedgerEffects(normalized);
+    await applyLedgerDiffTransaction(txContext, uid, nextEffects);
+    txContext.set(transactionRef, {
+      ...normalized,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+  });
+  return { id: transactionRef.id };
+}
+
+export async function updateTransaction(uid, transactionId, payload = {}) {
+  const transactionRef = docTransaction(uid, transactionId);
+  await runTransaction(db, async (txContext) => {
+    const currentSnap = await txContext.get(transactionRef);
+    if (!currentSnap.exists()) throw new Error("Không tìm thấy giao dịch.");
+    const currentData = currentSnap.data() || {};
+    if (Number(currentData?.schemaVersion || 0) !== LEDGER_SCHEMA_VERSION) {
+      throw new Error("Giao dịch không thuộc workspace tài chính mới.");
+    }
+
+    const nextData = {
+      ...normalizeLedgerTransactionInput(payload),
+      createdAt: currentData?.createdAt || Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+    const diff = diffLedgerEffects(buildLedgerEffects(currentData), buildLedgerEffects(nextData));
+    await applyLedgerDiffTransaction(txContext, uid, diff);
+    txContext.update(transactionRef, nextData);
+  });
+  return true;
+}
+
+export async function deleteTransaction(uid, transactionId) {
+  const transactionRef = docTransaction(uid, transactionId);
+  await runTransaction(db, async (txContext) => {
+    const currentSnap = await txContext.get(transactionRef);
+    if (!currentSnap.exists()) throw new Error("Không tìm thấy giao dịch.");
+    const currentData = currentSnap.data() || {};
+    if (Number(currentData?.schemaVersion || 0) !== LEDGER_SCHEMA_VERSION) {
+      throw new Error("Giao dịch không thuộc workspace tài chính mới.");
+    }
+
+    const diff = diffLedgerEffects(buildLedgerEffects(currentData), new Map());
+    await applyLedgerDiffTransaction(txContext, uid, diff);
+    txContext.delete(transactionRef);
+  });
+  return true;
+}
+
+export async function listTransactions(uid, options = {}) {
+  const ym = String(options?.month || "").trim();
+  const fromDate = String(options?.fromDate || "").trim();
+  const toDate = String(options?.toDate || "").trim();
+  const explicitRange = dateInputRangeToTimestamps(fromDate, toDate);
+  const monthRange = ymToRange(ym);
+  const range = explicitRange || monthRange;
+
+  let qy = query(colTransactions(uid), orderBy("occurredAt", "desc"));
+  if (range?.start && range?.end) {
+    qy = query(
+      colTransactions(uid),
+      where("occurredAt", ">=", range.start),
+      where("occurredAt", "<", range.end),
+      orderBy("occurredAt", "desc")
+    );
+  } else if (range?.start) {
+    qy = query(
+      colTransactions(uid),
+      where("occurredAt", ">=", range.start),
+      orderBy("occurredAt", "desc")
+    );
+  } else if (range?.end) {
+    qy = query(
+      colTransactions(uid),
+      where("occurredAt", "<", range.end),
+      orderBy("occurredAt", "desc")
+    );
+  }
+
+  const snap = await getDocs(qy);
+  return mapDocs(snap)
+    .filter((item) => Number(item?.schemaVersion || 0) === LEDGER_SCHEMA_VERSION)
+    .map((item) => ({
+      id: item.id,
+      type: normalizeLedgerTransactionType(item?.type),
+      amount: Number(item?.amount || 0),
+      occurredAt: item?.occurredAt || null,
+      accountId: String(item?.accountId || "").trim(),
+      toAccountId: String(item?.toAccountId || "").trim(),
+      categoryKey: String(item?.categoryKey || "").trim(),
+      scopeId: String(item?.scopeId || "").trim(),
+      note: String(item?.note || "").trim(),
+      createdAt: item?.createdAt || null,
+      updatedAt: item?.updatedAt || null,
+    }));
+}
+
+export async function archiveAccount(uid, accountId = "") {
+  const id = String(accountId || "").trim();
+  if (!id) throw new Error("Thiếu tài khoản cần cập nhật.");
+
+  const accountRef = docAccount(uid, id);
+  const snap = await getDoc(accountRef);
+  if (!snap.exists()) throw new Error("Không tìm thấy tài khoản.");
+
+  const data = snap.data() || {};
+  if (Number(data?.schemaVersion || 0) !== LEDGER_SCHEMA_VERSION) {
+    throw new Error("Tài khoản không thuộc workspace tài chính mới.");
+  }
+
+  const hasTransactions = await hasAnyTransactionForAccount(uid, id);
+  if (!hasTransactions) {
+    await deleteDoc(accountRef);
+    await ensureActiveDefaultAccount(uid);
+    return { action: "deleted" };
+  }
+
+  await updateDoc(accountRef, {
+    status: "archived",
+    isDefault: false,
+    updatedAt: Timestamp.now(),
+  });
+  await ensureActiveDefaultAccount(uid);
+  return { action: "archived" };
+}
+
+async function deleteCollectionDocsByRef(colRef) {
+  const snap = await getDocs(colRef);
+  if (snap.empty) return;
+  const docs = [...snap.docs];
+  while (docs.length) {
+    const chunk = docs.splice(0, 400);
+    const batch = writeBatch(db);
+    chunk.forEach((item) => {
+      batch.delete(item.ref);
+    });
+    await batch.commit();
+  }
+}
+
+export async function resetFinanceData(uid) {
+  await deleteCollectionDocsByRef(colTransactions(uid));
+  await deleteCollectionDocsByRef(colExpenseScopes(uid));
+  await deleteCollectionDocsByRef(colScopeBudgets(uid));
+  await deleteCollectionDocsByRef(colExpenses(uid));
+  await deleteCollectionDocsByRef(colIncomes(uid));
+  await deleteCollectionDocsByRef(colTransfers(uid));
+  await deleteCollectionDocsByRef(colAccounts(uid));
+  invalidateBalanceCache(uid);
+  return true;
 }
 
 function normalizeVideoLanguageKey(value = "") {
@@ -777,20 +1524,14 @@ function findNextSlotAssignmentAfter(
   return null;
 }
 
-async function syncClassProgress(uid, classId) {
-  if (!uid || !classId) return null;
-  const [classSnap, sessionsSnap] = await Promise.all([
-    getDoc(doc(db, `users/${uid}/classes/${classId}`)),
-    getDocs(query(colClassSessions(uid, classId), orderBy("sessionNo", "asc"))),
-  ]);
-  if (!classSnap.exists()) return null;
-
-  const classData = classSnap.data() || {};
-  const sessions = mapDocs(sessionsSnap);
+function buildClassProgressPatch(classData = {}, sessions = [], nowTs = Timestamp.now()) {
   const totalSessions = Math.max(1, Number(classData?.totalSessions || CLASS_TOTAL_SESSIONS));
-  const doneSessions = sessions.filter((session) => String(session?.status || "") === "done").length;
+  const sortedSessions = [...(Array.isArray(sessions) ? sessions : [])].sort(
+    (a, b) => Number(a?.sessionNo || 0) - Number(b?.sessionNo || 0)
+  );
+  const doneSessions = sortedSessions.filter((session) => String(session?.status || "") === "done").length;
   const computedRemaining = Math.max(0, totalSessions - doneSessions);
-  const nextSession = sessions.find((session) => String(session?.status || "planned") === "planned") || null;
+  const nextSession = sortedSessions.find((session) => String(session?.status || "planned") === "planned") || null;
 
   const currentStatus = String(classData?.status || "active");
   let status = currentStatus;
@@ -802,18 +1543,28 @@ async function syncClassProgress(uid, classId) {
     }
   }
 
-  const remainingSessions = status === "completed" ? 0 : computedRemaining;
-
-  const patch = {
+  return {
     status,
     doneSessions,
-    remainingSessions,
+    remainingSessions: status === "completed" ? 0 : computedRemaining,
     nextSessionNo: status === "completed" ? 0 : nextSession ? Number(nextSession.sessionNo || 0) : 0,
     nextSessionId: status === "completed" ? "" : nextSession?.id || "",
     nextScheduledAt: status === "completed" ? null : nextSession?.scheduledAt || null,
-    updatedAt: Timestamp.now(),
+    updatedAt: nowTs,
   };
+}
 
+async function syncClassProgress(uid, classId) {
+  if (!uid || !classId) return null;
+  const [classSnap, sessionsSnap] = await Promise.all([
+    getDoc(doc(db, `users/${uid}/classes/${classId}`)),
+    getDocs(query(colClassSessions(uid, classId), orderBy("sessionNo", "asc"))),
+  ]);
+  if (!classSnap.exists()) return null;
+
+  const classData = classSnap.data() || {};
+  const sessions = mapDocs(sessionsSnap);
+  const patch = buildClassProgressPatch(classData, sessions, Timestamp.now());
   await updateDoc(doc(db, `users/${uid}/classes/${classId}`), patch);
   return patch;
 }
@@ -1305,14 +2056,20 @@ export async function autoCompletePastClassSessions(uid, classId, options = {}) 
       : new Date();
   const nowMs = nowDate.getTime();
 
-  const [classSnap, sessionsSnap] = await Promise.all([
-    getDoc(doc(db, `users/${uid}/classes/${classKey}`)),
-    getDocs(query(colClassSessions(uid, classKey), orderBy("sessionNo", "asc"))),
-  ]);
-  if (!classSnap.exists()) return { updatedCount: 0, updatedSessionIds: [] };
+  let classData = options?.classItem && typeof options.classItem === "object" ? options.classItem : null;
+  let sessions = Array.isArray(options?.sessions) ? options.sessions : null;
+  if (!classData || !sessions) {
+    const [classSnap, sessionsSnap] = await Promise.all([
+      getDoc(doc(db, `users/${uid}/classes/${classKey}`)),
+      getDocs(query(colClassSessions(uid, classKey), orderBy("sessionNo", "asc"))),
+    ]);
+    if (!classSnap.exists()) return { updatedCount: 0, updatedSessionIds: [] };
+    classData = classSnap.data() || {};
+    sessions = mapDocs(sessionsSnap);
+  }
 
-  const sessions = mapDocs(sessionsSnap);
-  const needStatusSync = sessions.filter((session) => {
+  const safeSessions = Array.isArray(sessions) ? sessions : [];
+  const needStatusSync = safeSessions.filter((session) => {
     const currentStatus = String(session?.status || "planned");
     if (currentStatus === "cancelled") return false;
     const endDate = buildSessionEndDate(session);
@@ -1327,22 +2084,35 @@ export async function autoCompletePastClassSessions(uid, classId, options = {}) 
   const nowTs = Timestamp.now();
   const batch = writeBatch(db);
   const updatedSessionIds = [];
+  const statusBySessionId = new Map();
   needStatusSync.forEach((session) => {
     const sid = String(session?.id || "").trim();
     if (!sid) return;
     const endDate = buildSessionEndDate(session);
     const shouldDone = !!endDate && endDate.getTime() <= nowMs;
+    const nextStatus = shouldDone ? "done" : "planned";
     updatedSessionIds.push(sid);
+    statusBySessionId.set(sid, nextStatus);
     batch.update(doc(db, `users/${uid}/classes/${classKey}/sessions/${sid}`), {
-      status: shouldDone ? "done" : "planned",
+      status: nextStatus,
       completedAt: shouldDone ? toTimestamp(session?.completedAt) || nowTs : null,
       updatedAt: nowTs,
     });
   });
 
   if (!updatedSessionIds.length) return { updatedCount: 0, updatedSessionIds: [] };
+  const sessionsAfterSync = safeSessions.map((session) => {
+    const sid = String(session?.id || "").trim();
+    if (!sid || !statusBySessionId.has(sid)) return session;
+    return {
+      ...session,
+      status: statusBySessionId.get(sid),
+      completedAt: statusBySessionId.get(sid) === "done" ? session?.completedAt || nowTs : null,
+    };
+  });
+  const classPatch = buildClassProgressPatch(classData || {}, sessionsAfterSync, nowTs);
+  batch.update(doc(db, `users/${uid}/classes/${classKey}`), classPatch);
   await batch.commit();
-  await syncClassProgress(uid, classKey);
   return {
     updatedCount: updatedSessionIds.length,
     updatedSessionIds,
@@ -1580,18 +2350,36 @@ export async function loadClassBundle(uid, classId, options = {}) {
   const ensureSessions = options?.ensureSessions !== false;
   const autoCompletePastSessions = options?.autoCompletePastSessions !== false;
 
-  if (ensureSessions) {
-    await createClassSessions(uid, key, { forceRebuild: false });
-  }
-  if (autoCompletePastSessions) {
-    await autoCompletePastClassSessions(uid, key, options?.autoCompleteOptions || {});
-  }
-
-  const [classItem, students, sessions] = await Promise.all([
+  let [classItem, students, sessions] = await Promise.all([
     readClass(uid, key),
     listClassStudents(uid, key, {}),
     listClassSessions(uid, key, {}),
   ]);
+  if (!classItem) {
+    return {
+      classItem: null,
+      students: Array.isArray(students) ? students : [],
+      sessions: Array.isArray(sessions) ? sessions : [],
+    };
+  }
+
+  if (ensureSessions && (!Array.isArray(sessions) || !sessions.length)) {
+    sessions = await createClassSessions(uid, key, { forceRebuild: false });
+    classItem = (await readClass(uid, key)) || classItem;
+  }
+  if (autoCompletePastSessions) {
+    const autoCompleteResult = await autoCompletePastClassSessions(uid, key, {
+      ...(options?.autoCompleteOptions || {}),
+      classItem,
+      sessions,
+    });
+    if (Number(autoCompleteResult?.updatedCount || 0) > 0) {
+      const refreshed = await Promise.all([readClass(uid, key), listClassSessions(uid, key, {})]);
+      classItem = refreshed[0] || classItem;
+      sessions = Array.isArray(refreshed[1]) ? refreshed[1] : sessions;
+    }
+  }
+
   return {
     classItem,
     students: Array.isArray(students) ? students : [],

@@ -1,5 +1,12 @@
-﻿const MODEL = "gemini-3-flash-latest";
-const PROMPT_VERSION = "2.6.1";
+const MODEL_CANDIDATES_DEFAULT = Object.freeze([
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+]);
+const MODEL =
+  String(process.env.GEMINI_REPORT_MODEL || MODEL_CANDIDATES_DEFAULT[0] || "").trim() ||
+  MODEL_CANDIDATES_DEFAULT[0];
+const PROMPT_VERSION = "2.6.2";
 const { guardAiRequest, jsonResponse } = require("../utils/aiGuard.js");
 
 function safeString(value, fallback = "") {
@@ -69,6 +76,59 @@ function extractGeminiText(data = {}) {
   );
 }
 
+function getModelCandidates() {
+  const raw = String(process.env.GEMINI_REPORT_MODELS || "").trim();
+  const fromEnv = raw
+    .split(",")
+    .map((item) => safeString(item, ""))
+    .filter(Boolean);
+  const combined = [MODEL, ...fromEnv, ...MODEL_CANDIDATES_DEFAULT].filter(Boolean);
+  return Array.from(new Set(combined));
+}
+
+async function requestGeminiWithFallback({
+  apiKey,
+  prompt,
+  temperature,
+  maxOutputTokens,
+  modelCandidates = [],
+}) {
+  const tried = [];
+  for (const model of modelCandidates) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+      model
+    )}:generateContent?key=${apiKey}`;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature,
+            maxOutputTokens,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return { ok: true, model, data };
+      }
+
+      const errText = await res.text().catch(() => "");
+      tried.push({ model, status: res.status, error: errText.slice(0, 600) });
+      if (res.status === 404 || res.status === 400) {
+        continue;
+      }
+      break;
+    } catch (err) {
+      tried.push({ model, status: 0, error: String(err?.message || err || "") });
+    }
+  }
+  return { ok: false, tried };
+}
+
 exports.handler = async function handler(event) {
   const guard = await guardAiRequest(event, {
     routeKey: "ai-report-insights",
@@ -91,37 +151,29 @@ exports.handler = async function handler(event) {
 
   const isWeeklyMode = String(payload?.mode || "").trim() === "weekly-review";
   const prompt = isWeeklyMode ? buildWeeklyPrompt(payload) : buildMonthlyPrompt(payload);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: isWeeklyMode ? 0.42 : 0.4,
-          maxOutputTokens: isWeeklyMode ? 240 : 180,
-        },
-      }),
+    const result = await requestGeminiWithFallback({
+      apiKey,
+      prompt,
+      temperature: isWeeklyMode ? 0.42 : 0.4,
+      maxOutputTokens: isWeeklyMode ? 240 : 180,
+      modelCandidates: getModelCandidates(),
     });
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      console.error("ai-report-insights Gemini error:", res.status, errText);
+    if (!result.ok) {
+      console.error("ai-report-insights Gemini fallback exhausted:", result.tried || []);
       return jsonResponse(500, {
         error: "Gemini API error",
-        status: res.status,
-        details: errText,
+        status: 500,
+        details: "Model fallback exhausted",
       });
     }
 
-    const data = await res.json();
-    const summary = extractGeminiText(data);
-
+    const summary = extractGeminiText(result.data || {});
     return jsonResponse(200, {
       summary,
-      model: MODEL,
+      model: result.model || MODEL,
       promptVersion: PROMPT_VERSION,
     });
   } catch (err) {

@@ -1,8 +1,7 @@
 export const PROFILE_VI = {
   displayName: "Hưng Trần",
   shortName: "Hưng",
-  tagline: "Tập trung tạo video chất lượng và kiểm soát tài chính bền vững.",
-  missionDefault:
-    "Mỗi ngày hoàn thành ít nhất 1 bước video và 1 hành động tiến độ cho mục tiêu chính.",
+  tagline: "Theo dõi tài chính cá nhân trong một workspace gọn và rõ.",
+  missionDefault: "Giữ sổ cái gọn, cập nhật giao dịch đúng và nhìn số dư rõ ràng mỗi ngày.",
   creatorFirst: true,
 };

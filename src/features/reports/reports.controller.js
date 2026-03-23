@@ -1,829 +1,555 @@
-// migrated to src structure
 import {
-  getMonthValue,
-  lastMonths,
-  VND,
-  formatVND,
-  getReportAccountFilter,
-} from "../../shared/ui/core.js";
+  getAccountTypeLabel,
+  getFinanceCategoryLabel,
+} from "../../shared/constants/finance.constants.js";
 import {
-  listExpensesByMonth,
-  listIncomesByMonth,
-} from "../../services/firebase/firestore.js";
-import { getReportInsights } from "../../services/api/aiReportInsights.js";
+  buildScopeBudgetOverview,
+  formatCurrency,
+  formatDateLabel,
+  formatMonthLabel,
+  getCurrentYm,
+  getTodayInputValue,
+  toDateInputValue,
+} from "../finance/finance.controller.js";
 
-// Top categories by spend (overview card)
-export async function refreshTopCategories(uid) {
-  const ym = getMonthValue();
-  const list = await listExpensesByMonth(uid, ym);
-  const agg = new Map();
+function pad(number) {
+  return String(number).padStart(2, "0");
+}
 
-  list.forEach((x) => {
-    const k = x.category || "Other";
-    agg.set(k, (agg.get(k) || 0) + Number(x.amount || 0));
+function toDate(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") {
+    const date = value.toDate();
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function normalizeYm(value = "") {
+  const raw = String(value || "").trim();
+  return /^\d{4}-\d{2}$/.test(raw) ? raw : getCurrentYm();
+}
+
+function sortAccountsForReport(items = []) {
+  return [...items].sort((a, b) => {
+    const archivedA = String(a?.status || "active") === "archived" ? 1 : 0;
+    const archivedB = String(b?.status || "active") === "archived" ? 1 : 0;
+    if (archivedA !== archivedB) return archivedA - archivedB;
+    const defaultA = a?.isDefault ? -1 : 0;
+    const defaultB = b?.isDefault ? -1 : 0;
+    if (defaultA !== defaultB) return defaultA - defaultB;
+    return String(a?.name || "").localeCompare(String(b?.name || ""), "vi");
   });
-
-  const top = [...agg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
-  const max = top.length ? top[0][1] : 1;
-  const wrap = document.getElementById("topCats");
-  if (!wrap) return;
-
-  wrap.innerHTML = top.length
-    ? top
-        .map(([cat, total]) => {
-          const ratio = Math.max(8, Math.round((total / max) * 100));
-          return `
-            <div class="top-cat-item">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <span class="top-cat-name">${cat}</span>
-                <strong class="top-cat-value">${Number(total).toLocaleString(
-                  "en-US"
-                )} VND</strong>
-              </div>
-              <div class="top-cat-track"><span style="width:${ratio}%"></span></div>
-            </div>
-          `;
-        })
-        .join("")
-    : '<div class="text-muted small">No spending data for this month.</div>';
 }
 
-// 1) Recent transactions (current month)
-export async function renderOverviewRecent(uid) {
-  const ym = getMonthValue();
-  const [exps, incs] = await Promise.all([
-    listExpensesByMonth(uid, ym),
-    listIncomesByMonth(uid, ym),
-  ]);
-  const merged = [
-    ...exps.map((x) => ({
-      type: "expense",
-      date: x.date,
-      name: x.name || x.note || "Expense",
-      amt: x.amount || x.money || 0,
-      cat: x.category || "Other",
-    })),
-    ...incs.map((x) => ({
-      type: "income",
-      date: x.date,
-      name: x.name || x.note || "Income",
-      amt: x.amount || x.money || 0,
-      cat: x.category || "Other",
-    })),
-  ]
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 10);
-
-  const ul = document.getElementById("ov-recent");
-  if (!ul) return;
-  ul.innerHTML = merged
-    .map((item) => {
-      const badge =
-        item.type === "expense"
-          ? '<span class="badge bg-danger-subtle text-danger ov-badge">Expense</span>'
-          : '<span class="badge bg-success-subtle text-success ov-badge">Income</span>';
-      return `<li class="list-group-item">
-      <span class="ov-note">${badge} ${
-        item.name
-      } <span class="text-secondary ms-1"> - ${item.cat}</span></span>
-      <span class="ov-amt ${
-        item.type === "expense" ? "text-danger" : "text-success"
-      }">${VND(item.amt)}</span>
-    </li>`;
-    })
-    .join("");
+function buildExpenseScopeMap(items = []) {
+  return new Map(
+    (Array.isArray(items) ? items : []).map((item) => [String(item?.id || "").trim(), String(item?.name || "").trim()])
+  );
 }
 
-// Top 5 expenses (current month)
-export async function renderOverviewTopExpenses(uid) {
-  const ym = getMonthValue();
-  const exps = await listExpensesByMonth(uid, ym);
+function isCurrentMonth(month = "") {
+  return normalizeYm(month) === getCurrentYm();
+}
 
-  const top5 = exps
-    .map((x) => ({
-      id: x.id,
-      name: x.name || x.note || "Expense",
-      cat: x.category || "Other",
-      amt: Number(x.amount || x.money || 0),
-      date: x.date,
-    }))
-    .sort((a, b) => b.amt - a.amt)
-    .slice(0, 5);
+function addDays(dateInput = "", delta = 0) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateInput || "").trim())) return "";
+  const [year, month, day] = String(dateInput).split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + delta);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
-  const toDDMM = (d) => {
-    const dt = d?.seconds ? new Date(d.seconds * 1000) : new Date(d);
-    return isNaN(dt)
-      ? ""
-      : dt.toISOString().slice(5, 10).split("-").reverse().join("/");
+function buildDateRange(fromDate = "", toDate = "") {
+  const start = String(fromDate || "").trim();
+  const end = String(toDate || "").trim();
+  if (!start || !end) return [];
+
+  const items = [];
+  let cursor = start;
+  let safety = 0;
+  while (cursor && cursor <= end && safety < 370) {
+    items.push(cursor);
+    cursor = addDays(cursor, 1);
+    safety += 1;
+  }
+  return items;
+}
+
+function createEmptyDailyBucket(dateKey = "") {
+  return {
+    dateKey,
+    dateLabel: formatDateLabel(dateKey),
+    income: 0,
+    expense: 0,
+    adjustment: 0,
+    transfer: 0,
+    net: 0,
   };
-
-  const ul = document.getElementById("ov-top5");
-  if (!ul) return;
-  ul.innerHTML = top5.length
-    ? top5
-        .map(
-          (i) => `
-        <li class="list-group-item d-flex justify-content-between align-items-center">
-          <div>
-            <div class="fw-semibold">${i.name}</div>
-            <div class="text-secondary small">${i.cat}${
-            i.date ? " - " + toDDMM(i.date) : ""
-          }</div>
-          </div>
-          <div class="text-danger fw-semibold">${VND(i.amt)}</div>
-        </li>
-      `
-        )
-        .join("")
-    : '<li class="list-group-item text-muted">No data yet</li>';
 }
 
-// 2) 6-month trend (sparkline)
-export async function renderOverviewTrend(uid) {
-  const months = lastMonths(6);
-  const sum = async (fn, ym) =>
-    (await fn(uid, ym)).reduce((s, x) => s + (x.amount || x.money || 0), 0);
-
-  const exp = [];
-  const inc = [];
-  for (const m of months) {
-    exp.push(await sum(listExpensesByMonth, m));
-    inc.push(await sum(listIncomesByMonth, m));
-  }
-
-  const el = document.getElementById("ov-trend");
-  if (!el) return;
-  const W = el.clientWidth || 520,
-    H = el.clientHeight || 140,
-    pad = 12;
-  const max = Math.max(...exp, ...inc, 1);
-  const sx = (i) => pad + i * ((W - 2 * pad) / (months.length - 1));
-  const sy = (v) => H - pad - (v / max) * (H - 2 * pad);
-  const path = (arr) =>
-    arr.map((v, i) => (i ? "L" : "M") + sx(i) + "," + sy(v)).join(" ");
-
-  el.innerHTML = `
-    <svg class="spark" viewBox="0 0 ${W} ${H}">
-      <path class="line-exp" d="${path(exp)}"></path>
-      <path class="line-inc" d="${path(inc)}"></path>
-      <g font-size="10" fill="#64748b">
-        ${months
-          .map(
-            (m, i) =>
-              `<text x="${sx(i)}" y="${H - 2}" text-anchor="middle">${m.slice(
-                5
-              )}</text>`
-          )
-          .join("")}
-      </g>
-    </svg>
-  `;
+function includesAccount(transaction, accountId = "") {
+  const target = String(accountId || "").trim();
+  if (!target || target === "all") return true;
+  return (
+    String(transaction?.accountId || "").trim() === target ||
+    String(transaction?.toAccountId || "").trim() === target
+  );
 }
 
-// 3) Expense by category (current month) + alerts
-export async function renderOverviewCategory(uid) {
-  const ym = getMonthValue();
-  const exps = await listExpensesByMonth(uid, ym);
-  const byCat = {};
-  exps.forEach((x) => {
-    const k = x.category || "Other";
-    byCat[k] = (byCat[k] || 0) + (x.amount || x.money || 0);
-  });
-  const total = Object.values(byCat).reduce((s, v) => s + v, 0) || 1;
-  const rows = Object.entries(byCat)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, val]) => {
-      const pct = (val * 100) / total;
-      return `<div class="cat-row">
-        <div class="d-flex justify-content-between">
-          <span class="cat-name">${name}</span>
-          <span class="fw-semibold">${VND(val)}</span>
-        </div>
-        <div class="cat-bar mt-1"><div class="cat-fill" style="width:${pct}%"></div></div>
-      </div>`;
-    })
-    .join("");
+function buildReportSummary(transactions = [], fromDate = "", toDate = "") {
+  const summary = transactions.reduce(
+    (acc, transaction) => {
+      const type = String(transaction?.type || "").trim();
+      const amount = Number(transaction?.amount || 0);
+      acc.transactionCount += 1;
+      if (type === "income") {
+        acc.incomeTotal += Math.abs(amount);
+      } else if (type === "expense") {
+        acc.expenseTotal += Math.abs(amount);
+      } else if (type === "transfer") {
+        acc.transferTotal += Math.abs(amount);
+      } else if (type === "adjustment") {
+        acc.adjustmentTotal += amount;
+      }
+      return acc;
+    },
+    {
+      incomeTotal: 0,
+      expenseTotal: 0,
+      transferTotal: 0,
+      adjustmentTotal: 0,
+      transactionCount: 0,
+    }
+  );
 
-  const wrap = document.getElementById("ov-cat");
-  if (wrap) wrap.innerHTML = rows || '<div class="text-muted">No data yet.</div>';
+  const rangeLabel =
+    fromDate && toDate
+      ? `${formatDateLabel(fromDate)} - ${formatDateLabel(toDate)}`
+      : formatMonthLabel(getCurrentYm());
 
-  const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
-  const alerts = [];
-  const top = entries[0];
-  if (top && top[1] > total * 0.4) {
-    alerts.push(
-      `Category <b>${top[0]}</b> takes ${Math.round(
-        (top[1] * 100) / total
-      )}% of total spend.`
-    );
-  }
-  if (exps.length === 0) {
-    alerts.push("No expenses recorded this month.");
-  }
+  return {
+    ...summary,
+    netTotal: summary.incomeTotal - summary.expenseTotal + summary.adjustmentTotal,
+    rangeLabel,
+    incomeTotalText: formatCurrency(summary.incomeTotal),
+    expenseTotalText: formatCurrency(summary.expenseTotal),
+    transferTotalText: formatCurrency(summary.transferTotal),
+    netTotalText: `${summary.incomeTotal - summary.expenseTotal + summary.adjustmentTotal >= 0 ? "+" : "-"}${formatCurrency(
+      Math.abs(summary.incomeTotal - summary.expenseTotal + summary.adjustmentTotal)
+    )}`,
+    adjustmentMetaText:
+      summary.adjustmentTotal === 0
+        ? "Điều chỉnh 0đ"
+        : `Điều chỉnh ${summary.adjustmentTotal >= 0 ? "+" : "-"}${formatCurrency(
+            Math.abs(summary.adjustmentTotal)
+          )}`,
+  };
+}
 
-  const lines = entries.map(([name, val]) => {
-    const pct = Math.round((val * 100) / total);
-    return `- <b>${name}</b> takes ${pct}% (${VND(val)})`;
+function buildCategoryBreakdown(transactions = [], totalExpense = 0) {
+  const bucket = new Map();
+  transactions.forEach((transaction) => {
+    if (String(transaction?.type || "").trim() !== "expense") return;
+    const key = String(transaction?.categoryKey || "other").trim() || "other";
+    if (!bucket.has(key)) {
+      bucket.set(key, {
+        key,
+        label: getFinanceCategoryLabel(key),
+        total: 0,
+        count: 0,
+      });
+    }
+    const item = bucket.get(key);
+    item.total += Math.abs(Number(transaction?.amount || 0));
+    item.count += 1;
   });
 
-  const box = document.getElementById("ov-alerts");
-  if (box) {
-    box.innerHTML =
-      (alerts.length
-        ? alerts.map((a) => `<div class="mb-1">- ${a}</div>`).join("") +
-          "<hr class='my-2'/>"
-        : "") +
-      (lines.length
-        ? `<div class="small">${lines.join("<br/>")}</div>`
-        : '<div class="text-muted">No data available.</div>');
-  }
-}
-
-// Run the overview blocks together
-export async function renderOverviewLower(uid) {
-  await Promise.all([
-    renderOverviewRecent(uid),
-    renderOverviewTopExpenses(uid),
-    renderOverviewCategory(uid),
-    // Optional: renderOverviewTrend(uid)
-  ]);
-}
-
-// Cashflow chart by day in month
-export async function renderReportCashflow(uid) {
-  const el = document.getElementById("cashflowChart");
-  if (!el || !uid) return;
-
-  const ym = getMonthValue();
-  const [year, month] = ym.split("-").map(Number);
-  if (!year || !month) return;
-
-  el.textContent = "Loading cashflow chart...";
-
-  try {
-    const [exps, incs] = await Promise.all([
-      listExpensesByMonth(uid, ym),
-      listIncomesByMonth(uid, ym),
-    ]);
-
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const exp = Array(daysInMonth).fill(0);
-    const inc = Array(daysInMonth).fill(0);
-
-    const getDayIndex = (doc) => {
-      const d = doc?.date?.seconds
-        ? new Date(doc.date.seconds * 1000)
-        : new Date(doc.date);
-      if (isNaN(d)) return null;
-      return d.getDate() - 1;
-    };
-
-    exps.forEach((e) => {
-      const idx = getDayIndex(e);
-      if (idx == null || idx < 0 || idx >= daysInMonth) return;
-      exp[idx] += Number(e.amount || e.money || 0);
-    });
-
-    incs.forEach((i) => {
-      const idx = getDayIndex(i);
-      if (idx == null || idx < 0 || idx >= daysInMonth) return;
-      inc[idx] += Number(i.amount || i.money || 0);
-    });
-
-    const hasData = exp.some((v) => v > 0) || inc.some((v) => v > 0);
-    if (!hasData) {
-      el.innerHTML =
-        '<div class="text-muted small">No income or expense data for this month.</div>';
-      return;
-    }
-
-    const W = el.clientWidth || 520;
-    const H = 160;
-    const pad = 16;
-
-    const max = Math.max(...exp, ...inc, 1);
-    const sx = (i) =>
-      daysInMonth === 1 ? W / 2 : pad + (i * (W - 2 * pad)) / (daysInMonth - 1);
-    const sy = (v) => H - pad - (v / max) * (H - 2 * pad);
-    const path = (arr) =>
-      arr.map((v, i) => (i ? "L" : "M") + sx(i) + "," + sy(v)).join(" ");
-
-    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-
-    el.innerHTML = `
-      <svg class="spark" viewBox="0 0 ${W} ${H}">
-        <path class="line-exp" d="${path(exp)}"></path>
-        <path class="line-inc" d="${path(inc)}"></path>
-        <g font-size="9" fill="#64748b">
-          ${days
-            .filter((d) => d === 1 || d === daysInMonth || d % 5 === 0)
-            .map((d) => {
-              const idx = d - 1;
-              return `<text x="${sx(idx)}" y="${
-                H - 2
-              }" text-anchor="middle">${d}</text>`;
-            })
-            .join("")}
-        </g>
-      </svg>
-      <div class="cashflow-legend">
-        <span class="legend-item">
-          <span class="dot dot-exp"></span> Expense
-        </span>
-        <span class="legend-item">
-          <span class="dot dot-inc"></span> Income
-        </span>
-      </div>
-    `;
-  } catch (err) {
-    console.error("renderReportCashflow error:", err);
-    el.innerHTML =
-      '<div class="text-danger small">Failed to load cashflow data.</div>';
-  }
-}
-
-// Bar + pie charts for Reports
-export async function renderReportsCharts(uid, accountFilter = "all") {
-  const barWrap = document.getElementById("barChart");
-  const pieWrap = document.getElementById("pieChart");
-  if (!barWrap || !pieWrap || !uid) return;
-
-  const ym = getMonthValue();
-  const account = accountFilter || getReportAccountFilter();
-
-  try {
-    const [expenses, incomes] = await Promise.all([
-      listExpensesByMonth(uid, ym),
-      listIncomesByMonth(uid, ym),
-    ]);
-
-    const expFiltered =
-      account === "all"
-        ? expenses
-        : expenses.filter(
-            (e) => (e.account || "").toLowerCase() === account.toLowerCase()
-          );
-
-    const incFiltered =
-      account === "all"
-        ? incomes
-        : incomes.filter(
-            (i) => (i.account || "").toLowerCase() === account.toLowerCase()
-          );
-
-    if (!expFiltered.length && !incFiltered.length) {
-      const msg =
-        '<div class="text-muted small">No data for this month and account selection.</div>';
-      barWrap.innerHTML = msg;
-      pieWrap.innerHTML = msg;
-      return;
-    }
-
-    // BAR: top 5 expense categories
-    const catMap = new Map();
-    expFiltered.forEach((e) => {
-      const cat = e.category || "Other";
-      catMap.set(cat, (catMap.get(cat) || 0) + Number(e.amount || 0));
-    });
-
-    const catEntries = [...catMap.entries()].sort((a, b) => b[1] - a[1]);
-    const topCats = catEntries.slice(0, 5);
-    const maxVal =
-      topCats.length > 0 ? Math.max(...topCats.map(([, v]) => v)) : 0;
-
-    if (!topCats.length || maxVal <= 0) {
-      barWrap.innerHTML =
-        '<div class="text-muted small">No expense data for this month.</div>';
-    } else {
-      barWrap.innerHTML = `
-        <div class="ht-bar-chart">
-          ${topCats
-            .map(([name, val]) => {
-              const h = (val / maxVal) * 100 || 1;
-              return `
-              <div class="bar-col">
-                <div class="bar" style="height:${h}%">
-                  <span class="bar-value">${Number(val).toLocaleString(
-                    "en-US"
-                  )} VND</span>
-                </div>
-                <div class="bar-label" title="${name}">${name}</div>
-              </div>`;
-            })
-            .join("")}
-        </div>`;
-    }
-
-    // PIE: expense distribution
-    const totalExp = catEntries.reduce((s, [, v]) => s + v, 0);
-    if (!totalExp) {
-      pieWrap.innerHTML =
-        '<div class="text-muted small">No expense data for this month.</div>';
-      return;
-    }
-
-    const colors = [
-      "#4E79A7",
-      "#F28E2B",
-      "#E15759",
-      "#76B7B2",
-      "#59A14F",
-      "#EDC948",
-      "#B07AA1",
-      "#9C755F",
-      "#BAB0AC",
-    ];
-
-    let currentDeg = 0;
-    const segments = [];
-    const legends = [];
-    const usedCats = topCats.length ? topCats : catEntries;
-
-    usedCats.forEach(([name, val], idx) => {
-      const start = currentDeg;
-      const angle = (val / totalExp) * 360;
-      const end = start + angle;
-      const color = colors[idx % colors.length];
-      currentDeg = end;
-
-      segments.push(`${color} ${start}deg ${end}deg`);
-
-      const percent = ((val / totalExp) * 100).toFixed(1);
-      legends.push(`
-        <div class="ht-pie-legend-row">
-          <div class="d-flex align-items-center">
-            <span class="ht-pie-dot" style="background:${color}"></span>
-            <span class="text-truncate">${name}</span>
-          </div>
-          <div class="text-end">
-            <strong>${percent}%</strong>
-            <span class="text-muted ms-1 small">${Number(val).toLocaleString(
-              "en-US"
-            )} VND</span>
-          </div>
-        </div>`);
-    });
-
-    pieWrap.innerHTML = `
-      <div class="d-flex align-items-center gap-3 flex-wrap">
-        <div class="ht-pie" style="background-image: conic-gradient(${segments.join(
-          ","
-        )});"></div>
-        <div class="flex-grow-1">
-          ${legends.join("")}
-        </div>
-      </div>`;
-  } catch (err) {
-    console.error("[renderReportsCharts]", err);
-    barWrap.innerHTML =
-      '<div class="text-danger small">Failed to load report data.</div>';
-    pieWrap.innerHTML =
-      '<div class="text-danger small">Failed to load report data.</div>';
-  }
-}
-
-export async function renderReportInsights(uid, accountFilter = "all") {
-  const wrap = document.getElementById("reportInsightsBody");
-  const aiBox = document.getElementById("reportInsightsAi");
-  if (!wrap || !uid) return;
-
-  // Set loading state for AI (if box exists)
-  if (aiBox) {
-    renderAiSummaryBox(aiBox, "", "loading");
-  }
-
-  const ym = getMonthValue();
-  const account = accountFilter || getReportAccountFilter();
-
-  const [y, m] = ym.split("-").map(Number);
-  let prevY = y;
-  let prevM = m - 1;
-  if (prevM === 0) {
-    prevM = 12;
-    prevY = y - 1;
-  }
-  const prevYm = `${prevY}-${String(prevM).padStart(2, "0")}`;
-
-  try {
-    const [curExp, curInc, prevExp, prevInc] = await Promise.all([
-      listExpensesByMonth(uid, ym),
-      listIncomesByMonth(uid, ym),
-      listExpensesByMonth(uid, prevYm),
-      listIncomesByMonth(uid, prevYm),
-    ]);
-
-    const filterByAcc = (list) =>
-      account === "all"
-        ? list
-        : list.filter(
-            (x) => (x.account || "").toLowerCase() === account.toLowerCase()
-          );
-
-    const curE = filterByAcc(curExp);
-    const curI = filterByAcc(curInc);
-    const prevE = filterByAcc(prevExp);
-    const prevI = filterByAcc(prevInc);
-
-    // No data this month -> stop, and skip AI
-    if (!curE.length && !curI.length) {
-      wrap.innerHTML =
-        '<span class="text-muted">No data to analyze for the selected account.</span>';
-      if (aiBox) {
-        aiBox.textContent =
-          "No data this month for AI analysis. Add a few expenses or incomes to get insights.";
-      }
-      return;
-    }
-
-    const totalExp = curE.reduce((s, x) => s + Number(x.amount || 0), 0);
-    const totalInc = curI.reduce((s, x) => s + Number(x.amount || 0), 0);
-    const net = totalInc - totalExp;
-
-    const prevExpSum = prevE.reduce((s, x) => s + Number(x.amount || 0), 0);
-    const prevIncSum = prevI.reduce((s, x) => s + Number(x.amount || 0), 0);
-    const prevNet = prevIncSum - prevExpSum;
-
-    // Compare expenses vs last month
-    let expCompareHtml = "";
-    if (prevExpSum > 0) {
-      const diff = totalExp - prevExpSum;
-      const perc = Math.abs((diff / prevExpSum) * 100).toFixed(1);
-      if (diff > 0) {
-        expCompareHtml = `<span class="insight-up">+${perc}%</span> vs last month`;
-      } else if (diff < 0) {
-        expCompareHtml = `<span class="insight-down">-${perc}%</span> vs last month`;
-      } else {
-        expCompareHtml = "No change vs last month";
-      }
-    } else {
-      expCompareHtml = "No expense data last month for comparison";
-    }
-
-    // Compare net vs last month
-    let netCompareHtml = "";
-    if (prevE.length || prevI.length) {
-      const diffNet = net - prevNet;
-      const percNet =
-        prevNet === 0 ? null : Math.abs((diffNet / prevNet) * 100).toFixed(1);
-      if (prevNet === 0 || percNet === null) {
-        netCompareHtml = "Not enough data to compare net vs last month";
-      } else if (diffNet > 0) {
-        netCompareHtml = `<span class="insight-down">Improved ${percNet}%</span> vs last month`;
-      } else if (diffNet < 0) {
-        netCompareHtml = `<span class="insight-up">Worse ${percNet}%</span> vs last month`;
-      } else {
-        netCompareHtml = "Net unchanged vs last month";
-      }
-    }
-
-    // Category totals to find highest spend category
-    const catMap = new Map();
-    curE.forEach((e) => {
-      const cat = e.category || "Other";
-      catMap.set(cat, (catMap.get(cat) || 0) + Number(e.amount || 0));
-    });
-    const topCat = [...catMap.entries()].sort((a, b) => b[1] - a[1])[0];
-
-    // Aggregate by day to find peak/low spend days
-    const dayMap = new Map();
-    curE.forEach((e) => {
-      const d = e?.date?.seconds
-        ? new Date(e.date.seconds * 1000)
-        : new Date(e.date);
-      if (isNaN(d)) return;
-      const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
-      dayMap.set(key, (dayMap.get(key) || 0) + Number(e.amount || 0));
-    });
-
-    const dayEntries = [...dayMap.entries()].filter(([, total]) => total > 0);
-
-    const topDay =
-      dayEntries.length > 0
-        ? [...dayEntries].sort((a, b) => b[1] - a[1])[0]
-        : null;
-
-    const minDay =
-      dayEntries.length > 0
-        ? [...dayEntries].sort((a, b) => a[1] - b[1])[0]
-        : null;
-
-    const formatDayLabel = (key) => {
-      const [, mm, dd] = key.split("-");
-      return `${dd}/${mm}`;
-    };
-
-    const accLabel =
-      account === "all" ? "all accounts" : `account ${account}`;
-
-    const fallback = (() => {
-      const netTxt =
-        net >= 0
-          ? "You are running a surplus this month."
-          : "You are running a deficit this month.";
-      const topTxt = topCat
-        ? `Your highest spend category is ${topCat[0]}.`
-        : "Track your top category to optimize spending.";
-      const actTxt =
-        net < 0
-          ? "Consider trimming 1-2 big expenses or setting category limits next month."
-          : "Keep this habit and set light limits on categories that tend to grow.";
-      return `${netTxt} ${topTxt} ${actTxt}`;
-    })();
-
-    // Local insight text
-    wrap.innerHTML = `
-      <div class="insight-item">
-        - Total expenses this month (${accLabel}): <strong>${formatVND(
-          totalExp
-        )}</strong>
-      </div>
-      <div class="insight-item">
-        - Total income this month (${accLabel}): <strong>${formatVND(
-          totalInc
-        )}</strong>
-      </div>
-      <div class="insight-item">
-        - Net (Income - Expense): <strong>${formatVND(net)}</strong>
-      </div>
-      <div class="insight-item">
-        - Expense comparison: ${expCompareHtml}
-      </div>
-      ${
-        netCompareHtml
-          ? `<div class="insight-item">- Net comparison: ${netCompareHtml}</div>`
-          : ""
-      }
-      ${
-        topCat
-          ? `<div class="insight-item">
-              - Top spend category: <strong>${topCat[0]}</strong>
-              (${formatVND(topCat[1])})
-            </div>`
-          : ""
-      }
-      ${
-        topDay
-          ? `<div class="insight-item">
-              - Highest spend day: <strong>${formatDayLabel(topDay[0])}</strong>
-              (${formatVND(topDay[1])})
-            </div>`
-          : ""
-      }
-      ${
-        minDay
-          ? `<div class="insight-item">
-              - Lowest spend day (with spend): <strong>${formatDayLabel(
-                minDay[0]
-              )}</strong>
-              (${formatVND(minDay[1])})
-            </div>`
-          : ""
-      }
-      ${
-        topDay && minDay
-          ? `<div class="insight-item mt-1 text-secondary">
-              <em>This month, you spent the most on ${formatDayLabel(
-                topDay[0]
-              )} (${formatVND(topDay[1])}) and the least on ${formatDayLabel(
-              minDay[0]
-            )} (${formatVND(minDay[1])}).</em>
-            </div>`
-          : ""
-      }
-    `;
-
-    // AI summary
-    if (aiBox) {
-      const monthLabel = `${String(m).padStart(2, "0")}/${y}`;
-      const payload = {
-        monthLabel,
-        accountLabel: accLabel,
-        totalChi: totalExp,
-        totalThu: totalInc,
-        net,
-        chiCompareText: stripHtmlTags(expCompareHtml),
-        netCompareText: stripHtmlTags(netCompareHtml),
-        topCategory: topCat ? { name: topCat[0], amount: topCat[1] } : null,
-        topDay: topDay
-          ? {
-              date: formatDayLabel(topDay[0]),
-              amount: topDay[1],
-            }
-          : null,
+  return Array.from(bucket.values())
+    .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, "vi"))
+    .map((item) => {
+      const share = totalExpense > 0 ? (item.total / totalExpense) * 100 : 0;
+      return {
+        ...item,
+        share,
+        shareText: `${share.toFixed(1)}%`,
+        totalText: formatCurrency(item.total),
+        barWidth: `${Math.max(share, item.total > 0 ? 6 : 0)}%`,
       };
-
-      try {
-        const rawSummary = await getReportInsights(payload);
-
-        const raw = (rawSummary || "").trim();
-        const summary = normalizeAiSummary(raw, fallback);
-        renderAiSummaryBox(aiBox, summary, "done");
-      } catch (err) {
-        console.error("AI report summary failed:", err);
-        renderAiSummaryBox(
-          aiBox,
-          "AI is unavailable right now. You can still review the quick insights above.",
-          "error"
-        );
-      }
-    }
-  } catch (err) {
-    wrap.innerHTML =
-      '<span class="text-danger small">Failed to analyze data.</span>';
-    if (aiBox) {
-      aiBox.textContent =
-        "AI is unavailable due to an analysis error.";
-    }
-    console.error("renderReportInsights error:", err);
-  }
-}
-
-// Remove simple HTML tags for AI text
-function stripHtmlTags(str = "") {
-  if (!str) return "";
-  return str
-    .replace(/<[^>]+>/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// UI helpers (safe render)
-function escapeHtml(str = "") {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function renderAiSummaryBox(aiBox, summaryText, state = "done") {
-  if (!aiBox) return;
-
-  if (state === "loading") {
-    aiBox.innerHTML = `
-      <div class="d-flex align-items-center gap-2">
-        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-        <span class="text-secondary small">AI is analyzing...</span>
-      </div>
-    `;
-    return;
-  }
-
-  if (state === "error") {
-    aiBox.innerHTML = `<div class="text-danger small">${escapeHtml(
-      summaryText
-    )}</div>`;
-    return;
-  }
-
-  // done
-  const safe = escapeHtml(summaryText)
-    .replace(/\n{2,}/g, "\n")
-    .replace(/\n/g, "<br/>");
-
-  aiBox.innerHTML = `
-    <div class="small text-secondary mb-1">AI insights</div>
-    <div class="ai-summary">${safe}</div>
-  `;
-}
-
-function normalizeAiSummary(summary, fallback) {
-  let s = (summary || "").replace(/\s+/g, " ").trim();
-
-  // Too short or no punctuation => fallback
-  const hasSentenceEnd = /[.!?]$/.test(s);
-  const hasAnyPunc = /[.!?]/.test(s);
-
-  if (!s || s.length < 45 || !hasAnyPunc) return fallback;
-
-  if (!hasSentenceEnd) s += ".";
-
-  if (/\b(you spend|you earn|you pay)\.$/i.test(s)) return fallback;
-
-  return s;
-}
-
-async function fetchAiReportInsights(payload) {
-  try {
-    const res = await fetch("/.netlify/functions/ai-report-insights", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
     });
+}
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      console.error("AI report insights HTTP error:", res.status, errText);
-      throw new Error(`HTTP ${res.status}: ${errText || "Server error"}`);
+function buildScopeBreakdown(transactions = [], expenseScopes = [], totalExpense = 0) {
+  const scopeMap = buildExpenseScopeMap(expenseScopes);
+  const bucket = new Map();
+
+  transactions.forEach((transaction) => {
+    if (String(transaction?.type || "").trim() !== "expense") return;
+    const scopeId = String(transaction?.scopeId || "").trim() || "unknown";
+    const label = scopeMap.get(scopeId) || "Chưa gắn phạm vi";
+    if (!bucket.has(scopeId)) {
+      bucket.set(scopeId, {
+        key: scopeId,
+        label,
+        total: 0,
+        count: 0,
+      });
     }
+    const item = bucket.get(scopeId);
+    item.total += Math.abs(Number(transaction?.amount || 0));
+    item.count += 1;
+  });
 
-    const data = await res.json();
-    if (data?.summary) return data.summary.trim();
+  return Array.from(bucket.values())
+    .sort((a, b) => b.total - a.total || a.label.localeCompare(b.label, "vi"))
+    .map((item) => {
+      const share = totalExpense > 0 ? (item.total / totalExpense) * 100 : 0;
+      return {
+        ...item,
+        share,
+        shareText: `${share.toFixed(1)}%`,
+        totalText: formatCurrency(item.total),
+        barWidth: `${Math.max(share, item.total > 0 ? 6 : 0)}%`,
+      };
+    });
+}
 
-    throw new Error("No summary in response");
-  } catch (err) {
-    console.error("fetchAiReportInsights error:", err);
-    throw err;
+function buildBudgetComparison({
+  budgetMonthKey = "",
+  transactions = [],
+  scopeBudgets = [],
+  expenseScopes = [],
+} = {}) {
+  const monthKey = String(budgetMonthKey || "").trim();
+  if (!monthKey) {
+    return {
+      monthKey: "",
+      monthLabel: "",
+      items: [],
+      emptyTitle: "So với ngân sách chỉ áp dụng trong một tháng",
+      emptyBody: "Hãy chọn khoảng ngày nằm gọn trong cùng một tháng để xem mức chi đang sát hay vượt ngân sách.",
+    };
   }
+
+  const overview = buildScopeBudgetOverview({
+    month: monthKey,
+    transactions,
+    scopeBudgets,
+    expenseScopes,
+  });
+
+  return {
+    ...overview,
+    emptyTitle: `Chưa đặt ngân sách tháng ${formatMonthLabel(monthKey)}`,
+    emptyBody: "Đặt ngân sách cho từng phạm vi để thấy mức chi đang an toàn, sắp chạm hay đã vượt mức.",
+  };
+}
+
+function buildAccountBreakdown(transactions = [], accounts = [], selectedAccountId = "all") {
+  const accountMap = new Map(
+    sortAccountsForReport(accounts).map((account) => [String(account?.id || "").trim(), account])
+  );
+  const totals = new Map();
+
+  function ensureAccount(id = "") {
+    const accountId = String(id || "").trim();
+    if (!accountId || !accountMap.has(accountId)) return null;
+    if (!totals.has(accountId)) {
+      totals.set(accountId, {
+        accountId,
+        inflow: 0,
+        outflow: 0,
+      });
+    }
+    return totals.get(accountId);
+  }
+
+  transactions.forEach((transaction) => {
+    const type = String(transaction?.type || "").trim();
+    const amount = Math.abs(Number(transaction?.amount || 0));
+    const signedAmount = Number(transaction?.amount || 0);
+    const fromAccount = ensureAccount(transaction?.accountId);
+    const toAccount = ensureAccount(transaction?.toAccountId);
+
+    if (type === "expense" && fromAccount) {
+      fromAccount.outflow += amount;
+    } else if (type === "income" && fromAccount) {
+      fromAccount.inflow += amount;
+    } else if (type === "transfer") {
+      if (fromAccount) fromAccount.outflow += amount;
+      if (toAccount) toAccount.inflow += amount;
+    } else if (type === "adjustment" && fromAccount) {
+      if (signedAmount >= 0) fromAccount.inflow += signedAmount;
+      else fromAccount.outflow += Math.abs(signedAmount);
+    }
+  });
+
+  const selectedId = String(selectedAccountId || "all").trim();
+  if (selectedId !== "all" && accountMap.has(selectedId) && !totals.has(selectedId)) {
+    totals.set(selectedId, {
+      accountId: selectedId,
+      inflow: 0,
+      outflow: 0,
+    });
+  }
+
+  return Array.from(totals.values())
+    .map((item) => {
+      const account = accountMap.get(item.accountId) || {};
+      const net = item.inflow - item.outflow;
+      return {
+        accountId: item.accountId,
+        name: String(account?.name || "Không rõ"),
+        typeLabel: getAccountTypeLabel(account?.type),
+        isArchived: String(account?.status || "active") === "archived",
+        inflow: item.inflow,
+        outflow: item.outflow,
+        net,
+        currentBalance: Number(account?.currentBalance || 0),
+        inflowText: formatCurrency(item.inflow),
+        outflowText: formatCurrency(item.outflow),
+        netText: `${net >= 0 ? "+" : "-"}${formatCurrency(Math.abs(net))}`,
+        currentBalanceText: formatCurrency(account?.currentBalance || 0),
+      };
+    })
+    .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || a.name.localeCompare(b.name, "vi"));
+}
+
+function buildDailyFlow(transactions = [], fromDate = "", toDate = "") {
+  const keys = buildDateRange(fromDate, toDate);
+  const dailyMap = new Map(keys.map((dateKey) => [dateKey, createEmptyDailyBucket(dateKey)]));
+
+  transactions.forEach((transaction) => {
+    const dateKey = toDateInputValue(transaction?.occurredAt);
+    if (!dailyMap.has(dateKey)) {
+      dailyMap.set(dateKey, createEmptyDailyBucket(dateKey));
+    }
+    const item = dailyMap.get(dateKey);
+    const type = String(transaction?.type || "").trim();
+    const amount = Number(transaction?.amount || 0);
+
+    if (type === "income") {
+      item.income += Math.abs(amount);
+    } else if (type === "expense") {
+      item.expense += Math.abs(amount);
+    } else if (type === "transfer") {
+      item.transfer += Math.abs(amount);
+    } else if (type === "adjustment") {
+      item.adjustment += amount;
+    }
+    item.net = item.income - item.expense + item.adjustment;
+  });
+
+  const items = Array.from(dailyMap.values()).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+  const maxValue = items.reduce((acc, item) => {
+    return Math.max(acc, item.income, item.expense, Math.abs(item.net));
+  }, 0);
+  const safeMax = maxValue || 1;
+
+  return {
+    maxValue: safeMax,
+    items: items.map((item) => ({
+      ...item,
+      incomeText: formatCurrency(item.income),
+      expenseText: formatCurrency(item.expense),
+      transferText: formatCurrency(item.transfer),
+      netText: `${item.net >= 0 ? "+" : "-"}${formatCurrency(Math.abs(item.net))}`,
+      incomeWidth: `${(item.income / safeMax) * 100}%`,
+      expenseWidth: `${(item.expense / safeMax) * 100}%`,
+      netWidth: `${(Math.abs(item.net) / safeMax) * 100}%`,
+      netClass: item.net >= 0 ? "positive" : "negative",
+    })),
+  };
+}
+
+function buildAccountFilterOptions(accounts = [], transactions = [], selectedAccountId = "all") {
+  const involvedIds = new Set();
+  transactions.forEach((transaction) => {
+    const accountId = String(transaction?.accountId || "").trim();
+    const toAccountId = String(transaction?.toAccountId || "").trim();
+    if (accountId) involvedIds.add(accountId);
+    if (toAccountId) involvedIds.add(toAccountId);
+  });
+
+  const selectedId = String(selectedAccountId || "all").trim();
+  if (selectedId && selectedId !== "all") {
+    involvedIds.add(selectedId);
+  }
+
+  return sortAccountsForReport(accounts)
+    .filter((account) => {
+      const accountId = String(account?.id || "").trim();
+      if (String(account?.status || "active") !== "archived") return true;
+      return involvedIds.has(accountId);
+    })
+    .map((account) => ({
+      value: account.id,
+      label:
+        String(account?.status || "active") === "archived"
+          ? `${account.name} · Đã lưu trữ`
+          : account.name,
+    }));
+}
+
+export function getMonthStartDateInput(month = getCurrentYm()) {
+  return `${normalizeYm(month)}-01`;
+}
+
+export function getMonthEndDateInput(month = getCurrentYm()) {
+  const [year, monthValue] = normalizeYm(month).split("-").map(Number);
+  const date = new Date(year, monthValue, 0);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+export function buildDefaultReportFilters(month = getCurrentYm()) {
+  const normalizedMonth = normalizeYm(month);
+  return {
+    month: normalizedMonth,
+    fromDate: getMonthStartDateInput(normalizedMonth),
+    toDate: isCurrentMonth(normalizedMonth)
+      ? getTodayInputValue()
+      : getMonthEndDateInput(normalizedMonth),
+    accountId: "all",
+  };
+}
+
+export function syncReportFiltersWithMonth(month = getCurrentYm(), currentFilters = {}) {
+  const normalizedMonth = normalizeYm(month);
+  return {
+    ...normalizeReportFilters(currentFilters),
+    month: normalizedMonth,
+    fromDate: getMonthStartDateInput(normalizedMonth),
+    toDate: isCurrentMonth(normalizedMonth)
+      ? getTodayInputValue()
+      : getMonthEndDateInput(normalizedMonth),
+  };
+}
+
+export function normalizeReportFilters(filters = {}) {
+  const normalizedMonth = normalizeYm(filters?.month || getYmFromDates(filters?.fromDate, filters?.toDate));
+  const defaults = buildDefaultReportFilters(normalizedMonth);
+  return {
+    month: normalizedMonth,
+    fromDate: String(filters?.fromDate || defaults.fromDate).trim() || defaults.fromDate,
+    toDate: String(filters?.toDate || defaults.toDate).trim() || defaults.toDate,
+    accountId: String(filters?.accountId || "all").trim() || "all",
+  };
+}
+
+function getYmFromDates(fromDate = "", toDate = "") {
+  const fromValue = String(fromDate || "").trim();
+  const toValue = String(toDate || "").trim();
+  const source = /^\d{4}-\d{2}-\d{2}$/.test(fromValue)
+    ? fromValue
+    : /^\d{4}-\d{2}-\d{2}$/.test(toValue)
+      ? toValue
+      : "";
+  return source ? source.slice(0, 7) : getCurrentYm();
+}
+
+export function validateReportFilters(filters = {}) {
+  const normalized = normalizeReportFilters(filters);
+  if (!normalized.fromDate || !normalized.toDate) {
+    return "Vui lòng chọn đủ từ ngày và đến ngày.";
+  }
+  if (normalized.fromDate > normalized.toDate) {
+    return "Từ ngày phải nhỏ hơn hoặc bằng đến ngày.";
+  }
+  return "";
+}
+
+export function buildFinanceReportVm({
+  filters = {},
+  accounts = [],
+  transactions = [],
+  expenseScopes = [],
+  scopeBudgets = [],
+  budgetMonthKey = "",
+} = {}) {
+  const normalizedFilters = normalizeReportFilters(filters);
+  const filteredTransactions = (Array.isArray(transactions) ? transactions : []).filter((transaction) =>
+    includesAccount(transaction, normalizedFilters.accountId)
+  );
+
+  const summary = buildReportSummary(
+    filteredTransactions,
+    normalizedFilters.fromDate,
+    normalizedFilters.toDate
+  );
+  const budgetComparison = buildBudgetComparison({
+    budgetMonthKey,
+    transactions: filteredTransactions,
+    scopeBudgets,
+    expenseScopes,
+  });
+  const categoryItems = buildCategoryBreakdown(filteredTransactions, summary.expenseTotal);
+  const scopeItems = buildScopeBreakdown(filteredTransactions, expenseScopes, summary.expenseTotal);
+  const accountItems = buildAccountBreakdown(
+    filteredTransactions,
+    accounts,
+    normalizedFilters.accountId
+  );
+  const dailyFlow = buildDailyFlow(
+    filteredTransactions,
+    normalizedFilters.fromDate,
+    normalizedFilters.toDate
+  );
+
+  return {
+    filters: normalizedFilters,
+    summary,
+    categoryBreakdown: {
+      items: categoryItems,
+      emptyTitle: "Chưa có khoản chi trong kỳ này",
+      emptyBody: "Danh mục chi tiêu sẽ xuất hiện khi có giao dịch chi trong khoảng ngày đã chọn.",
+    },
+    scopeBreakdown: {
+      items: scopeItems,
+      emptyTitle: "Chưa có phạm vi chi trong kỳ này",
+      emptyBody: "Phạm vi chi sẽ xuất hiện khi các khoản chi đã được gắn cho người hoặc nhóm cụ thể.",
+    },
+    budgetComparison,
+    accountBreakdown: {
+      items: accountItems,
+      emptyTitle: "Chưa có biến động tài khoản trong kỳ này",
+      emptyBody: "Phát sinh vào, phát sinh ra và biến động ròng sẽ xuất hiện khi có giao dịch phù hợp.",
+    },
+    dailyFlow: {
+      ...dailyFlow,
+      emptyTitle: "Chưa có dòng tiền trong kỳ này",
+      emptyBody: "Dòng tiền theo ngày sẽ hiện lên khi có giao dịch thu, chi hoặc điều chỉnh.",
+    },
+    filterOptions: {
+      accountOptions: buildAccountFilterOptions(
+        accounts,
+        filteredTransactions,
+        normalizedFilters.accountId
+      ),
+    },
+    emptyState: {
+      isEmpty: filteredTransactions.length === 0,
+      title: "Không có giao dịch trong kỳ đang xem",
+      body: "Hãy đổi khoảng ngày hoặc chọn tài khoản khác để xem thêm số liệu.",
+    },
+    meta: {
+      rangeLabel: summary.rangeLabel,
+      transactionCountLabel: `${summary.transactionCount} giao dịch`,
+      budgetMonthLabel: budgetMonthKey ? formatMonthLabel(budgetMonthKey) : "",
+      accountFilterLabel:
+        normalizedFilters.accountId === "all"
+          ? "Tất cả tài khoản"
+          : filterAccountLabel(accounts, normalizedFilters.accountId),
+    },
+  };
+}
+
+function filterAccountLabel(accounts = [], accountId = "") {
+  const match = (Array.isArray(accounts) ? accounts : []).find(
+    (account) => String(account?.id || "").trim() === String(accountId || "").trim()
+  );
+  return match?.name || "Tài khoản đã chọn";
 }
