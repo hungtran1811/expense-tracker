@@ -732,21 +732,19 @@ export async function createAccount(uid, payload = {}) {
 }
 
 async function applyLedgerDiffTransaction(txContext, uid, diff = new Map()) {
-  for (const [accountId, delta] of diff.entries()) {
-    if (!accountId || !Number.isFinite(delta) || delta === 0) continue;
+  const balanceChanges = Array.from(diff.entries()).filter(
+    ([accountId, delta]) => accountId && Number.isFinite(delta) && delta !== 0
+  );
+  if (!balanceChanges.length) return;
+
+  const updatedAt = Timestamp.now();
+  balanceChanges.forEach(([accountId, delta]) => {
     const accountRef = docAccount(uid, accountId);
-    const accountSnap = await txContext.get(accountRef);
-    if (!accountSnap.exists()) throw new Error("Tài khoản không tồn tại.");
-    const accountData = accountSnap.data() || {};
-    if (Number(accountData?.schemaVersion || 0) !== LEDGER_SCHEMA_VERSION) {
-      throw new Error("Tài khoản không thuộc workspace tài chính mới.");
-    }
-    const currentBalance = Number(accountData?.currentBalance || 0);
     txContext.update(accountRef, {
-      currentBalance: currentBalance + delta,
-      updatedAt: Timestamp.now(),
+      currentBalance: increment(delta),
+      updatedAt,
     });
-  }
+  });
 }
 
 export async function createTransaction(uid, payload = {}) {

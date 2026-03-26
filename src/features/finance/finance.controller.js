@@ -143,6 +143,24 @@ function buildLedgerInfoText(month, filters = {}) {
   });
 }
 
+function buildExpenseDetailsInfoText(month, filters = {}) {
+  const parts = [`Toàn bộ khoản chi trong tháng ${formatMonthLabel(month)}.`];
+  if (filters?.accountId && filters.accountId !== "all") {
+    parts.push("Đã áp dụng lọc theo tài khoản.");
+  }
+  if (filters?.categoryKey && filters.categoryKey !== "all") {
+    parts.push("Đã áp dụng lọc theo danh mục.");
+  }
+  if (filters?.scopeId && filters.scopeId !== "all") {
+    parts.push("Đã áp dụng lọc theo phạm vi.");
+  }
+  if (filters?.search) {
+    parts.push("Đã áp dụng từ khóa tìm kiếm.");
+  }
+  parts.push("Không phụ thuộc ngày đang chọn.");
+  return parts.join(" ");
+}
+
 function groupTransactionsByDate(items = [], accountMap, scopeMap) {
   const groups = new Map();
 
@@ -581,6 +599,34 @@ export function buildFinanceVm({
     return true;
   });
 
+  const expenseDetailTransactions = orderedTransactions.filter((transaction) => {
+    if (String(transaction?.type || "").trim() !== "expense") return false;
+    if (
+      normalizedFilters.accountId !== "all" &&
+      String(transaction?.accountId || "").trim() !== normalizedFilters.accountId &&
+      String(transaction?.toAccountId || "").trim() !== normalizedFilters.accountId
+    ) {
+      return false;
+    }
+    if (
+      normalizedFilters.categoryKey !== "all" &&
+      String(transaction?.categoryKey || "").trim() !== normalizedFilters.categoryKey
+    ) {
+      return false;
+    }
+    if (
+      normalizedFilters.scopeId !== "all" &&
+      String(transaction?.scopeId || "").trim() !== normalizedFilters.scopeId
+    ) {
+      return false;
+    }
+    if (normalizedFilters.search) {
+      const haystack = buildSearchText(transaction, accountMap, scopeMap);
+      if (!haystack.includes(normalizedFilters.search.toLowerCase())) return false;
+    }
+    return true;
+  });
+
   const incomeTotal = orderedTransactions
     .filter((item) => String(item?.type || "") === "income")
     .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
@@ -614,6 +660,20 @@ export function buildFinanceVm({
     amountClass: getTransactionAmountClass(transaction),
   }));
   const ledgerGroups = groupTransactionsByDate(filteredTransactions, accountMap, scopeMap);
+  const expenseDetailRows = expenseDetailTransactions.map((transaction) => ({
+    id: String(transaction?.id || "").trim(),
+    dateLabel: formatDateLabel(transaction?.occurredAt),
+    title: getTransactionTitle(transaction),
+    note: String(transaction?.note || "").trim(),
+    typeKey: String(transaction?.type || "").trim(),
+    typeLabel: getTransactionTypeLabel(transaction?.type),
+    categoryLabel: getFinanceCategoryLabel(transaction?.categoryKey),
+    scopeLabel: buildScopeLabel(transaction, scopeMap),
+    accountLabel: buildAccountLabel(transaction, accountMap),
+    amountText: getTransactionAmountText(transaction),
+    amountClass: getTransactionAmountClass(transaction),
+  }));
+  const expenseDetailGroups = groupTransactionsByDate(expenseDetailTransactions, accountMap, scopeMap);
 
   const activeAccounts = orderedAccounts.filter((item) => String(item?.status || "active") !== "archived");
   const archivedAccounts = orderedAccounts.filter((item) => String(item?.status || "active") === "archived");
@@ -677,6 +737,14 @@ export function buildFinanceVm({
       ),
       transferMeta: `Chuyển khoản tháng ${formatCurrency(transferTotal)} • Không tính vào thu hoặc chi`,
       info: buildLedgerInfoText(month, normalizedFilters),
+    },
+    expenseDetails: {
+      count: expenseDetailRows.length,
+      rows: expenseDetailRows,
+      groups: expenseDetailGroups,
+      emptyTitle: "Chưa có khoản chi nào trong tháng này",
+      emptyBody: "Khi bạn thêm khoản chi, phần này sẽ hiển thị toàn bộ chi tiết để xem lại mà không cần đổi từng ngày.",
+      info: buildExpenseDetailsInfoText(month, normalizedFilters),
     },
     accountsPanel: {
       hasActiveAccounts: activeAccounts.length > 0,

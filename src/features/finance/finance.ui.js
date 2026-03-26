@@ -407,6 +407,16 @@ export function renderFinanceRoute(vm = {}) {
   if (countEl) countEl.textContent = `${Number(vm?.ledger?.count || 0)} giao dịch`;
 
   renderLedgerTimeline(byId("ledgerTimeline"), vm?.ledger || {}, vm?.accountsPanel || {});
+
+  const expenseDetailsInfoEl = byId("expenseDetailsInfo");
+  if (expenseDetailsInfoEl) expenseDetailsInfoEl.textContent = vm?.expenseDetails?.info || "";
+
+  const expenseDetailsCountEl = byId("expenseDetailsCount");
+  if (expenseDetailsCountEl) {
+    expenseDetailsCountEl.textContent = `${Number(vm?.expenseDetails?.count || 0)} khoản chi`;
+  }
+
+  renderLedgerTimeline(byId("expenseDetailsTimeline"), vm?.expenseDetails || {}, vm?.accountsPanel || {});
   renderAccounts(byId("financeAccountsList"), vm?.accountsPanel || {});
   renderExpenseScopes(byId("expenseScopesList"), vm?.scopePanel || {});
   renderScopeBudgetManagement(byId("scopeBudgetsList"), vm?.budgetPanel || {});
