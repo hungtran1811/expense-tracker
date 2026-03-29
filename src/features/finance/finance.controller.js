@@ -133,18 +133,43 @@ function buildScopeLabel(transaction, scopeMap) {
   return String(scopeMap.get(String(transaction?.scopeId || "").trim())?.name || "").trim();
 }
 
-function buildLedgerInfoText(month, filters = {}) {
-  const dateValue = String(filters?.date || "").trim();
-  if (dateValue) {
-    return `Giao dịch ngày ${formatDateLabel(dateValue)}.`;
-  }
-  return formatTemplate(t("finance.monthInfo", "Tất cả giao dịch trong tháng {{month}}."), {
-    month: formatMonthLabel(month),
-  });
+function shiftDateInput(value = "", delta = 0) {
+  const date = toDate(value);
+  if (!date) return "";
+  date.setDate(date.getDate() + Number(delta || 0));
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function buildExpenseDetailsInfoText(month, filters = {}) {
-  const parts = [`Toàn bộ khoản chi trong tháng ${formatMonthLabel(month)}.`];
+function buildFinanceRangeLabel(filters = {}) {
+  const range = getFinanceRange(filters);
+  if (range.preset === "today") {
+    return `Hôm nay • ${formatDateLabel(range.toDate)}`;
+  }
+  return `${range.presetLabel} • ${formatDateLabel(range.fromDate)} - ${formatDateLabel(range.toDate)}`;
+}
+
+function buildLedgerInfoText(filters = {}) {
+  const parts = [`Hoạt động trong ${buildFinanceRangeLabel(filters)}.`];
+  if (filters?.accountId && filters.accountId !== "all") {
+    parts.push("Đã lọc theo tài khoản.");
+  }
+  if (filters?.type && filters.type !== "all") {
+    parts.push("Đã lọc theo loại giao dịch.");
+  }
+  if (filters?.categoryKey && filters.categoryKey !== "all") {
+    parts.push("Đã lọc theo danh mục.");
+  }
+  if (filters?.scopeId && filters.scopeId !== "all") {
+    parts.push("Đã lọc theo phạm vi.");
+  }
+  if (filters?.search) {
+    parts.push("Đã áp dụng từ khóa tìm kiếm.");
+  }
+  return parts.join(" ");
+}
+
+function buildExpenseDetailsInfoText(filters = {}) {
+  const parts = [`Toàn bộ khoản chi trong ${buildFinanceRangeLabel(filters).toLowerCase()}.`];
   if (filters?.accountId && filters.accountId !== "all") {
     parts.push("Đã áp dụng lọc theo tài khoản.");
   }
@@ -157,7 +182,6 @@ function buildExpenseDetailsInfoText(month, filters = {}) {
   if (filters?.search) {
     parts.push("Đã áp dụng từ khóa tìm kiếm.");
   }
-  parts.push("Không phụ thuộc ngày đang chọn.");
   return parts.join(" ");
 }
 
@@ -218,6 +242,43 @@ export function getCurrentYm() {
 export function getTodayInputValue() {
   const now = new Date();
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function normalizeFinancePreset(value = "") {
+  const raw = String(value || "").trim();
+  if (raw === "today" || raw === "7d") return raw;
+  return "30d";
+}
+
+export function getFinanceRange(filters = {}) {
+  const preset = normalizeFinancePreset(filters?.preset);
+  const anchorDate = String(filters?.date || "").trim() || getTodayInputValue();
+  const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(anchorDate) ? anchorDate : getTodayInputValue();
+
+  if (preset === "today") {
+    return {
+      preset,
+      presetLabel: "Hôm nay",
+      fromDate: safeDate,
+      toDate: safeDate,
+    };
+  }
+
+  if (preset === "7d") {
+    return {
+      preset,
+      presetLabel: "7 ngày gần nhất",
+      fromDate: shiftDateInput(safeDate, -6),
+      toDate: safeDate,
+    };
+  }
+
+  return {
+    preset,
+    presetLabel: "30 ngày gần nhất",
+    fromDate: shiftDateInput(safeDate, -29),
+    toDate: safeDate,
+  };
 }
 
 export function formatMonthLabel(ym = getCurrentYm()) {
@@ -432,11 +493,12 @@ export function toDateInputValue(value) {
 
 export function normalizeFinanceFilters(filters = {}) {
   return {
+    preset: normalizeFinancePreset(filters?.preset),
     accountId: String(filters?.accountId || "all").trim() || "all",
     type: String(filters?.type || "all").trim() || "all",
     categoryKey: String(filters?.categoryKey || "all").trim() || "all",
     scopeId: String(filters?.scopeId || "all").trim() || "all",
-    date: String(filters?.date || "").trim(),
+    date: String(filters?.date || getTodayInputValue()).trim() || getTodayInputValue(),
     search: String(filters?.search || "").trim(),
   };
 }
@@ -555,15 +617,18 @@ export function buildFinanceVm({
   month,
   accounts = [],
   transactions = [],
+  budgetTransactions = [],
   expenseScopes = [],
   scopeBudgets = [],
   filters = {},
 } = {}) {
   const normalizedFilters = normalizeFinanceFilters(filters);
+  const financeRange = getFinanceRange(normalizedFilters);
   const orderedAccounts = sortAccounts(accounts);
   const accountMap = buildAccountMap(orderedAccounts);
   const scopeMap = buildScopeMap(expenseScopes);
   const orderedTransactions = sortTransactions(transactions);
+  const orderedBudgetTransactions = sortTransactions(budgetTransactions);
 
   const filteredTransactions = orderedTransactions.filter((transaction) => {
     if (
@@ -587,10 +652,6 @@ export function buildFinanceVm({
       String(transaction?.scopeId || "").trim() !== normalizedFilters.scopeId
     ) {
       return false;
-    }
-    if (normalizedFilters.date) {
-      const transactionDate = toDateInputValue(transaction?.occurredAt);
-      if (transactionDate !== normalizedFilters.date) return false;
     }
     if (normalizedFilters.search) {
       const haystack = buildSearchText(transaction, accountMap, scopeMap);
@@ -627,16 +688,16 @@ export function buildFinanceVm({
     return true;
   });
 
-  const incomeTotal = orderedTransactions
+  const incomeTotal = filteredTransactions
     .filter((item) => String(item?.type || "") === "income")
     .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-  const expenseTotal = orderedTransactions
+  const expenseTotal = filteredTransactions
     .filter((item) => String(item?.type || "") === "expense")
     .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-  const transferTotal = orderedTransactions
+  const transferTotal = filteredTransactions
     .filter((item) => String(item?.type || "") === "transfer")
     .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-  const adjustmentTotal = orderedTransactions
+  const adjustmentTotal = filteredTransactions
     .filter((item) => String(item?.type || "") === "adjustment")
     .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
   const totalBalance = orderedAccounts
@@ -679,12 +740,12 @@ export function buildFinanceVm({
   const archivedAccounts = orderedAccounts.filter((item) => String(item?.status || "active") === "archived");
   const scopeBudgetOverview = buildScopeBudgetOverview({
     month,
-    transactions: orderedTransactions,
+    transactions: orderedBudgetTransactions,
     scopeBudgets,
     expenseScopes,
   });
   const scopeUsageMap = new Map();
-  orderedTransactions.forEach((transaction) => {
+  filteredTransactions.forEach((transaction) => {
     const scopeId = String(transaction?.scopeId || "").trim();
     if (!scopeId) return;
     scopeUsageMap.set(scopeId, (scopeUsageMap.get(scopeId) || 0) + 1);
@@ -694,6 +755,7 @@ export function buildFinanceVm({
     month: String(month || getCurrentYm()).trim(),
     monthLabel: formatMonthLabel(month),
     filters: normalizedFilters,
+    range: financeRange,
     categories: FINANCE_CATEGORIES,
     transactionTypes: TRANSACTION_TYPE_OPTIONS,
     accounts: orderedAccounts,
@@ -735,23 +797,23 @@ export function buildFinanceVm({
         "finance.emptyLedgerBody",
         "Thêm một khoản chi, khoản thu hoặc chuyển khoản để bắt đầu sổ giao dịch mới."
       ),
-      transferMeta: `Chuyển khoản tháng ${formatCurrency(transferTotal)} • Không tính vào thu hoặc chi`,
-      info: buildLedgerInfoText(month, normalizedFilters),
+      transferMeta: `Chuyển khoản trong kỳ ${formatCurrency(transferTotal)} • Không tính vào thu hoặc chi`,
+      info: buildLedgerInfoText(normalizedFilters),
     },
     expenseDetails: {
       count: expenseDetailRows.length,
       rows: expenseDetailRows,
       groups: expenseDetailGroups,
-      emptyTitle: "Chưa có khoản chi nào trong tháng này",
-      emptyBody: "Khi bạn thêm khoản chi, phần này sẽ hiển thị toàn bộ chi tiết để xem lại mà không cần đổi từng ngày.",
-      info: buildExpenseDetailsInfoText(month, normalizedFilters),
+      emptyTitle: "Chưa có khoản chi nào trong kỳ đang xem",
+      emptyBody: "Khi bạn thêm khoản chi, phần này sẽ hiển thị lịch sử chi tiêu theo đúng kỳ đang xem.",
+      info: buildExpenseDetailsInfoText(normalizedFilters),
     },
     accountsPanel: {
       hasActiveAccounts: activeAccounts.length > 0,
       hasArchivedAccounts: archivedAccounts.length > 0,
       summaryText:
         activeAccounts.length || archivedAccounts.length
-          ? `${activeAccounts.length + archivedAccounts.length} tài khoản`
+          ? `${activeAccounts.length + archivedAccounts.length} tài khoản • tổng ${formatCurrency(totalBalance)}`
           : "Chưa có tài khoản",
       activeAccounts: activeAccounts.map((account) => ({
         id: account.id,

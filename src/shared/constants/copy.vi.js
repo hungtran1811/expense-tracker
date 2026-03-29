@@ -4,6 +4,7 @@ export const copyVi = {
     owner: "Hưng Trần",
   },
   nav: {
+    overview: "Tổng quan",
     expenses: "Tài chính",
     reports: "Báo cáo",
   },
@@ -16,9 +17,13 @@ export const copyVi = {
       title: "Tài chính",
       subtitle: "Workspace tài chính tập trung cho thu, chi, chuyển khoản và số dư tài khoản.",
     },
+    overview: {
+      title: "Tổng quan",
+      subtitle: "Nhìn nhanh số dư, tín hiệu rủi ro và các insight tài chính quan trọng nhất.",
+    },
     reports: {
       title: "Báo cáo",
-      subtitle: "Xem nhanh tổng quan tài chính, danh mục chi tiêu, tài khoản và dòng tiền theo ngày.",
+      subtitle: "Đọc nhanh số dư, áp lực chi và các tín hiệu quan trọng trong kỳ đang xem.",
     },
   },
   common: {
@@ -111,4 +116,3 @@ export function formatTemplate(template, payload = {}) {
   });
   return output;
 }
-

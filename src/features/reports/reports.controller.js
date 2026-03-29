@@ -218,6 +218,155 @@ function buildScopeBreakdown(transactions = [], expenseScopes = [], totalExpense
     });
 }
 
+function buildReportBalanceSnapshot(accounts = [], selectedAccountId = "all") {
+  const sortedAccounts = sortAccountsForReport(accounts);
+  const selectedId = String(selectedAccountId || "all").trim();
+  const visibleAccounts =
+    selectedId !== "all"
+      ? sortedAccounts.filter((account) => String(account?.id || "").trim() === selectedId)
+      : sortedAccounts.filter((account) => String(account?.status || "active") !== "archived");
+
+  const totalBalance = visibleAccounts.reduce((sum, account) => sum + Number(account?.currentBalance || 0), 0);
+  return {
+    totalBalance,
+    totalBalanceText: formatCurrency(totalBalance),
+    items: visibleAccounts.slice(0, 4).map((account) => ({
+      id: String(account?.id || "").trim(),
+      name: String(account?.name || "").trim(),
+      balanceText: formatCurrency(account?.currentBalance || 0),
+      metaText: account?.isDefault ? "Mặc định" : getAccountTypeLabel(account?.type),
+      isDefault: !!account?.isDefault,
+    })),
+  };
+}
+
+function buildLargestExpenseHighlight(transactions = [], accounts = [], expenseScopes = []) {
+  const accountMap = new Map(
+    (Array.isArray(accounts) ? accounts : []).map((account) => [String(account?.id || "").trim(), account])
+  );
+  const scopeMap = buildExpenseScopeMap(expenseScopes);
+  const current = [...(Array.isArray(transactions) ? transactions : [])]
+    .filter((item) => String(item?.type || "").trim() === "expense")
+    .sort((a, b) => Math.abs(Number(b?.amount || 0)) - Math.abs(Number(a?.amount || 0)))[0];
+
+  if (!current) return null;
+
+  return {
+    title: getFinanceCategoryLabel(current?.categoryKey),
+    amountText: formatCurrency(Math.abs(Number(current?.amount || 0))),
+    dateLabel: formatDateLabel(current?.occurredAt),
+    accountLabel: String(accountMap.get(String(current?.accountId || "").trim())?.name || "Không rõ").trim(),
+    scopeLabel: String(scopeMap.get(String(current?.scopeId || "").trim()) || "Chưa gắn phạm vi").trim(),
+    note: String(current?.note || "").trim(),
+  };
+}
+
+function buildQuickSignals({
+  budgetComparison = {},
+  scopeItems = [],
+  categoryItems = [],
+  accountItems = [],
+} = {}) {
+  const budgetItems = Array.isArray(budgetComparison?.items) ? budgetComparison.items : [];
+  const budgetRisk = budgetItems.find((item) => item.statusKey === "over") || budgetItems.find((item) => item.statusKey === "near");
+  const topScope = scopeItems[0] || null;
+  const topCategory = categoryItems[0] || null;
+  const topOutflowAccount = [...(Array.isArray(accountItems) ? accountItems : [])]
+    .filter((item) => Number(item?.outflow || 0) > 0)
+    .sort(
+      (a, b) =>
+        Number(b?.outflow || 0) - Number(a?.outflow || 0) ||
+        String(a?.name || "").localeCompare(String(b?.name || ""), "vi")
+    )[0];
+
+  return [
+    budgetRisk
+      ? {
+          label: "Ngân sách",
+          valueText: budgetRisk.scopeName,
+          note:
+            budgetRisk.statusKey === "over"
+              ? `Vượt ${formatCurrency(Math.abs(budgetRisk.remainingAmount || 0))}.`
+              : `Còn ${formatCurrency(Math.max(budgetRisk.remainingAmount || 0, 0))}.`,
+          tone: budgetRisk.statusKey === "over" ? "danger" : "warning",
+        }
+      : {
+          label: "Ngân sách",
+          valueText: Number(budgetComparison?.configuredCount || 0) > 0 ? "Ổn định" : "Chưa đặt",
+          note:
+            Number(budgetComparison?.configuredCount || 0) > 0
+              ? `${budgetComparison?.configuredCount || 0} phạm vi trong mức.`
+              : "Chưa có ngân sách cho kỳ này.",
+          tone: "neutral",
+        },
+    topScope
+      ? {
+          label: "Phạm vi chi mạnh",
+          valueText: topScope.label,
+          note: `${topScope.shareText} tổng chi.`,
+          tone: "brand",
+        }
+      : null,
+    topCategory
+      ? {
+          label: "Danh mục lớn nhất",
+          valueText: topCategory.label,
+          note: `${topCategory.shareText} tổng chi.`,
+          tone: "success",
+        }
+      : null,
+    topOutflowAccount
+      ? {
+          label: "Tài khoản chi nhiều",
+          valueText: topOutflowAccount.name,
+          note: `${formatCurrency(topOutflowAccount.outflow)} chi ra.`,
+          tone: "neutral",
+        }
+      : null,
+  ].filter(Boolean);
+}
+
+function buildAttentionItems({
+  budgetComparison = {},
+  scopeItems = [],
+  categoryItems = [],
+  accountItems = [],
+  largestExpense = null,
+} = {}) {
+  const items = [];
+  const budgetItems = Array.isArray(budgetComparison?.items) ? budgetComparison.items : [];
+  const budgetRisk = budgetItems.find((item) => item.statusKey === "over") || budgetItems.find((item) => item.statusKey === "near");
+  const topOutflowAccount = [...(Array.isArray(accountItems) ? accountItems : [])]
+    .filter((item) => Number(item?.outflow || 0) > 0)
+    .sort(
+      (a, b) =>
+        Number(b?.outflow || 0) - Number(a?.outflow || 0) ||
+        String(a?.name || "").localeCompare(String(b?.name || ""), "vi")
+    )[0];
+
+  if (budgetRisk) {
+    items.push(
+      budgetRisk.statusKey === "over"
+        ? `${budgetRisk.scopeName} vượt ${formatCurrency(Math.abs(budgetRisk.remainingAmount || 0))}.`
+        : `${budgetRisk.scopeName} còn ${formatCurrency(Math.max(budgetRisk.remainingAmount || 0, 0))} trước ngưỡng.`
+    );
+  }
+  if (scopeItems[0]) {
+    items.push(`${scopeItems[0].label} chiếm ${scopeItems[0].shareText} tổng chi.`);
+  }
+  if (categoryItems[0]) {
+    items.push(`${categoryItems[0].label} là danh mục chi lớn nhất.`);
+  }
+  if (topOutflowAccount) {
+    items.push(`${topOutflowAccount.name} chi ra nhiều nhất.`);
+  }
+  if (largestExpense) {
+    items.push(`Khoản lớn nhất: ${largestExpense.title.toLowerCase()} ${largestExpense.amountText}.`);
+  }
+
+  return Array.from(new Set(items)).slice(0, 5);
+}
+
 function buildBudgetComparison({
   budgetMonthKey = "",
   transactions = [],
@@ -480,6 +629,7 @@ export function buildFinanceReportVm({
     normalizedFilters.fromDate,
     normalizedFilters.toDate
   );
+  const balanceSnapshot = buildReportBalanceSnapshot(accounts, normalizedFilters.accountId);
   const budgetComparison = buildBudgetComparison({
     budgetMonthKey,
     transactions: filteredTransactions,
@@ -493,15 +643,41 @@ export function buildFinanceReportVm({
     accounts,
     normalizedFilters.accountId
   );
+  const largestExpense = buildLargestExpenseHighlight(filteredTransactions, accounts, expenseScopes);
   const dailyFlow = buildDailyFlow(
     filteredTransactions,
     normalizedFilters.fromDate,
     normalizedFilters.toDate
   );
+  summary.totalBalanceText = balanceSnapshot.totalBalanceText;
+  summary.transferMetaText = `Chuyển khoản ${summary.transferTotalText}`;
 
   return {
     filters: normalizedFilters,
     summary,
+    cashSnapshot: balanceSnapshot,
+    quickSignals: {
+      items: buildQuickSignals({
+        budgetComparison,
+        scopeItems,
+        categoryItems,
+        accountItems,
+      }),
+      emptyTitle: "Chưa có tín hiệu nhanh",
+      emptyBody: "Khi có giao dịch và ngân sách, phần này sẽ chỉ ra ngay nơi cần nhìn trước.",
+    },
+    attentionItems: {
+      items: buildAttentionItems({
+        budgetComparison,
+        scopeItems,
+        categoryItems,
+        accountItems,
+        largestExpense,
+      }),
+      largestExpense,
+      emptyTitle: "Chưa có điều gì nổi bật",
+      emptyBody: "Các kết luận ngắn sẽ hiện ra khi kỳ đang xem đã có đủ giao dịch để đọc xu hướng.",
+    },
     categoryBreakdown: {
       items: categoryItems,
       emptyTitle: "Chưa có khoản chi trong kỳ này",

@@ -97,13 +97,18 @@
             <section id="expenses" class="route active">
               <div class="route-toolbar route-toolbar-finance">
                 <div class="route-toolbar-left">
+                  <div class="finance-preset-group" id="financePresetGroup">
+                    <button type="button" class="finance-preset-btn" data-finance-preset="today">Hôm nay</button>
+                    <button type="button" class="finance-preset-btn" data-finance-preset="7d">7 ngày</button>
+                    <button type="button" class="finance-preset-btn active" data-finance-preset="30d">30 ngày</button>
+                  </div>
                   <div
                     class="filter-control filter-control-date filter-control-pill"
                     data-filter-control="date"
                     data-control-for="dayFilter"
-                    data-allow-clear="true"
+                    data-allow-clear="false"
                   >
-                    <span class="topbar-filter-label">Ngày</span>
+                    <span class="topbar-filter-label">Mốc ngày</span>
                     <input class="filter-native-control" id="dayFilter" type="date" />
                     <button
                       type="button"
@@ -112,7 +117,7 @@
                       aria-haspopup="dialog"
                       aria-expanded="false"
                     >
-                      <span class="filter-control-label">Ng&#224;y</span>
+                      <span class="filter-control-label">Mốc ngày</span>
                       <span class="filter-control-value" data-filter-value></span>
                       <i class="bi bi-calendar3"></i>
                     </button>
@@ -138,7 +143,7 @@
                 <span class="workspace-kicker">Hung Tran Finance</span>
                 <h1 class="workspace-title">Tài chính</h1>
                 <p class="workspace-subtitle" id="financeWorkspaceInfo">
-                  Theo dõi dòng tiền rõ ràng hơn với sổ giao dịch tập trung và bảng tài khoản gọn.
+                  Ghi sổ, quản lý tài khoản và theo dõi ngân sách trong một nơi.
                 </p>
               </div>
 
@@ -170,9 +175,9 @@
               <section class="card finance-ledger-card">
                 <div class="finance-section-head">
                   <div>
-                    <h2 class="finance-section-title">Sổ giao dịch</h2>
+                    <h2 class="finance-section-title">Hoạt động gần đây</h2>
                     <div class="small text-muted" id="financeLedgerInfo">
-                      Tất cả giao dịch trong tháng đang chọn.
+                      Hoạt động gần đây trong kỳ đang xem.
                     </div>
                     <div class="small text-muted" id="financeTransferMeta"></div>
                   </div>
@@ -277,9 +282,9 @@
                 <div class="finance-detail-block">
                   <div class="finance-section-head finance-detail-head">
                     <div>
-                      <h3 class="finance-section-title finance-detail-title">Chi tiết khoản chi</h3>
+                      <h3 class="finance-section-title finance-detail-title">Lịch sử chi tiêu</h3>
                       <div class="small text-muted" id="expenseDetailsInfo">
-                        Xem toàn bộ khoản chi trong tháng đang chọn mà không cần đổi từng ngày.
+                        Xem lại toàn bộ khoản chi trong kỳ đang xem mà không cần lọc theo từng ngày.
                       </div>
                     </div>
                     <div class="finance-section-meta" id="expenseDetailsCount">0 khoản chi</div>
@@ -374,7 +379,7 @@
                 <span class="workspace-kicker">Hung Tran Finance</span>
                 <h1 class="workspace-title">Báo cáo</h1>
                 <p class="workspace-subtitle">
-                  Xem nhanh bức tranh thu chi, tài khoản và dòng tiền trong kỳ đang chọn.
+                  Một màn để đọc nhanh số dư, áp lực chi và điểm cần chú ý.
                 </p>
               </div>
             </div>
@@ -382,7 +387,7 @@
             <section class="card reports-filter-card reports-shell-card">
               <div class="reports-shell-top">
                 <div class="reports-shell-copy">
-                  <h2 class="reports-shell-title">Tổng quan tài chính</h2>
+                  <h2 class="reports-shell-title">Bức tranh tài chính</h2>
                   <div class="small text-muted" id="reportsSummaryMeta"></div>
                 </div>
 
@@ -464,12 +469,44 @@
               <div id="reportsEmptyState" class="reports-empty-wrap d-none"></div>
             </section>
 
-            <div class="reports-main-grid">
+            <div class="reports-main-grid reports-main-grid-top">
               <section class="card reports-panel reports-panel-compact">
                 <div class="reports-section-head">
                   <div>
-                    <h2 class="finance-section-title">Chi tiêu nổi bật</h2>
-                    <div class="small text-muted">Nhìn nhanh danh mục nào đang chiếm tỷ trọng lớn nhất.</div>
+                    <h2 class="finance-section-title">Số dư hiện tại</h2>
+                    <div class="small text-muted">4 tài khoản cần nhìn trước.</div>
+                  </div>
+                </div>
+                <div class="report-cash-strip" id="reportCashSnapshot"></div>
+              </section>
+
+              <section class="card reports-panel reports-panel-compact">
+                <div class="reports-section-head">
+                  <div>
+                    <h2 class="finance-section-title">Tín hiệu nhanh</h2>
+                    <div class="small text-muted">Điểm cần nhìn ngay trong kỳ.</div>
+                  </div>
+                </div>
+                <div id="reportQuickSignals"></div>
+              </section>
+            </div>
+
+            <section class="card reports-panel reports-panel-wide">
+              <div class="reports-section-head">
+                <div>
+                  <h2 class="finance-section-title">Việc cần chú ý</h2>
+                  <div class="small text-muted">Kết luận ngắn để quyết định nhanh hơn.</div>
+                </div>
+              </div>
+              <div id="reportAttentionItems"></div>
+            </section>
+
+            <div class="reports-main-grid reports-main-grid-drivers">
+              <section class="card reports-panel reports-panel-compact">
+                <div class="reports-section-head">
+                  <div>
+                    <h2 class="finance-section-title">Danh mục chi lớn</h2>
+                    <div class="small text-muted">Nhìn theo tỷ trọng chi.</div>
                   </div>
                 </div>
                 <div id="reportCategoryBreakdown"></div>
@@ -478,11 +515,11 @@
               <section class="card reports-panel reports-panel-compact">
                 <div class="reports-section-head">
                   <div>
-                    <h2 class="finance-section-title">Tài khoản</h2>
-                    <div class="small text-muted">Ưu tiên xem phát sinh vào, ra và số dư hiện tại.</div>
+                    <h2 class="finance-section-title">Phạm vi chi lớn</h2>
+                    <div class="small text-muted">Ai đang dùng quỹ nhiều hơn.</div>
                   </div>
                 </div>
-                <div id="reportAccountBreakdown"></div>
+                <div id="reportScopeBreakdown"></div>
               </section>
             </div>
 
@@ -490,7 +527,7 @@
               <div class="reports-section-head">
                 <div>
                   <h2 class="finance-section-title">So với ngân sách</h2>
-                  <div class="small text-muted">Ưu tiên nhìn phạm vi nào đang vượt mức hoặc sắp chạm ngân sách tháng.</div>
+                  <div class="small text-muted">Xem nhanh áp lực ngân sách.</div>
                 </div>
               </div>
               <div id="reportBudgetComparison"></div>
@@ -499,11 +536,11 @@
             <section class="card reports-panel reports-panel-wide">
               <div class="reports-section-head">
                 <div>
-                  <h2 class="finance-section-title">Phạm vi chi</h2>
-                  <div class="small text-muted">Xem trong kỳ này đang chi nhiều cho ai hoặc nhóm nào nhiều nhất.</div>
+                  <h2 class="finance-section-title">Tài khoản</h2>
+                  <div class="small text-muted">Dòng vào, ra và số dư.</div>
                 </div>
               </div>
-              <div id="reportScopeBreakdown"></div>
+              <div id="reportAccountBreakdown"></div>
             </section>
 
             <details class="card reports-panel reports-detail-panel">

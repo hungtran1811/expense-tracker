@@ -283,8 +283,8 @@ function renderExpenseScopes(container, scopePanel = {}) {
           const usageCount = Number(item.usageCount || 0);
           const usageLabel =
             usageCount > 0
-              ? `${usageCount} giao dịch trong tháng đang xem`
-              : "Chưa có giao dịch nào trong tháng đang xem";
+              ? `${usageCount} giao dịch trong kỳ đang xem`
+              : "Chưa có giao dịch nào trong kỳ đang xem";
 
           return `
             <article class="scope-card">
@@ -389,6 +389,10 @@ function renderScopeBudgetManagement(container, budgetPanel = {}) {
 }
 
 export function renderFinanceRoute(vm = {}) {
+  document.querySelectorAll("[data-finance-preset]").forEach((button) => {
+    button.classList.toggle("active", button.getAttribute("data-finance-preset") === String(vm?.filters?.preset || "30d"));
+  });
+
   renderOverview(byId("financeOverview"), {
     totalBalanceText: vm?.summary?.totalBalanceText || "0đ",
     incomeTotalText: vm?.summary?.incomeTotalText || "0đ",

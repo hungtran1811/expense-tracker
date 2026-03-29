@@ -53,37 +53,13 @@ export function bindFinanceEvents(handlers = {}) {
     handlers.onChangeFilters?.({ date: event?.target?.value || "" });
   });
 
-  byId("ledgerFilterAccount")?.addEventListener("change", (event) => {
-    handlers.onChangeFilters?.({ accountId: event?.target?.value || "all" });
-  });
-
-  byId("ledgerFilterType")?.addEventListener("change", (event) => {
-    handlers.onChangeFilters?.({ type: event?.target?.value || "all" });
-  });
-
-  byId("ledgerFilterCategory")?.addEventListener("change", (event) => {
-    handlers.onChangeFilters?.({ categoryKey: event?.target?.value || "all" });
-  });
-
-  byId("ledgerFilterScope")?.addEventListener("change", (event) => {
-    handlers.onChangeFilters?.({ scopeId: event?.target?.value || "all" });
-  });
-
-  byId("ledgerFilterSearch")?.addEventListener("input", (event) => {
-    handlers.onChangeFilters?.({ search: event?.target?.value || "" });
-  });
-
-  byId("expenseScopeName")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    handlers.onCreateExpenseScope?.(readScopeCreateForm());
-  });
-
-  byId("btnCreateExpenseScope")?.addEventListener("click", () => {
-    handlers.onCreateExpenseScope?.(readScopeCreateForm());
-  });
-
   document.addEventListener("click", (event) => {
+    const presetButton = event.target.closest("[data-finance-preset]");
+    if (presetButton) {
+      handlers.onChangePreset?.(presetButton.getAttribute("data-finance-preset") || "30d");
+      return;
+    }
+
     const openButton = event.target.closest("[data-finance-open]");
     if (openButton) {
       handlers.onOpenComposer?.(openButton.getAttribute("data-finance-open") || "expense");
@@ -139,6 +115,36 @@ export function bindFinanceEvents(handlers = {}) {
       if (action === "delete") handlers.onDeleteScopeBudget?.(payload);
       return;
     }
+  });
+
+  byId("ledgerFilterAccount")?.addEventListener("change", (event) => {
+    handlers.onChangeFilters?.({ accountId: event?.target?.value || "all" });
+  });
+
+  byId("ledgerFilterType")?.addEventListener("change", (event) => {
+    handlers.onChangeFilters?.({ type: event?.target?.value || "all" });
+  });
+
+  byId("ledgerFilterCategory")?.addEventListener("change", (event) => {
+    handlers.onChangeFilters?.({ categoryKey: event?.target?.value || "all" });
+  });
+
+  byId("ledgerFilterScope")?.addEventListener("change", (event) => {
+    handlers.onChangeFilters?.({ scopeId: event?.target?.value || "all" });
+  });
+
+  byId("ledgerFilterSearch")?.addEventListener("input", (event) => {
+    handlers.onChangeFilters?.({ search: event?.target?.value || "" });
+  });
+
+  byId("expenseScopeName")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    handlers.onCreateExpenseScope?.(readScopeCreateForm());
+  });
+
+  byId("btnCreateExpenseScope")?.addEventListener("click", () => {
+    handlers.onCreateExpenseScope?.(readScopeCreateForm());
   });
 
   byId("ftType")?.addEventListener("change", () => {

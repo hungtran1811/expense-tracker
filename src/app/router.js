@@ -8,6 +8,7 @@ const topbarTitleEl = document.querySelector(".topbar-title .title");
 const topbarSubtitleEl = document.querySelector(".topbar-title .subtitle");
 
 const LEGACY_ROUTE_MAP = Object.freeze({
+  overview: "reports",
   dashboard: "expenses",
   accounts: "expenses",
   classes: "expenses",
@@ -39,7 +40,7 @@ function normalizeRoute(routeId = "") {
 }
 
 function updateTopbar(routeId = "expenses") {
-  const title = t(`routeMeta.${routeId}.title`, "Tài chính");
+  const title = t(`routeMeta.${routeId}.title`, "Tổng quan");
   const subtitle = t(`routeMeta.${routeId}.subtitle`, "");
   const showSubtitle = String(subtitle || "").trim().length > 0;
 
@@ -110,4 +111,3 @@ window.addEventListener("hashchange", () => {
 });
 
 renderRoute(hashRoute());
-

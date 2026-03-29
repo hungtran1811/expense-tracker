@@ -16,6 +16,7 @@ import {
   formatCurrency,
   formatDateLabel,
   formatMonthLabel,
+  getFinanceRange,
   getCurrentYm,
   getTodayInputValue,
   getYmFromDateInput,
@@ -39,6 +40,17 @@ import {
 import { bindReportEvents } from "../features/reports/reports.events.js";
 import { renderReportsRoute } from "../features/reports/reports.ui.js";
 import {
+  buildDefaultOverviewFilters,
+  buildOverviewVm,
+  getOverviewBudgetMonthKey,
+  getOverviewRange,
+  getPreviousOverviewRange,
+  normalizeOverviewFilters,
+  validateOverviewFilters,
+} from "../features/overview/overview.controller.js";
+import { bindOverviewEvents } from "../features/overview/overview.events.js";
+import { renderOverviewRoute } from "../features/overview/overview.ui.js";
+import {
   archiveAccount,
   createAccount,
   createExpenseScope,
@@ -58,12 +70,21 @@ import {
 
 function createDefaultFilters() {
   return {
+    preset: "30d",
     accountId: "all",
     type: "all",
     categoryKey: "all",
     scopeId: "all",
     date: getTodayInputValue(),
     search: "",
+  };
+}
+
+function createDefaultOverviewState() {
+  const filters = buildDefaultOverviewFilters();
+  return {
+    draft: { ...filters },
+    applied: { ...filters },
   };
 }
 
@@ -75,6 +96,7 @@ function createDefaultReportState() {
   };
 }
 
+const overviewDefaults = createDefaultOverviewState();
 const reportDefaults = createDefaultReportState();
 
 const state = {
@@ -87,6 +109,15 @@ const state = {
   expenseScopes: [],
   scopeBudgetsByMonth: {},
   filters: createDefaultFilters(),
+  overviewFilters: overviewDefaults.draft,
+  overviewAppliedFilters: overviewDefaults.applied,
+  overviewTransactions: [],
+  overviewPreviousTransactions: [],
+  overviewBudgetTransactions: [],
+  overviewScopeBudgets: [],
+  overviewVm: null,
+  overviewError: "",
+  overviewLoadedKey: "",
   composerDraft: buildTransactionDraft(),
   composerBudgetPreview: { visible: false },
   expenseScopeDraft: {
@@ -197,39 +228,26 @@ function findExpenseScopeByRef(rawValue = "") {
   );
 }
 
-function promptExpenseScopeReplacement(scope = {}) {
-  const currentId = String(scope?.id || "").trim();
-  const availableScopes = state.expenseScopes.filter((item) => String(item?.id || "").trim() !== currentId);
-  if (!availableScopes.length) {
-    showToast("Cần giữ lại ít nhất 1 phạm vi chi khác để chuyển dữ liệu.", "error");
-    return null;
-  }
-
-  const suggestedName = String(availableScopes[0]?.name || "").trim();
-  const answer = window.prompt(
-    `Phạm vi "${String(scope?.name || "").trim()}" đã có giao dịch. Nhập tên phạm vi thay thế:\n${availableScopes
-      .map((item) => item.name)
-      .join(", ")}`,
-    suggestedName
-  );
-
-  if (answer == null) return undefined;
-
-  const replacement = findExpenseScopeByRef(answer);
-  if (!replacement || String(replacement?.id || "").trim() === currentId) {
-    showToast("Không tìm thấy phạm vi thay thế hợp lệ.", "error");
-    return null;
-  }
-
-  return replacement;
-}
-
 function getCurrentHashRoute() {
   return String(location.hash || "").replace("#", "").trim();
 }
 
+function resolveWorkspaceRoute(routeId = "") {
+  const raw = String(routeId || "").trim();
+  if (raw === "overview") return "reports";
+  return raw || "expenses";
+}
+
+function getOverviewLoadKey(filters = state.overviewAppliedFilters) {
+  return JSON.stringify(normalizeOverviewFilters(filters));
+}
+
 function getReportLoadKey(filters = state.reportAppliedFilters) {
   return JSON.stringify(normalizeReportFilters(filters));
+}
+
+function invalidateOverviewCache() {
+  state.overviewLoadedKey = "";
 }
 
 function invalidateReportsCache() {
@@ -299,21 +317,13 @@ async function ensureFinanceMonthResources(uid, monthKey = state.month) {
 
 function ensureMonthValue(value = "") {
   const next = String(value || "").trim() || getCurrentYm();
-  const selectEl = byId("monthFilter");
-  if (selectEl && !Array.from(selectEl.options).some((option) => option.value === next)) {
-    const [year, month] = next.split("-");
-    if (year && month) {
-      selectEl.add(new Option(`Tháng ${month}/${year}`, next));
-    }
-  }
-  if (selectEl) selectEl.value = next;
   state.month = next;
 }
 
 function normalizeDateFilterForMonth(month = state.month) {
   const currentDate = String(state.filters?.date || "").trim();
-  if (currentDate && !currentDate.startsWith(`${month}-`)) {
-    state.filters.date = "";
+  if (!currentDate) {
+    state.filters.date = getTodayInputValue();
   }
 }
 
@@ -336,6 +346,7 @@ function buildRenderedFinanceVm() {
     month: state.month,
     accounts: state.accounts,
     transactions: state.transactions,
+    budgetTransactions: getTransactionsForMonth(state.month),
     expenseScopes: state.expenseScopes,
     scopeBudgets: getScopeBudgetsForMonth(state.month),
     filters: state.filters,
@@ -346,6 +357,26 @@ function buildRenderedFinanceVm() {
   vm.summary.transferTotalText = formatCurrency(vm.summary.transferTotal);
   vm.summary.netTotalText = formatCurrency(vm.summary.netTotal);
   return vm;
+}
+
+function renderOverviewView() {
+  const vm =
+    state.overviewVm ||
+    buildOverviewVm({
+      filters: state.overviewAppliedFilters,
+      accounts: state.accounts,
+      currentTransactions: state.overviewTransactions,
+      previousTransactions: state.overviewPreviousTransactions,
+      expenseScopes: state.expenseScopes,
+      scopeBudgets: state.overviewScopeBudgets,
+      budgetTransactions: state.overviewBudgetTransactions,
+    });
+
+  renderOverviewRoute(vm, {
+    draftFilters: state.overviewFilters,
+    error: state.overviewError,
+  });
+  syncFilterControls();
 }
 
 function renderFinanceView() {
@@ -363,10 +394,9 @@ function renderFinanceView() {
 
   const infoEl = byId("financeWorkspaceInfo");
   if (infoEl) {
-    const dateFilter = String(state.financeVm?.filters?.date || "").trim();
-    infoEl.textContent = dateFilter
-      ? `Theo dõi giao dịch và số dư tài khoản cho ngày ${formatDateLabel(dateFilter)}.`
-      : `Theo dõi toàn bộ giao dịch và số dư tài khoản cho ${state.financeVm.monthLabel}.`;
+    const rangeLabel = String(state.financeVm?.range?.presetLabel || "").trim().toLowerCase();
+    const anchorDate = String(state.financeVm?.filters?.date || "").trim();
+    infoEl.textContent = `Theo dõi ${rangeLabel} kết thúc vào ${formatDateLabel(anchorDate)}.`;
   }
 
   renderFinanceBudgetForm({
@@ -440,6 +470,7 @@ async function updateComposerBudgetPreview() {
 }
 
 function resetRuntimeState() {
+  const defaultOverviewState = createDefaultOverviewState();
   const defaultReportState = createDefaultReportState();
   state.accounts = [];
   state.transactions = [];
@@ -447,6 +478,15 @@ function resetRuntimeState() {
   state.expenseScopes = [];
   state.scopeBudgetsByMonth = {};
   state.filters = createDefaultFilters();
+  state.overviewFilters = defaultOverviewState.draft;
+  state.overviewAppliedFilters = defaultOverviewState.applied;
+  state.overviewTransactions = [];
+  state.overviewPreviousTransactions = [];
+  state.overviewBudgetTransactions = [];
+  state.overviewScopeBudgets = [];
+  state.overviewVm = null;
+  state.overviewError = "";
+  state.overviewLoadedKey = "";
   state.composerDraft = buildTransactionDraft();
   state.composerBudgetPreview = { visible: false };
   state.expenseScopeDraft = buildExpenseScopeDraft();
@@ -459,17 +499,27 @@ function resetRuntimeState() {
   state.reportVm = null;
   state.reportError = "";
   state.reportLoadedKey = "";
-  ensureMonthValue(getCurrentYm());
+  ensureMonthValue(getYmFromDateInput(state.filters.date) || getCurrentYm());
   clearExpenseScopeInput();
   renderApp();
 }
 
 async function refreshFinance(uid, { month = state.month } = {}) {
-  ensureMonthValue(month);
+  state.filters = {
+    ...createDefaultFilters(),
+    ...state.filters,
+  };
+  const range = getFinanceRange(state.filters);
+  const budgetMonth = getYmFromDateInput(state.filters.date) || month || getCurrentYm();
+  ensureMonthValue(budgetMonth);
   normalizeDateFilterForMonth(state.month);
 
-  const [accounts, transactions, expenseScopes, scopeBudgets] = await Promise.all([
+  const [accounts, transactions, budgetTransactions, expenseScopes, scopeBudgets] = await Promise.all([
     listAccountsWithBalances(uid),
+    listTransactions(uid, {
+      fromDate: range.fromDate,
+      toDate: range.toDate,
+    }),
     listTransactions(uid, { month: state.month }),
     listExpenseScopes(uid),
     listScopeBudgets(uid, state.month),
@@ -477,7 +527,7 @@ async function refreshFinance(uid, { month = state.month } = {}) {
 
   state.accounts = accounts;
   state.transactions = transactions;
-  state.transactionsByMonth[state.month] = transactions;
+  state.transactionsByMonth[state.month] = budgetTransactions;
   state.expenseScopes = expenseScopes;
   state.scopeBudgetsByMonth[state.month] = scopeBudgets;
 
@@ -563,6 +613,48 @@ async function refreshReports(uid, filters = state.reportAppliedFilters) {
   renderApp();
 }
 
+async function refreshOverview(uid, filters = state.overviewAppliedFilters) {
+  const normalized = normalizeOverviewFilters(filters);
+  const currentRange = getOverviewRange(normalized);
+  const previousRange = getPreviousOverviewRange(normalized);
+  const budgetMonthKey = getOverviewBudgetMonthKey(normalized);
+
+  const [accounts, expenseScopes, currentTransactions, previousTransactions, budgetTransactions, scopeBudgets] =
+    await Promise.all([
+      listAccountsWithBalances(uid),
+      listExpenseScopes(uid),
+      listTransactions(uid, {
+        fromDate: currentRange.fromDate,
+        toDate: currentRange.toDate,
+      }),
+      listTransactions(uid, {
+        fromDate: previousRange.fromDate,
+        toDate: previousRange.toDate,
+      }),
+      listTransactions(uid, { month: budgetMonthKey }),
+      listScopeBudgets(uid, budgetMonthKey),
+    ]);
+
+  state.accounts = accounts;
+  state.expenseScopes = expenseScopes;
+  state.overviewAppliedFilters = normalized;
+  state.overviewTransactions = currentTransactions;
+  state.overviewPreviousTransactions = previousTransactions;
+  state.overviewBudgetTransactions = budgetTransactions;
+  state.overviewScopeBudgets = scopeBudgets;
+  state.overviewVm = buildOverviewVm({
+    filters: normalized,
+    accounts,
+    currentTransactions,
+    previousTransactions,
+    expenseScopes,
+    scopeBudgets,
+    budgetTransactions,
+  });
+  state.overviewLoadedKey = getOverviewLoadKey(normalized);
+  renderApp();
+}
+
 function openComposer(type = "expense", options = {}) {
   const transactionId = String(options?.transactionId || "").trim();
   const transaction = transactionId
@@ -608,7 +700,7 @@ function exportCurrentLedger() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `ledger-${state.month}.csv`;
+  link.download = `ledger-${state.filters.preset || "range"}-${state.filters.date || state.month}.csv`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -643,8 +735,9 @@ bindFinanceEvents({
     const nextPatch = { ...patch };
     const nextDate = String(nextPatch?.date ?? state.filters?.date ?? "").trim();
     const nextMonth = getYmFromDateInput(nextDate);
+    const shouldReload = Object.prototype.hasOwnProperty.call(nextPatch, "date");
 
-    if (nextMonth && nextMonth !== state.month) {
+    if (shouldReload && nextMonth && nextMonth !== state.month) {
       const uid = ensureUser();
       if (!uid) return;
       state.filters = {
@@ -667,7 +760,40 @@ bindFinanceEvents({
       ...state.filters,
       ...nextPatch,
     };
+
+    if (shouldReload) {
+      const uid = ensureUser();
+      if (!uid) return;
+      setGlobalLoading(true);
+      try {
+        await refreshFinance(uid, { month: nextMonth || state.month });
+      } catch (err) {
+        console.error("change finance filter error", err);
+        showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
+      } finally {
+        setGlobalLoading(false);
+      }
+      return;
+    }
+
     renderFinanceView();
+  },
+  onChangePreset: async (preset) => {
+    const uid = ensureUser();
+    if (!uid) return;
+    state.filters = {
+      ...state.filters,
+      preset,
+    };
+    setGlobalLoading(true);
+    try {
+      await refreshFinance(uid, { month: getYmFromDateInput(state.filters.date) || state.month });
+    } catch (err) {
+      console.error("change finance preset error", err);
+      showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
+    } finally {
+      setGlobalLoading(false);
+    }
   },
   onOpenComposer: (type) => {
     if (!ensureUser()) return;
@@ -811,25 +937,6 @@ bindFinanceEvents({
       id: scope?.id,
       name: scope?.name,
     });
-    return;
-    const uid = ensureUser();
-    if (!uid) return;
-
-    const currentName = String(scope?.name || "").trim();
-    const nextName = window.prompt("Nhập tên mới cho phạm vi chi:", currentName);
-    if (nextName == null) return;
-
-    setGlobalLoading(true);
-    try {
-      await updateExpenseScope(uid, scope?.id, { name: nextName });
-      await refreshFinance(uid);
-      showToast("Đã cập nhật phạm vi chi.", "success");
-    } catch (err) {
-      console.error("updateExpenseScope error", err);
-      showToast(err?.message || "Không thể cập nhật phạm vi chi.", "error");
-    } finally {
-      setGlobalLoading(false);
-    }
   },
   onDeleteExpenseScope: async (scope) => {
     const uid = ensureUser();
@@ -850,59 +957,6 @@ bindFinanceEvents({
       name: currentScope.name,
       replacementScopeId: getReplacementScopeId(currentScope.id),
     });
-    return;
-
-    let replacementScope = null;
-    if (Number(scope?.usageCount || 0) > 0) {
-      const picked = promptExpenseScopeReplacement(currentScope);
-      if (picked === undefined) return;
-      if (!picked) return;
-      replacementScope = picked;
-    }
-
-    const allow = window.confirm(
-      replacementScope
-        ? `Xóa phạm vi "${currentScope.name}" và chuyển dữ liệu sang "${replacementScope.name}"?`
-        : `Bạn chắc chắn muốn xóa phạm vi "${currentScope.name}"?`
-    );
-    if (!allow) return;
-
-    setGlobalLoading(true);
-    try {
-      try {
-        await deleteExpenseScope(uid, currentScope.id, {
-          replacementScopeId: replacementScope?.id || "",
-        });
-      } catch (err) {
-        const message = String(err?.message || "");
-        if (
-          !replacementScope &&
-          (message.includes("đang có giao dịch") || message.includes("đang có ngân sách"))
-        ) {
-          setGlobalLoading(false);
-          const picked = promptExpenseScopeReplacement(currentScope);
-          if (picked === undefined) return;
-          if (!picked) return;
-          replacementScope = picked;
-          setGlobalLoading(true);
-          await deleteExpenseScope(uid, currentScope.id, {
-            replacementScopeId: replacementScope.id,
-          });
-        } else {
-          throw err;
-        }
-      }
-
-      invalidateFinanceMonthCache();
-      invalidateReportsCache();
-      await refreshFinance(uid);
-      showToast("Đã xóa phạm vi chi.", "success");
-    } catch (err) {
-      console.error("deleteExpenseScope error", err);
-      showToast(err?.message || "Không thể xóa phạm vi chi.", "error");
-    } finally {
-      setGlobalLoading(false);
-    }
   },
   onSubmitExpenseScopeForm: async (form) => {
     const uid = ensureUser();
@@ -956,31 +1010,6 @@ bindFinanceEvents({
       limitAmount: budget?.limitAmount,
       monthKey: state.month,
     });
-    return;
-    const uid = ensureUser();
-    if (!uid) return;
-
-    const amount = promptScopeBudgetLimit(budget, budget, state.month);
-    if (amount === undefined) return;
-    if (amount == null) return;
-
-    setGlobalLoading(true);
-    try {
-      await saveScopeBudget(uid, {
-        scopeId: budget?.scopeId,
-        monthKey: state.month,
-        limitAmount: amount,
-      });
-      invalidateFinanceMonthCache(state.month);
-      invalidateReportsCache();
-      await refreshFinance(uid);
-      showToast("Đã lưu ngân sách tháng.", "success");
-    } catch (err) {
-      console.error("saveScopeBudget error", err);
-      showToast(err?.message || "Không thể lưu ngân sách tháng.", "error");
-    } finally {
-      setGlobalLoading(false);
-    }
   },
   onSubmitScopeBudget: async (rawBudget) => {
     const uid = ensureUser();
@@ -1107,6 +1136,48 @@ bindReportEvents({
   },
 });
 
+bindOverviewEvents({
+  onChangePreset: (preset) => {
+    state.overviewFilters = normalizeOverviewFilters({
+      ...state.overviewFilters,
+      preset,
+    });
+    state.overviewError = validateOverviewFilters(state.overviewFilters);
+    renderOverviewView();
+  },
+  onChangeDraftFilters: (draft) => {
+    state.overviewFilters = normalizeOverviewFilters({
+      ...state.overviewFilters,
+      ...draft,
+    });
+    state.overviewError = validateOverviewFilters(state.overviewFilters);
+    renderOverviewView();
+  },
+  onApplyFilters: async (rawFilters) => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    const nextFilters = normalizeOverviewFilters({
+      ...state.overviewFilters,
+      ...rawFilters,
+    });
+    state.overviewFilters = nextFilters;
+    state.overviewError = validateOverviewFilters(nextFilters);
+    renderOverviewView();
+    if (state.overviewError) return;
+
+    setGlobalLoading(true);
+    try {
+      await refreshOverview(uid, nextFilters);
+    } catch (err) {
+      console.error("apply overview filters error", err);
+      showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
+});
+
 ensureMonthValue(getYmFromDateInput(state.filters.date) || getCurrentYm());
 bindFilterControls();
 bindAuthButtons();
@@ -1124,10 +1195,11 @@ watchAuth(async (user) => {
     return;
   }
 
-  const requestedRoute =
+  const requestedRoute = resolveWorkspaceRoute(
     state.pendingRoute && state.pendingRoute !== "auth"
       ? state.pendingRoute
-      : getCurrentHashRoute() || "expenses";
+      : getCurrentHashRoute() || "expenses"
+  );
 
   setGlobalLoading(true);
   try {
@@ -1145,7 +1217,7 @@ watchAuth(async (user) => {
 });
 
 window.addEventListener("nexus:route-changed", async (event) => {
-  const routeId = String(event?.detail?.routeId || "").trim();
+  const routeId = resolveWorkspaceRoute(String(event?.detail?.routeId || "").trim());
   if (!state.currentUser && routeId !== "auth") {
     state.pendingRoute = routeId || "expenses";
     setActiveRoute("auth");
