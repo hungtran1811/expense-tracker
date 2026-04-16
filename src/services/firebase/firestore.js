@@ -17,6 +17,7 @@
   startAfter,
   writeBatch,
   runTransaction,
+  deleteField,
 } from "firebase/firestore";
 import { app } from "./app.js";
 
@@ -245,6 +246,43 @@ function buildLedgerEffects(transactionData = {}) {
   }
   addLedgerEffect(effects, accountId, amount);
   return effects;
+}
+
+function buildLedgerTransactionDocData(normalized = {}, options = {}) {
+  const createdAt = options?.createdAt || null;
+  const updatedAt = options?.updatedAt || Timestamp.now();
+  const forUpdate = !!options?.forUpdate;
+  const type = normalizeLedgerTransactionType(normalized?.type);
+
+  const data = {
+    type,
+    amount: Number(normalized?.amount || 0),
+    occurredAt: normalized?.occurredAt || null,
+    accountId: String(normalized?.accountId || "").trim(),
+    note: String(normalized?.note || "").trim(),
+    schemaVersion: LEDGER_SCHEMA_VERSION,
+    updatedAt,
+  };
+
+  if (createdAt) {
+    data.createdAt = createdAt;
+  }
+
+  if (type === "transfer") {
+    data.toAccountId = String(normalized?.toAccountId || "").trim();
+  } else if (forUpdate) {
+    data.toAccountId = deleteField();
+  }
+
+  if (type === "expense") {
+    data.categoryKey = String(normalized?.categoryKey || "").trim() || "other";
+    data.scopeId = String(normalized?.scopeId || "").trim();
+  } else if (forUpdate) {
+    data.categoryKey = deleteField();
+    data.scopeId = deleteField();
+  }
+
+  return data;
 }
 
 function diffLedgerEffects(previousEffects, nextEffects) {
@@ -563,8 +601,8 @@ async function hasAnyTransactionForScope(uid, scopeId = "") {
   const id = String(scopeId || "").trim();
   if (!id) return false;
 
-  const snap = await getDocs(query(colTransactions(uid), where("scopeId", "==", id), limit(1)));
-  return !snap.empty;
+  const snap = await getDocs(query(colTransactions(uid), where("scopeId", "==", id), limit(20)));
+  return snap.docs.some((item) => normalizeLedgerTransactionType(item.data()?.type) === "expense");
 }
 
 async function hasAnyBudgetForScope(uid, scopeId = "") {
@@ -583,7 +621,11 @@ async function reassignTransactionsToExpenseScope(uid, fromScopeId = "", toScope
   const snap = await getDocs(query(colTransactions(uid), where("scopeId", "==", fromId)));
   if (snap.empty) return 0;
 
-  const docs = [...snap.docs];
+  const docs = snap.docs.filter(
+    (item) => normalizeLedgerTransactionType(item.data()?.type) === "expense"
+  );
+  if (!docs.length) return 0;
+
   let updatedCount = 0;
   while (docs.length) {
     const chunk = docs.splice(0, 400);
@@ -753,11 +795,13 @@ export async function createTransaction(uid, payload = {}) {
   await runTransaction(db, async (txContext) => {
     const nextEffects = buildLedgerEffects(normalized);
     await applyLedgerDiffTransaction(txContext, uid, nextEffects);
-    txContext.set(transactionRef, {
-      ...normalized,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
+    txContext.set(
+      transactionRef,
+      buildLedgerTransactionDocData(normalized, {
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      })
+    );
   });
   return { id: transactionRef.id };
 }
@@ -772,14 +816,22 @@ export async function updateTransaction(uid, transactionId, payload = {}) {
       throw new Error("Giao dịch không thuộc workspace tài chính mới.");
     }
 
+    const normalized = normalizeLedgerTransactionInput(payload);
     const nextData = {
-      ...normalizeLedgerTransactionInput(payload),
+      ...normalized,
       createdAt: currentData?.createdAt || Timestamp.now(),
       updatedAt: Timestamp.now(),
     };
     const diff = diffLedgerEffects(buildLedgerEffects(currentData), buildLedgerEffects(nextData));
     await applyLedgerDiffTransaction(txContext, uid, diff);
-    txContext.update(transactionRef, nextData);
+    txContext.update(
+      transactionRef,
+      buildLedgerTransactionDocData(nextData, {
+        createdAt: currentData?.createdAt || Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        forUpdate: true,
+      })
+    );
   });
   return true;
 }
@@ -834,19 +886,22 @@ export async function listTransactions(uid, options = {}) {
   const snap = await getDocs(qy);
   return mapDocs(snap)
     .filter((item) => Number(item?.schemaVersion || 0) === LEDGER_SCHEMA_VERSION)
-    .map((item) => ({
-      id: item.id,
-      type: normalizeLedgerTransactionType(item?.type),
-      amount: Number(item?.amount || 0),
-      occurredAt: item?.occurredAt || null,
-      accountId: String(item?.accountId || "").trim(),
-      toAccountId: String(item?.toAccountId || "").trim(),
-      categoryKey: String(item?.categoryKey || "").trim(),
-      scopeId: String(item?.scopeId || "").trim(),
-      note: String(item?.note || "").trim(),
-      createdAt: item?.createdAt || null,
-      updatedAt: item?.updatedAt || null,
-    }));
+    .map((item) => {
+      const type = normalizeLedgerTransactionType(item?.type);
+      return {
+        id: item.id,
+        type,
+        amount: Number(item?.amount || 0),
+        occurredAt: item?.occurredAt || null,
+        accountId: String(item?.accountId || "").trim(),
+        toAccountId: type === "transfer" ? String(item?.toAccountId || "").trim() : "",
+        categoryKey: type === "expense" ? String(item?.categoryKey || "").trim() : "",
+        scopeId: type === "expense" ? String(item?.scopeId || "").trim() : "",
+        note: String(item?.note || "").trim(),
+        createdAt: item?.createdAt || null,
+        updatedAt: item?.updatedAt || null,
+      };
+    });
 }
 
 export async function archiveAccount(uid, accountId = "") {

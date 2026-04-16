@@ -746,6 +746,7 @@ export function buildFinanceVm({
   });
   const scopeUsageMap = new Map();
   filteredTransactions.forEach((transaction) => {
+    if (String(transaction?.type || "").trim() !== "expense") return;
     const scopeId = String(transaction?.scopeId || "").trim();
     if (!scopeId) return;
     scopeUsageMap.set(scopeId, (scopeUsageMap.get(scopeId) || 0) + 1);
