@@ -2,7 +2,7 @@ import { t } from "../../shared/constants/copy.vi.js";
 import {
   ACCOUNT_TYPE_OPTIONS,
   FINANCE_CATEGORIES,
-  TRANSACTION_TYPE_OPTIONS,
+  FINANCE_TRANSACTION_TYPE_OPTIONS,
 } from "../../shared/constants/finance.constants.js";
 
 function byId(id) {
@@ -508,7 +508,7 @@ export function renderFinanceComposer({
     })),
   ];
 
-  fillSelect(byId("ftType"), TRANSACTION_TYPE_OPTIONS, type);
+  fillSelect(byId("ftType"), FINANCE_TRANSACTION_TYPE_OPTIONS, type);
   fillSelect(byId("ftAccountId"), accountOptions, draft?.accountId || "");
   fillSelect(byId("ftToAccountId"), accountOptions, draft?.toAccountId || "");
   fillSelect(byId("ftCategory"), FINANCE_CATEGORIES, draft?.categoryKey || "other");

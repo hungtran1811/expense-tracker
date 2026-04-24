@@ -101,6 +101,10 @@ function includesAccount(transaction, accountId = "") {
   );
 }
 
+function isReportTransactionType(type = "") {
+  return ["expense", "income", "transfer", "adjustment"].includes(String(type || "").trim());
+}
+
 function buildReportSummary(transactions = [], fromDate = "", toDate = "") {
   const summary = transactions.reduce(
     (acc, transaction) => {
@@ -620,8 +624,9 @@ export function buildFinanceReportVm({
   budgetMonthKey = "",
 } = {}) {
   const normalizedFilters = normalizeReportFilters(filters);
-  const filteredTransactions = (Array.isArray(transactions) ? transactions : []).filter((transaction) =>
-    includesAccount(transaction, normalizedFilters.accountId)
+  const filteredTransactions = (Array.isArray(transactions) ? transactions : []).filter(
+    (transaction) =>
+      isReportTransactionType(transaction?.type) && includesAccount(transaction, normalizedFilters.accountId)
   );
 
   const summary = buildReportSummary(
@@ -719,6 +724,7 @@ export function buildFinanceReportVm({
         normalizedFilters.accountId === "all"
           ? "Tất cả tài khoản"
           : filterAccountLabel(accounts, normalizedFilters.accountId),
+      exclusionNote: "Không gồm cho mượn / trả lại",
     },
   };
 }

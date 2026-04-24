@@ -30,6 +30,7 @@ export const colTransfers = (uid) => collection(db, `users/${uid}/transfers`);
 export const colTransactions = (uid) => collection(db, `users/${uid}/transactions`);
 export const colExpenseScopes = (uid) => collection(db, `users/${uid}/expenseScopes`);
 export const colScopeBudgets = (uid) => collection(db, `users/${uid}/scopeBudgets`);
+export const colLoanParties = (uid) => collection(db, `users/${uid}/loanParties`);
 export const colGoals = (uid) => collection(db, `users/${uid}/goals`);
 export const colHabits = (uid) => collection(db, `users/${uid}/habits`);
 export const colHabitLogs = (uid) => collection(db, `users/${uid}/habitLogs`);
@@ -164,7 +165,14 @@ function parseLocalDate(ymd) {
 }
 
 const LEDGER_SCHEMA_VERSION = 2;
-const LEDGER_TRANSACTION_TYPES = new Set(["expense", "income", "transfer", "adjustment"]);
+const LEDGER_TRANSACTION_TYPES = new Set([
+  "expense",
+  "income",
+  "transfer",
+  "adjustment",
+  "loan_lend",
+  "loan_repay",
+]);
 const LEDGER_ACCOUNT_TYPES = new Set(["bank", "wallet", "cash", "savings", "other"]);
 const DEFAULT_EXPENSE_SCOPES = Object.freeze(["Tôi", "P102", "Mẹ", "Bo", "Nấm"]);
 
@@ -235,7 +243,15 @@ function buildLedgerEffects(transactionData = {}) {
     addLedgerEffect(effects, accountId, -Math.abs(amount));
     return effects;
   }
+  if (type === "loan_lend") {
+    addLedgerEffect(effects, accountId, -Math.abs(amount));
+    return effects;
+  }
   if (type === "income") {
+    addLedgerEffect(effects, accountId, Math.abs(amount));
+    return effects;
+  }
+  if (type === "loan_repay") {
     addLedgerEffect(effects, accountId, Math.abs(amount));
     return effects;
   }
@@ -282,6 +298,12 @@ function buildLedgerTransactionDocData(normalized = {}, options = {}) {
     data.scopeId = deleteField();
   }
 
+  if (type === "loan_lend" || type === "loan_repay") {
+    data.loanPartyId = String(normalized?.loanPartyId || "").trim();
+  } else if (forUpdate) {
+    data.loanPartyId = deleteField();
+  }
+
   return data;
 }
 
@@ -301,6 +323,7 @@ function normalizeLedgerTransactionInput(payload = {}) {
   const accountId = String(payload?.accountId || "").trim();
   const toAccountId = String(payload?.toAccountId || "").trim();
   const scopeId = String(payload?.scopeId || "").trim();
+  const loanPartyId = String(payload?.loanPartyId || "").trim();
   const note = String(payload?.note || "").trim();
   const occurredDate = parseLocalDate(payload?.occurredAt);
   if (!accountId) throw new Error("Vui lòng chọn tài khoản.");
@@ -313,6 +336,9 @@ function normalizeLedgerTransactionInput(payload = {}) {
     if (!toAccountId) throw new Error("Vui lòng chọn tài khoản nhận.");
     if (toAccountId === accountId) throw new Error("Tài khoản chuyển và nhận phải khác nhau.");
     if (!(rawAmount > 0)) throw new Error("Số tiền chuyển phải lớn hơn 0.");
+  } else if (type === "loan_lend" || type === "loan_repay") {
+    if (!loanPartyId) throw new Error("Vui lòng chọn người mượn.");
+    if (!(rawAmount > 0)) throw new Error("Số tiền phải lớn hơn 0.");
   } else if (type === "adjustment") {
     if (rawAmount === 0) throw new Error("Bút toán điều chỉnh cần số tiền khác 0.");
   } else if (!(rawAmount > 0)) {
@@ -331,6 +357,7 @@ function normalizeLedgerTransactionInput(payload = {}) {
     toAccountId: type === "transfer" ? toAccountId : "",
     categoryKey: type === "expense" ? String(payload?.categoryKey || "other").trim() || "other" : "",
     scopeId: type === "expense" ? scopeId : "",
+    loanPartyId: type === "loan_lend" || type === "loan_repay" ? loanPartyId : "",
     note,
     schemaVersion: LEDGER_SCHEMA_VERSION,
   };
@@ -449,6 +476,21 @@ function sortExpenseScopes(items = []) {
   });
 }
 
+function mapLoanPartyDoc(item) {
+  return {
+    id: item.id,
+    name: normalizeExpenseScopeName(item?.name),
+    nameLower: String(item?.nameLower || normalizeExpenseScopeName(item?.name).toLowerCase()).trim(),
+    note: String(item?.note || "").trim(),
+    createdAt: item?.createdAt || null,
+    updatedAt: item?.updatedAt || null,
+  };
+}
+
+function sortLoanParties(items = []) {
+  return [...items].sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || ""), "vi"));
+}
+
 function mapScopeBudgetDoc(item) {
   return {
     id: item.id,
@@ -502,6 +544,73 @@ export async function listExpenseScopes(uid) {
   const snap = await getDocs(colExpenseScopes(uid));
   if (snap.empty) return seeded;
   return sortExpenseScopes(snap.docs.map((item) => mapExpenseScopeDoc({ id: item.id, ...item.data() })));
+}
+
+export async function listLoanParties(uid) {
+  const snap = await getDocs(colLoanParties(uid));
+  return sortLoanParties(snap.docs.map((item) => mapLoanPartyDoc({ id: item.id, ...item.data() })));
+}
+
+export async function createLoanParty(uid, payload = {}) {
+  const name = normalizeExpenseScopeName(payload?.name);
+  const note = String(payload?.note || "").trim();
+  if (!name) throw new Error("Vui lòng nhập tên người mượn.");
+
+  const currentItems = await listLoanParties(uid);
+  const nextNameLower = name.toLowerCase();
+  if (currentItems.some((item) => item.nameLower === nextNameLower)) {
+    throw new Error("Người mượn này đã tồn tại.");
+  }
+
+  const ref = await addDoc(colLoanParties(uid), {
+    name,
+    nameLower: nextNameLower,
+    note,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+  return { id: ref.id };
+}
+
+export async function updateLoanParty(uid, partyId, payload = {}) {
+  const id = String(partyId || "").trim();
+  if (!id) throw new Error("Thiếu người mượn cần cập nhật.");
+
+  const name = normalizeExpenseScopeName(payload?.name);
+  const note = String(payload?.note || "").trim();
+  if (!name) throw new Error("Vui lòng nhập tên người mượn.");
+
+  const currentItems = await listLoanParties(uid);
+  const nextNameLower = name.toLowerCase();
+  if (currentItems.some((item) => item.id !== id && item.nameLower === nextNameLower)) {
+    throw new Error("Người mượn này đã tồn tại.");
+  }
+
+  await updateDoc(doc(db, `users/${uid}/loanParties/${id}`), {
+    name,
+    nameLower: nextNameLower,
+    note,
+    updatedAt: Timestamp.now(),
+  });
+  return true;
+}
+
+export async function deleteLoanParty(uid, partyId = "") {
+  const id = String(partyId || "").trim();
+  if (!id) throw new Error("Thiếu người mượn cần xóa.");
+
+  const currentItems = await listLoanParties(uid);
+  if (!currentItems.some((item) => item.id === id)) {
+    throw new Error("Không tìm thấy người mượn.");
+  }
+
+  const snap = await getDocs(query(colTransactions(uid), where("loanPartyId", "==", id), limit(1)));
+  if (!snap.empty) {
+    throw new Error("Người mượn này đang có lịch sử cho mượn hoặc trả lại, chưa thể xóa.");
+  }
+
+  await deleteDoc(doc(db, `users/${uid}/loanParties/${id}`));
+  return true;
 }
 
 export async function listScopeBudgets(uid, monthKey = "") {
@@ -897,6 +1006,7 @@ export async function listTransactions(uid, options = {}) {
         toAccountId: type === "transfer" ? String(item?.toAccountId || "").trim() : "",
         categoryKey: type === "expense" ? String(item?.categoryKey || "").trim() : "",
         scopeId: type === "expense" ? String(item?.scopeId || "").trim() : "",
+        loanPartyId: type === "loan_lend" || type === "loan_repay" ? String(item?.loanPartyId || "").trim() : "",
         note: String(item?.note || "").trim(),
         createdAt: item?.createdAt || null,
         updatedAt: item?.updatedAt || null,
@@ -951,6 +1061,7 @@ export async function resetFinanceData(uid) {
   await deleteCollectionDocsByRef(colTransactions(uid));
   await deleteCollectionDocsByRef(colExpenseScopes(uid));
   await deleteCollectionDocsByRef(colScopeBudgets(uid));
+  await deleteCollectionDocsByRef(colLoanParties(uid));
   await deleteCollectionDocsByRef(colExpenses(uid));
   await deleteCollectionDocsByRef(colIncomes(uid));
   await deleteCollectionDocsByRef(colTransfers(uid));

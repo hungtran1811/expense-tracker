@@ -2,7 +2,7 @@ import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
 import {
   ACCOUNT_TYPE_OPTIONS,
   FINANCE_CATEGORIES,
-  TRANSACTION_TYPE_OPTIONS,
+  FINANCE_TRANSACTION_TYPE_OPTIONS,
   getAccountTypeLabel,
   getFinanceCategoryLabel,
   getTransactionTypeLabel,
@@ -51,6 +51,10 @@ function buildScopeBudgetMap(scopeBudgets = []) {
   return new Map(
     (Array.isArray(scopeBudgets) ? scopeBudgets : []).map((item) => [String(item?.scopeId || "").trim(), item])
   );
+}
+
+function isFinanceTransactionType(type = "") {
+  return ["expense", "income", "transfer", "adjustment"].includes(String(type || "").trim());
 }
 
 function sortTransactions(items = []) {
@@ -537,7 +541,7 @@ export function sanitizeTransactionDraft(payload = {}) {
   const scopeId = String(payload?.scopeId || "").trim();
   const note = String(payload?.note || "").trim();
 
-  if (!TRANSACTION_TYPE_OPTIONS.some((item) => item.key === type)) {
+  if (!FINANCE_TRANSACTION_TYPE_OPTIONS.some((item) => item.key === type)) {
     throw new Error("Loại giao dịch không hợp lệ.");
   }
   if (!accountId) throw new Error("Vui lòng chọn tài khoản.");
@@ -627,8 +631,12 @@ export function buildFinanceVm({
   const orderedAccounts = sortAccounts(accounts);
   const accountMap = buildAccountMap(orderedAccounts);
   const scopeMap = buildScopeMap(expenseScopes);
-  const orderedTransactions = sortTransactions(transactions);
-  const orderedBudgetTransactions = sortTransactions(budgetTransactions);
+  const orderedTransactions = sortTransactions(transactions).filter((transaction) =>
+    isFinanceTransactionType(transaction?.type)
+  );
+  const orderedBudgetTransactions = sortTransactions(budgetTransactions).filter((transaction) =>
+    isFinanceTransactionType(transaction?.type)
+  );
 
   const filteredTransactions = orderedTransactions.filter((transaction) => {
     if (
@@ -758,7 +766,7 @@ export function buildFinanceVm({
     filters: normalizedFilters,
     range: financeRange,
     categories: FINANCE_CATEGORIES,
-    transactionTypes: TRANSACTION_TYPE_OPTIONS,
+    transactionTypes: FINANCE_TRANSACTION_TYPE_OPTIONS,
     accounts: orderedAccounts,
     activeAccounts,
     archivedAccounts,
@@ -782,7 +790,7 @@ export function buildFinanceVm({
     },
     filtersMeta: {
       accountOptions: activeAccounts.map((item) => ({ value: item.id, label: item.name })),
-      typeOptions: TRANSACTION_TYPE_OPTIONS,
+      typeOptions: FINANCE_TRANSACTION_TYPE_OPTIONS,
       categoryOptions: FINANCE_CATEGORIES,
       scopeOptions: (Array.isArray(expenseScopes) ? expenseScopes : []).map((item) => ({
         value: item.id,

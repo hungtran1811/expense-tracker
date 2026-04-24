@@ -43,6 +43,7 @@
 
         <nav class="workspace-tabs" aria-label="Điều hướng workspace">
           <a class="workspace-tab" data-route-link href="#expenses">Tài chính</a>
+          <a class="workspace-tab" data-route-link href="#loans">Cho mượn</a>
           <a class="workspace-tab" data-route-link href="#reports">Báo cáo</a>
         </nav>
 
@@ -373,6 +374,66 @@
             </div>
           </section>
 
+          <section id="loans" class="route">
+            <div class="workspace-head workspace-head-loans">
+              <div class="workspace-copy">
+                <span class="workspace-kicker">Hung Tran Finance</span>
+                <h1 class="workspace-title">Cho mượn</h1>
+                <p class="workspace-subtitle">Tách riêng công nợ để tiền cho mượn và trả lại không lẫn vào thu chi chung.</p>
+              </div>
+
+              <div class="workspace-actions">
+                <div class="btn-group">
+                  <button type="button" class="btn btn-outline-primary" data-loan-action="open-party-create">
+                    <i class="bi bi-person-plus"></i>
+                    Thêm người
+                  </button>
+                  <button type="button" class="btn btn-primary" data-loan-action="open-lend">
+                    <i class="bi bi-arrow-up-right"></i>
+                    Cho mượn
+                  </button>
+                  <button type="button" class="btn btn-outline-success" data-loan-action="open-repay">
+                    <i class="bi bi-arrow-down-left"></i>
+                    Nhận trả
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="finance-overview-strip" id="loansSummary"></div>
+
+            <div class="loans-layout">
+              <section class="card loans-panel loans-parties-panel">
+                <div class="finance-section-head">
+                  <div>
+                    <h2 class="finance-section-title">Người mượn</h2>
+                    <div class="small text-muted">Theo dõi tổng đã mượn, đã trả và số còn nợ.</div>
+                  </div>
+                  <div class="finance-section-meta" id="loanPartiesCount">0 người</div>
+                </div>
+                <div id="loanPartiesList"></div>
+              </section>
+
+              <section class="card loans-panel loans-detail-panel">
+                <div class="finance-section-head loans-detail-head">
+                  <div>
+                    <h2 class="finance-section-title" id="loanSelectedPartyTitle">Lịch sử công nợ</h2>
+                    <div class="small text-muted" id="loanSelectedPartyMeta">Chọn một người mượn để xem lịch sử công nợ.</div>
+                  </div>
+                  <div class="loans-detail-actions">
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoanSelectedLend" data-loan-action="open-lend" disabled>
+                      Cho mượn
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-success" id="btnLoanSelectedRepay" data-loan-action="open-repay" disabled>
+                      Nhận trả
+                    </button>
+                  </div>
+                </div>
+                <div id="loanTimeline" class="ledger-timeline"></div>
+              </section>
+            </div>
+          </section>
+
           <section id="reports" class="route">
             <div class="workspace-head workspace-head-reports">
               <div class="workspace-copy">
@@ -632,6 +693,95 @@
           <div class="modal-footer">
             <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
             <button class="btn btn-primary" id="btnSaveFinanceTransaction">Lưu giao dịch</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade finance-modal" id="loanPartyPanel" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-md modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title" id="loanPartyTitle">Thêm người mượn</h5>
+              <div class="small text-muted">Dùng tên người hoặc nhóm bạn cần theo dõi công nợ riêng.</div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="lpId" />
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label" for="lpName">Tên người mượn</label>
+                <input class="form-control" id="lpName" placeholder="Ví dụ: Thảo, Anh Nam, Mẹ..." />
+              </div>
+
+              <div class="col-12">
+                <label class="form-label" for="lpNote">Ghi chú</label>
+                <textarea class="form-control" id="lpNote" rows="3" placeholder="Ghi chú thêm nếu cần."></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+            <button class="btn btn-primary" id="btnSaveLoanParty">Lưu người mượn</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade finance-modal" id="loanEntryPanel" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title" id="loanEntryTitle">Cho mượn</h5>
+              <div class="small text-muted" id="loanEntryHint">Khoản này sẽ trừ trực tiếp khỏi số dư tài khoản bạn chọn.</div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="leId" />
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label" for="leType">Loại công nợ</label>
+                <select class="form-select" id="leType">
+                  <option value="loan_lend">Cho mượn</option>
+                  <option value="loan_repay">Nhận trả</option>
+                </select>
+              </div>
+
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="leLoanPartyId">Người mượn</label>
+                <select class="form-select" id="leLoanPartyId"></select>
+              </div>
+
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="leAccountId">Tài khoản</label>
+                <select class="form-select" id="leAccountId"></select>
+              </div>
+
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="leAmount">Số tiền</label>
+                <input class="form-control" id="leAmount" type="number" step="0.01" />
+              </div>
+
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="leOccurredAt">Ngày ghi nhận</label>
+                <input class="form-control" id="leOccurredAt" type="date" />
+              </div>
+
+              <div class="col-12 d-none" id="loanEntryContext"></div>
+
+              <div class="col-12">
+                <label class="form-label" for="leNote">Ghi chú</label>
+                <textarea class="form-control" id="leNote" rows="3" placeholder="Ví dụ: cho mượn tạm, trả một phần, chuyển khoản giúp..."></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+            <button class="btn btn-primary" id="btnSaveLoanEntry">Lưu công nợ</button>
           </div>
         </div>
       </div>

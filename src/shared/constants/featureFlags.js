@@ -7,6 +7,7 @@ export const ENABLED_ROUTES = {
   settings: false,
   goals: false,
   "video-plan": false,
+  loans: true,
   reports: true,
   ai: false,
 };

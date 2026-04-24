@@ -470,7 +470,7 @@ export function renderReportsRoute(vm = {}, options = {}) {
   if (metaEl) {
     metaEl.textContent = `${vm?.meta?.rangeLabel || ""} · ${vm?.meta?.transactionCountLabel || "0 giao dịch"} · ${
       vm?.meta?.accountFilterLabel || "Tất cả tài khoản"
-    } · ${vm?.summary?.transferMetaText || "Chuyển khoản 0đ"}`;
+    } · ${vm?.summary?.transferMetaText || "Chuyển khoản 0đ"} · ${vm?.meta?.exclusionNote || ""}`;
   }
 
   renderSummary(byId("reportsSummary"), vm?.summary || {});

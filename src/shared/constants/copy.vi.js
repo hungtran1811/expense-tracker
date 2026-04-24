@@ -6,6 +6,7 @@ export const copyVi = {
   nav: {
     overview: "Tổng quan",
     expenses: "Tài chính",
+    loans: "Cho mượn",
     reports: "Báo cáo",
   },
   routeMeta: {
@@ -16,6 +17,10 @@ export const copyVi = {
     expenses: {
       title: "Tài chính",
       subtitle: "Workspace tài chính tập trung cho thu, chi, chuyển khoản và số dư tài khoản.",
+    },
+    loans: {
+      title: "Cho mượn",
+      subtitle: "Theo dõi tiền cho mượn, tiền trả lại và số còn nợ theo từng người.",
     },
     overview: {
       title: "Tổng quan",

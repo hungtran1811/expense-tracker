@@ -32,6 +32,20 @@ import {
   resetFinanceAccountForm,
 } from "../features/finance/finance.ui.js";
 import {
+  buildLoanEntryContext,
+  buildLoanEntryDraft,
+  buildLoanPartyDraft,
+  buildLoansVm,
+  sanitizeLoanEntryDraft,
+  sanitizeLoanPartyDraft,
+} from "../features/loans/loans.controller.js";
+import { bindLoanEvents } from "../features/loans/loans.events.js";
+import {
+  renderLoanEntryForm,
+  renderLoanPartyForm,
+  renderLoansRoute,
+} from "../features/loans/loans.ui.js";
+import {
   buildDefaultReportFilters,
   buildFinanceReportVm,
   normalizeReportFilters,
@@ -54,17 +68,21 @@ import {
   archiveAccount,
   createAccount,
   createExpenseScope,
+  createLoanParty,
   createTransaction,
   deleteExpenseScope,
+  deleteLoanParty,
   deleteScopeBudget,
   deleteTransaction,
   listAccountsWithBalances,
   listExpenseScopes,
+  listLoanParties,
   listScopeBudgets,
   listTransactions,
   resetFinanceData,
   saveScopeBudget,
   updateExpenseScope,
+  updateLoanParty,
   updateTransaction,
 } from "../services/firebase/firestore.js";
 
@@ -96,6 +114,14 @@ function createDefaultReportState() {
   };
 }
 
+function createDefaultLoanPartyDraft() {
+  return buildLoanPartyDraft();
+}
+
+function createDefaultLoanEntryDraft() {
+  return buildLoanEntryDraft();
+}
+
 const overviewDefaults = createDefaultOverviewState();
 const reportDefaults = createDefaultReportState();
 
@@ -107,6 +133,9 @@ const state = {
   transactions: [],
   transactionsByMonth: {},
   expenseScopes: [],
+  loanParties: [],
+  loanTransactions: [],
+  loanSelectedPartyId: "",
   scopeBudgetsByMonth: {},
   filters: createDefaultFilters(),
   overviewFilters: overviewDefaults.draft,
@@ -120,6 +149,9 @@ const state = {
   overviewLoadedKey: "",
   composerDraft: buildTransactionDraft(),
   composerBudgetPreview: { visible: false },
+  loanPartyDraft: createDefaultLoanPartyDraft(),
+  loanEntryDraft: createDefaultLoanEntryDraft(),
+  loanEntryContext: { visible: false },
   expenseScopeDraft: {
     mode: "rename",
     id: "",
@@ -134,6 +166,7 @@ const state = {
     monthLabel: formatMonthLabel(getCurrentYm()),
   },
   financeVm: null,
+  loansVm: null,
   reportFilters: reportDefaults.draft,
   reportAppliedFilters: reportDefaults.applied,
   reportTransactions: [],
@@ -359,6 +392,15 @@ function buildRenderedFinanceVm() {
   return vm;
 }
 
+function buildRenderedLoansVm() {
+  return buildLoansVm({
+    accounts: state.accounts,
+    parties: state.loanParties,
+    transactions: state.loanTransactions,
+    selectedPartyId: state.loanSelectedPartyId,
+  });
+}
+
 function renderOverviewView() {
   const vm =
     state.overviewVm ||
@@ -409,6 +451,25 @@ function renderFinanceView() {
   });
 }
 
+function renderLoanEntryView() {
+  renderLoanEntryForm({
+    draft: state.loanEntryDraft,
+    parties: state.loansVm?.partyOptions || [],
+    accounts: state.loansVm?.accountOptions || [],
+    context: state.loanEntryContext,
+  });
+}
+
+function renderLoansView() {
+  state.loansVm = buildRenderedLoansVm();
+  state.loanSelectedPartyId = state.loansVm?.selectedPartyId || "";
+  renderLoansRoute(state.loansVm);
+  renderLoanPartyForm({
+    draft: state.loanPartyDraft,
+  });
+  renderLoanEntryView();
+}
+
 function renderReportsView() {
   const vm =
     state.reportVm ||
@@ -430,6 +491,7 @@ function renderReportsView() {
 
 function renderApp() {
   renderFinanceView();
+  renderLoansView();
   renderReportsView();
 }
 
@@ -469,6 +531,49 @@ async function updateComposerBudgetPreview() {
   renderComposerView();
 }
 
+function openLoanPartyPanel(party = null) {
+  state.loanPartyDraft = buildLoanPartyDraft(party);
+  renderLoanPartyForm({
+    draft: state.loanPartyDraft,
+  });
+  openModal("loanPartyPanel");
+}
+
+function openLoanEntryPanel(type = "loan_lend", options = {}) {
+  const entryId = String(options?.entryId || "").trim();
+  const transaction = entryId
+    ? state.loanTransactions.find((item) => String(item?.id || "").trim() === entryId) || null
+    : null;
+
+  state.loanEntryDraft = buildLoanEntryDraft({
+    accounts: state.accounts,
+    parties: state.loanParties,
+    transaction,
+    type,
+    presetPartyId: options?.partyId || state.loanSelectedPartyId,
+  });
+  state.loanEntryContext = buildLoanEntryContext({
+    draft: state.loanEntryDraft,
+    parties: state.loanParties,
+    transactions: state.loanTransactions,
+  });
+  renderLoanEntryView();
+  openModal("loanEntryPanel");
+}
+
+function syncLoanEntryDraft(nextDraft = {}) {
+  state.loanEntryDraft = {
+    ...state.loanEntryDraft,
+    ...nextDraft,
+  };
+  state.loanEntryContext = buildLoanEntryContext({
+    draft: state.loanEntryDraft,
+    parties: state.loanParties,
+    transactions: state.loanTransactions,
+  });
+  renderLoanEntryView();
+}
+
 function resetRuntimeState() {
   const defaultOverviewState = createDefaultOverviewState();
   const defaultReportState = createDefaultReportState();
@@ -476,6 +581,9 @@ function resetRuntimeState() {
   state.transactions = [];
   state.transactionsByMonth = {};
   state.expenseScopes = [];
+  state.loanParties = [];
+  state.loanTransactions = [];
+  state.loanSelectedPartyId = "";
   state.scopeBudgetsByMonth = {};
   state.filters = createDefaultFilters();
   state.overviewFilters = defaultOverviewState.draft;
@@ -489,9 +597,13 @@ function resetRuntimeState() {
   state.overviewLoadedKey = "";
   state.composerDraft = buildTransactionDraft();
   state.composerBudgetPreview = { visible: false };
+  state.loanPartyDraft = createDefaultLoanPartyDraft();
+  state.loanEntryDraft = createDefaultLoanEntryDraft();
+  state.loanEntryContext = { visible: false };
   state.expenseScopeDraft = buildExpenseScopeDraft();
   state.scopeBudgetDraft = buildScopeBudgetDraft();
   state.financeVm = null;
+  state.loansVm = null;
   state.reportFilters = defaultReportState.draft;
   state.reportAppliedFilters = defaultReportState.applied;
   state.reportTransactions = [];
@@ -582,6 +694,26 @@ async function refreshFinance(uid, { month = state.month } = {}) {
   }
 
   await updateComposerBudgetPreview();
+  renderApp();
+}
+
+async function refreshLoans(uid) {
+  const [accounts, parties, transactions] = await Promise.all([
+    listAccountsWithBalances(uid),
+    listLoanParties(uid),
+    listTransactions(uid),
+  ]);
+
+  state.accounts = accounts;
+  state.loanParties = parties;
+  state.loanTransactions = transactions;
+  state.loansVm = buildRenderedLoansVm();
+  state.loanSelectedPartyId = state.loansVm?.selectedPartyId || "";
+  state.loanEntryContext = buildLoanEntryContext({
+    draft: state.loanEntryDraft,
+    parties: state.loanParties,
+    transactions: state.loanTransactions,
+  });
   renderApp();
 }
 
@@ -1084,6 +1216,148 @@ bindFinanceEvents({
   },
 });
 
+bindLoanEvents({
+  onOpenPartyCreate: () => {
+    if (!ensureUser()) return;
+    openLoanPartyPanel();
+  },
+  onEditParty: (partyId) => {
+    if (!ensureUser()) return;
+    const party =
+      state.loanParties.find((item) => String(item?.id || "").trim() === String(partyId || "").trim()) || null;
+    if (!party) return;
+    openLoanPartyPanel(party);
+  },
+  onDeleteParty: async (partyId) => {
+    const uid = ensureUser();
+    if (!uid) return;
+    const party =
+      state.loanParties.find((item) => String(item?.id || "").trim() === String(partyId || "").trim()) || null;
+    if (!party) return;
+
+    const allow = window.confirm(`Bạn chắc chắn muốn xóa người mượn "${String(party?.name || "").trim()}"?`);
+    if (!allow) return;
+
+    setGlobalLoading(true);
+    try {
+      await deleteLoanParty(uid, partyId);
+      await refreshLoans(uid);
+      showToast("Đã xóa người mượn.", "success");
+    } catch (err) {
+      console.error("deleteLoanParty error", err);
+      showToast(err?.message || "Không thể xóa người mượn.", "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
+  onSelectParty: (partyId) => {
+    state.loanSelectedPartyId = String(partyId || "").trim();
+    renderLoansView();
+  },
+  onOpenLoanEntry: (type, options = {}) => {
+    if (!ensureUser()) return;
+    if (!state.loanParties.length) {
+      showToast("Hãy thêm người mượn trước khi ghi nhận công nợ.", "info");
+      return;
+    }
+    if (!state.accounts.filter((item) => String(item?.status || "active") !== "archived").length) {
+      showToast("Hãy tạo ít nhất một tài khoản trước.", "info");
+      return;
+    }
+    openLoanEntryPanel(type, options);
+  },
+  onEditLoanEntry: (entryId) => {
+    if (!ensureUser()) return;
+    const entry =
+      state.loanTransactions.find((item) => String(item?.id || "").trim() === String(entryId || "").trim()) || null;
+    if (!entry) return;
+    openLoanEntryPanel(entry.type, { entryId: entry.id });
+  },
+  onDeleteLoanEntry: async (entryId) => {
+    const uid = ensureUser();
+    if (!uid) return;
+    const allow = window.confirm("Bạn chắc chắn muốn xóa giao dịch công nợ này?");
+    if (!allow) return;
+
+    setGlobalLoading(true);
+    try {
+      await deleteTransaction(uid, entryId);
+      invalidateFinanceMonthCache();
+      invalidateReportsCache();
+      await refreshFinance(uid);
+      await refreshLoans(uid);
+      showToast("Đã xóa giao dịch công nợ.", "success");
+    } catch (err) {
+      console.error("delete loan entry error", err);
+      showToast(err?.message || "Không thể xóa giao dịch công nợ.", "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
+  onSubmitLoanParty: async (rawParty) => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    setGlobalLoading(true);
+    try {
+      const payload = sanitizeLoanPartyDraft(rawParty);
+      if (payload.id) {
+        await updateLoanParty(uid, payload.id, payload);
+      } else {
+        await createLoanParty(uid, payload);
+      }
+      closeModal("loanPartyPanel");
+      state.loanPartyDraft = createDefaultLoanPartyDraft();
+      await refreshLoans(uid);
+      showToast("Đã lưu người mượn.", "success");
+    } catch (err) {
+      console.error("save loan party error", err);
+      showToast(err?.message || "Không thể lưu người mượn.", "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
+  onChangeLoanEntryDraft: (draft) => {
+    syncLoanEntryDraft(draft);
+  },
+  onSubmitLoanEntry: async (rawDraft) => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    setGlobalLoading(true);
+    try {
+      const payload = sanitizeLoanEntryDraft(rawDraft);
+      const context = buildLoanEntryContext({
+        draft: payload,
+        parties: state.loanParties,
+        transactions: state.loanTransactions,
+      });
+      if (payload.type === "loan_repay" && context.isOverpay) {
+        throw new Error("Số tiền nhận trả đang lớn hơn số còn nợ hiện tại.");
+      }
+
+      if (payload.id) {
+        await updateTransaction(uid, payload.id, payload);
+      } else {
+        await createTransaction(uid, payload);
+      }
+      invalidateFinanceMonthCache();
+      invalidateReportsCache();
+      closeModal("loanEntryPanel");
+      state.loanEntryDraft = createDefaultLoanEntryDraft();
+      state.loanEntryContext = { visible: false };
+      await refreshFinance(uid);
+      await refreshLoans(uid);
+      showToast("Đã lưu giao dịch công nợ.", "success");
+    } catch (err) {
+      console.error("save loan entry error", err);
+      showToast(err?.message || "Không thể lưu giao dịch công nợ.", "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
+});
+
 bindReportEvents({
   onChangeDraftFilters: (draft) => {
     state.reportFilters = {
@@ -1204,7 +1478,9 @@ watchAuth(async (user) => {
   setGlobalLoading(true);
   try {
     await refreshFinance(user.uid, { month: state.month });
-    if (requestedRoute === "reports") {
+    if (requestedRoute === "loans") {
+      await refreshLoans(user.uid);
+    } else if (requestedRoute === "reports") {
       await refreshReports(user.uid, state.reportAppliedFilters);
     }
     setActiveRoute(requestedRoute);
@@ -1234,6 +1510,28 @@ window.addEventListener("nexus:route-changed", async (event) => {
   }
 
   if (!state.currentUser) return;
+  if (routeId === "loans") {
+    const hasLoadedLoans =
+      Array.isArray(state.loanParties) &&
+      Array.isArray(state.loanTransactions) &&
+      (state.loanParties.length > 0 || state.loanTransactions.length > 0 || !!state.loansVm);
+    if (hasLoadedLoans) {
+      renderLoansView();
+      return;
+    }
+
+    setGlobalLoading(true);
+    try {
+      await refreshLoans(state.currentUser.uid);
+    } catch (err) {
+      console.error("route loans refresh error", err);
+      showToast("Không thể tải dữ liệu cho mượn.", "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+    return;
+  }
+
   if (routeId !== "reports") return;
 
   const nextLoadKey = getReportLoadKey(state.reportAppliedFilters);

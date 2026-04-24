@@ -24,7 +24,19 @@ export const TRANSACTION_TYPE_OPTIONS = Object.freeze([
   { key: "income", label: "Khoản thu" },
   { key: "transfer", label: "Chuyển khoản" },
   { key: "adjustment", label: "Điều chỉnh" },
+  { key: "loan_lend", label: "Cho mượn" },
+  { key: "loan_repay", label: "Nhận trả" },
 ]);
+
+export const FINANCE_TRANSACTION_TYPE_OPTIONS = Object.freeze(
+  TRANSACTION_TYPE_OPTIONS.filter((item) =>
+    ["expense", "income", "transfer", "adjustment"].includes(item.key)
+  )
+);
+
+export const LOAN_TRANSACTION_TYPE_OPTIONS = Object.freeze(
+  TRANSACTION_TYPE_OPTIONS.filter((item) => ["loan_lend", "loan_repay"].includes(item.key))
+);
 
 export function getFinanceCategoryLabel(key = "") {
   const found = FINANCE_CATEGORIES.find((item) => item.key === String(key || "").trim());
@@ -40,4 +52,3 @@ export function getTransactionTypeLabel(key = "") {
   const found = TRANSACTION_TYPE_OPTIONS.find((item) => item.key === String(key || "").trim());
   return found?.label || "Không rõ";
 }
-
