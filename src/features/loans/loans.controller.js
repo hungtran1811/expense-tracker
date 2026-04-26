@@ -301,14 +301,8 @@ export function buildLoansVm({
     (transaction) => String(transaction?.loanPartyId || "").trim() === normalizedSelectedPartyId
   );
 
-  const recentBoundary = new Date();
-  recentBoundary.setDate(recentBoundary.getDate() - 29);
-  recentBoundary.setHours(0, 0, 0, 0);
-
-  const recentSummary = loanTransactions.reduce(
+  const totals = loanTransactions.reduce(
     (acc, transaction) => {
-      const occurredAt = toDate(transaction?.occurredAt);
-      if (!occurredAt || occurredAt < recentBoundary) return acc;
       const amount = Math.abs(Number(transaction?.amount || 0));
       if (String(transaction?.type || "").trim() === "loan_lend") acc.lent += amount;
       if (String(transaction?.type || "").trim() === "loan_repay") acc.repaid += amount;
@@ -321,12 +315,12 @@ export function buildLoansVm({
     summary: {
       totalOutstanding: partyItems.reduce((sum, item) => sum + Number(item.outstanding || 0), 0),
       activePartyCount: partyItems.filter((item) => Number(item.outstanding || 0) > 0).length,
-      recentLentTotal: recentSummary.lent,
-      recentRepaidTotal: recentSummary.repaid,
+      lentTotal: totals.lent,
+      repaidTotal: totals.repaid,
       totalOutstandingText: formatCurrency(partyItems.reduce((sum, item) => sum + Number(item.outstanding || 0), 0)),
       activePartyCountText: `${partyItems.filter((item) => Number(item.outstanding || 0) > 0).length} người`,
-      recentLentTotalText: formatCurrency(recentSummary.lent),
-      recentRepaidTotalText: formatCurrency(recentSummary.repaid),
+      lentTotalText: formatCurrency(totals.lent),
+      repaidTotalText: formatCurrency(totals.repaid),
     },
     parties: {
       items: partyItems,

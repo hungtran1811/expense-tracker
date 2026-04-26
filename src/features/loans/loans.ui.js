@@ -44,8 +44,8 @@ function renderSummary(container, summary = {}) {
   const cards = [
     { label: "Tổng còn nợ", value: summary.totalOutstandingText || "0đ", tone: "net" },
     { label: "Người đang nợ", value: summary.activePartyCountText || "0 người", tone: "transfer" },
-    { label: "Cho mượn 30 ngày", value: summary.recentLentTotalText || "0đ", tone: "expense" },
-    { label: "Đã trả 30 ngày", value: summary.recentRepaidTotalText || "0đ", tone: "income" },
+    { label: "Đã cho mượn", value: summary.lentTotalText || "0đ", tone: "expense" },
+    { label: "Đã nhận trả", value: summary.repaidTotalText || "0đ", tone: "income" },
   ];
 
   container.innerHTML = cards

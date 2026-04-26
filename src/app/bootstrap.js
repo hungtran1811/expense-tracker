@@ -135,6 +135,7 @@ const state = {
   expenseScopes: [],
   loanParties: [],
   loanTransactions: [],
+  loansLoaded: false,
   loanSelectedPartyId: "",
   scopeBudgetsByMonth: {},
   filters: createDefaultFilters(),
@@ -583,6 +584,7 @@ function resetRuntimeState() {
   state.expenseScopes = [];
   state.loanParties = [];
   state.loanTransactions = [];
+  state.loansLoaded = false;
   state.loanSelectedPartyId = "";
   state.scopeBudgetsByMonth = {};
   state.filters = createDefaultFilters();
@@ -707,6 +709,7 @@ async function refreshLoans(uid) {
   state.accounts = accounts;
   state.loanParties = parties;
   state.loanTransactions = transactions;
+  state.loansLoaded = true;
   state.loansVm = buildRenderedLoansVm();
   state.loanSelectedPartyId = state.loansVm?.selectedPartyId || "";
   state.loanEntryContext = buildLoanEntryContext({
@@ -1511,11 +1514,7 @@ window.addEventListener("nexus:route-changed", async (event) => {
 
   if (!state.currentUser) return;
   if (routeId === "loans") {
-    const hasLoadedLoans =
-      Array.isArray(state.loanParties) &&
-      Array.isArray(state.loanTransactions) &&
-      (state.loanParties.length > 0 || state.loanTransactions.length > 0 || !!state.loansVm);
-    if (hasLoadedLoans) {
+    if (state.loansLoaded) {
       renderLoansView();
       return;
     }
