@@ -17,6 +17,7 @@ function readLoanEntryForm() {
     loanPartyId: byId("leLoanPartyId")?.value || "",
     accountId: byId("leAccountId")?.value || "",
     amount: byId("leAmount")?.value || "",
+    interestRate: byId("leInterestRate")?.value || "0",
     occurredAt: byId("leOccurredAt")?.value || "",
     note: byId("leNote")?.value || "",
   };
@@ -49,7 +50,7 @@ export function bindLoanEvents(handlers = {}) {
     handlers.onSubmitLoanEntry?.(readLoanEntryForm());
   });
 
-  ["leType", "leLoanPartyId", "leAccountId", "leAmount", "leOccurredAt", "leNote"].forEach((id) => {
+  ["leType", "leLoanPartyId", "leAccountId", "leAmount", "leInterestRate", "leOccurredAt", "leNote"].forEach((id) => {
     byId(id)?.addEventListener("input", () => {
       handlers.onChangeLoanEntryDraft?.(readLoanEntryForm());
     });

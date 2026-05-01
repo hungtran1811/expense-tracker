@@ -80,9 +80,9 @@ function renderPartyList(container, block = {}, selectedPartyId = "") {
                   <span class="loan-party-outstanding">${escapeHtml(item.outstandingText)}</span>
                 </div>
                 <div class="loan-party-meta">
-                  <span>Đã mượn ${escapeHtml(item.lendTotalText)}</span>
-                  <span>Đã trả ${escapeHtml(item.repayTotalText)}</span>
-                  <span>${escapeHtml(item.lastActivityLabel)}</span>
+                  ${(Array.isArray(item.metaItems) ? item.metaItems : [])
+                    .map((label) => `<span>${escapeHtml(label)}</span>`)
+                    .join("")}
                 </div>
                 ${
                   item.note
@@ -146,6 +146,13 @@ function renderTimeline(container, vm = {}) {
                         <div class="ledger-item-title">${escapeHtml(row.typeLabel)}</div>
                         <span class="ledger-chip ${escapeHtml(row.type)}">${escapeHtml(row.accountLabel)}</span>
                       </div>
+                      ${
+                        Array.isArray(row.metaItems) && row.metaItems.length
+                          ? `<div class="ledger-entry-meta">${row.metaItems
+                              .map((item) => `<span>${escapeHtml(item)}</span>`)
+                              .join("")}</div>`
+                          : ""
+                      }
                       <div class="ledger-item-note">${escapeHtml(row.note || "Không có ghi chú")}</div>
                     </div>
 
@@ -208,10 +215,14 @@ export function renderLoanEntryForm({ draft = {}, parties = [], accounts = [], c
 
   const idEl = byId("leId");
   const amountEl = byId("leAmount");
+  const interestRateEl = byId("leInterestRate");
+  const interestRateWrapEl = byId("leInterestRateWrap");
   const occurredAtEl = byId("leOccurredAt");
   const noteEl = byId("leNote");
   if (idEl) idEl.value = draft?.id || "";
   if (amountEl) amountEl.value = draft?.amount ?? "";
+  if (interestRateEl) interestRateEl.value = draft?.interestRate ?? 0;
+  if (interestRateWrapEl) interestRateWrapEl.classList.toggle("d-none", isRepay);
   if (occurredAtEl) occurredAtEl.value = draft?.occurredAt || "";
   if (noteEl) noteEl.value = draft?.note || "";
 
@@ -228,8 +239,23 @@ export function renderLoanEntryForm({ draft = {}, parties = [], accounts = [], c
           <div class="loan-entry-context-grid">
             <span>Còn nợ hiện tại</span>
             <strong>${escapeHtml(context.outstandingBeforeText || formatCurrency(0))}</strong>
-            <span>Số tiền đang nhập</span>
-            <strong>${escapeHtml(context.amountText || formatCurrency(0))}</strong>
+            ${
+              context?.type === "loan_lend"
+                ? `
+                  <span>Gốc cho mượn</span>
+                  <strong>${escapeHtml(context.principalText || formatCurrency(0))}</strong>
+                  <span>Lãi</span>
+                  <strong>${escapeHtml(context.interestRateText || "0%")} • ${escapeHtml(
+                    context.interestAmountText || formatCurrency(0)
+                  )}</strong>
+                  <span>Tổng phải thu</span>
+                  <strong>${escapeHtml(context.receivableAmountText || formatCurrency(0))}</strong>
+                `
+                : `
+                  <span>Số tiền nhận trả</span>
+                  <strong>${escapeHtml(context.amountText || formatCurrency(0))}</strong>
+                `
+            }
             <span>Sau khi lưu</span>
             <strong>${escapeHtml(context.outstandingAfterText || formatCurrency(0))}</strong>
           </div>
@@ -253,7 +279,12 @@ export function renderLoansRoute(vm = {}) {
   const selectedMetaEl = byId("loanSelectedPartyMeta");
   if (selectedMetaEl) {
     selectedMetaEl.textContent = vm?.selectedParty
-      ? `Còn nợ ${vm.selectedParty.outstandingText} • Đã mượn ${vm.selectedParty.lendTotalText} • Đã trả ${vm.selectedParty.repayTotalText}`
+      ? [
+          `Còn nợ ${vm.selectedParty.outstandingText}`,
+          `Đã mượn ${vm.selectedParty.lendTotalText}`,
+          ...(Number(vm.selectedParty.interestTotal || 0) > 0 ? [`Lãi ${vm.selectedParty.interestTotalText}`] : []),
+          `Đã trả ${vm.selectedParty.repayTotalText}`,
+        ].join(" • ")
       : "Chọn một người mượn để xem lịch sử công nợ.";
   }
 

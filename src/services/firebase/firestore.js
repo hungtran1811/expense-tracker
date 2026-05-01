@@ -304,6 +304,12 @@ function buildLedgerTransactionDocData(normalized = {}, options = {}) {
     data.loanPartyId = deleteField();
   }
 
+  if (type === "loan_lend") {
+    data.interestRate = Math.max(0, Number(normalized?.interestRate || 0));
+  } else if (forUpdate) {
+    data.interestRate = deleteField();
+  }
+
   return data;
 }
 
@@ -324,6 +330,7 @@ function normalizeLedgerTransactionInput(payload = {}) {
   const toAccountId = String(payload?.toAccountId || "").trim();
   const scopeId = String(payload?.scopeId || "").trim();
   const loanPartyId = String(payload?.loanPartyId || "").trim();
+  const interestRate = Number(payload?.interestRate || 0);
   const note = String(payload?.note || "").trim();
   const occurredDate = parseLocalDate(payload?.occurredAt);
   if (!accountId) throw new Error("Vui lòng chọn tài khoản.");
@@ -339,6 +346,9 @@ function normalizeLedgerTransactionInput(payload = {}) {
   } else if (type === "loan_lend" || type === "loan_repay") {
     if (!loanPartyId) throw new Error("Vui lòng chọn người mượn.");
     if (!(rawAmount > 0)) throw new Error("Số tiền phải lớn hơn 0.");
+    if (!Number.isFinite(interestRate) || interestRate < 0) {
+      throw new Error("Lãi suất phải từ 0% trở lên.");
+    }
   } else if (type === "adjustment") {
     if (rawAmount === 0) throw new Error("Bút toán điều chỉnh cần số tiền khác 0.");
   } else if (!(rawAmount > 0)) {
@@ -358,6 +368,7 @@ function normalizeLedgerTransactionInput(payload = {}) {
     categoryKey: type === "expense" ? String(payload?.categoryKey || "other").trim() || "other" : "",
     scopeId: type === "expense" ? scopeId : "",
     loanPartyId: type === "loan_lend" || type === "loan_repay" ? loanPartyId : "",
+    interestRate: type === "loan_lend" ? Math.max(0, interestRate) : 0,
     note,
     schemaVersion: LEDGER_SCHEMA_VERSION,
   };
@@ -1007,6 +1018,7 @@ export async function listTransactions(uid, options = {}) {
         categoryKey: type === "expense" ? String(item?.categoryKey || "").trim() : "",
         scopeId: type === "expense" ? String(item?.scopeId || "").trim() : "",
         loanPartyId: type === "loan_lend" || type === "loan_repay" ? String(item?.loanPartyId || "").trim() : "",
+        interestRate: type === "loan_lend" ? Math.max(0, Number(item?.interestRate || 0)) : 0,
         note: String(item?.note || "").trim(),
         createdAt: item?.createdAt || null,
         updatedAt: item?.updatedAt || null,
