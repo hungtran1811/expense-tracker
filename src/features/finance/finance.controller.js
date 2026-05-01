@@ -149,6 +149,9 @@ function buildFinanceRangeLabel(filters = {}) {
   if (range.preset === "today") {
     return `Hôm nay • ${formatDateLabel(range.toDate)}`;
   }
+  if (range.preset === "month") {
+    return range.presetLabel;
+  }
   return `${range.presetLabel} • ${formatDateLabel(range.fromDate)} - ${formatDateLabel(range.toDate)}`;
 }
 
@@ -250,8 +253,8 @@ export function getTodayInputValue() {
 
 function normalizeFinancePreset(value = "") {
   const raw = String(value || "").trim();
-  if (raw === "today" || raw === "7d") return raw;
-  return "30d";
+  if (raw === "today" || raw === "7d" || raw === "month") return raw;
+  return "month";
 }
 
 export function getFinanceRange(filters = {}) {
@@ -274,6 +277,20 @@ export function getFinanceRange(filters = {}) {
       presetLabel: "7 ngày gần nhất",
       fromDate: shiftDateInput(safeDate, -6),
       toDate: safeDate,
+    };
+  }
+
+  if (preset === "month") {
+    const monthKey = getYmFromDateInput(safeDate) || getCurrentYm();
+    const [year, month] = monthKey.split("-").map(Number);
+    const firstDate = `${year}-${pad(month)}-01`;
+    const lastDate = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`;
+
+    return {
+      preset,
+      presetLabel: `Tháng ${formatMonthLabel(monthKey)}`,
+      fromDate: firstDate,
+      toDate: lastDate,
     };
   }
 

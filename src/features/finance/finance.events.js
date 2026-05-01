@@ -56,7 +56,7 @@ export function bindFinanceEvents(handlers = {}) {
   document.addEventListener("click", (event) => {
     const presetButton = event.target.closest("[data-finance-preset]");
     if (presetButton) {
-      handlers.onChangePreset?.(presetButton.getAttribute("data-finance-preset") || "30d");
+      handlers.onChangePreset?.(presetButton.getAttribute("data-finance-preset") || "month");
       return;
     }
 

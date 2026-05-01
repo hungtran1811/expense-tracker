@@ -390,7 +390,7 @@ function renderScopeBudgetManagement(container, budgetPanel = {}) {
 
 export function renderFinanceRoute(vm = {}) {
   document.querySelectorAll("[data-finance-preset]").forEach((button) => {
-    button.classList.toggle("active", button.getAttribute("data-finance-preset") === String(vm?.filters?.preset || "30d"));
+    button.classList.toggle("active", button.getAttribute("data-finance-preset") === String(vm?.filters?.preset || "month"));
   });
 
   renderOverview(byId("financeOverview"), {

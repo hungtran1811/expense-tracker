@@ -88,7 +88,7 @@ import {
 
 function createDefaultFilters() {
   return {
-    preset: "30d",
+    preset: "month",
     accountId: "all",
     type: "all",
     categoryKey: "all",
@@ -437,11 +437,13 @@ function renderFinanceView() {
 
   const infoEl = byId("financeWorkspaceInfo");
   if (infoEl) {
-    const rangeLabel = String(state.financeVm?.range?.presetLabel || "").trim().toLowerCase();
+    const range = state.financeVm?.range || {};
+    const rangeLabel = String(range?.presetLabel || "").trim();
     const anchorDate = String(state.financeVm?.filters?.date || "").trim();
-    infoEl.textContent = `Theo dõi ${rangeLabel} kết thúc vào ${formatDateLabel(anchorDate)}.`;
+    infoEl.textContent = range?.preset === "month"
+      ? `Theo dõi giao dịch trong ${rangeLabel.toLowerCase()}.`
+      : `Theo dõi ${rangeLabel.toLowerCase()} kết thúc vào ${formatDateLabel(anchorDate)}.`;
   }
-
   renderFinanceBudgetForm({
     draft: state.scopeBudgetDraft,
     expenseScopes: state.expenseScopes,
