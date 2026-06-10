@@ -1,5 +1,10 @@
 export function bindHomeEvents(handlers = {}) {
   document.addEventListener("click", (event) => {
+    if (event.target.closest("#btnLoadHomeDailyFlow")) {
+      handlers.onLoadDailyFlow?.();
+      return;
+    }
+
     const filterChip = event.target.closest("[data-home-account-filter]");
     if (filterChip) {
       handlers.onChangeAccountFilter?.(filterChip.getAttribute("data-home-account-filter") || "all");

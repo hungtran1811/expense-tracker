@@ -23,6 +23,10 @@ export function bindReportEvents(handlers = {}) {
     handlers.onChangeDraftFilters?.(readReportFilters());
   });
 
+  byId("btnLoadReports")?.addEventListener("click", () => {
+    handlers.onLoadReports?.();
+  });
+
   byId("btnApplyReportFilters")?.addEventListener("click", () => {
     handlers.onApplyFilters?.(readReportFilters());
   });

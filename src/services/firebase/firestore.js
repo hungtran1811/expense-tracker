@@ -1021,6 +1021,44 @@ export async function deleteTransaction(uid, transactionId) {
   return true;
 }
 
+function mapLedgerTransactionRows(snapshot) {
+  return mapDocs(snapshot)
+    .filter((item) => Number(item?.schemaVersion || 0) === LEDGER_SCHEMA_VERSION)
+    .map((item) => {
+      const type = normalizeLedgerTransactionType(item?.type);
+      return {
+        id: item.id,
+        type,
+        amount: Number(item?.amount || 0),
+        occurredAt: item?.occurredAt || null,
+        accountId: String(item?.accountId || "").trim(),
+        toAccountId: type === "transfer" ? String(item?.toAccountId || "").trim() : "",
+        categoryKey: type === "expense" ? String(item?.categoryKey || "").trim() : "",
+        scopeId: type === "expense" ? String(item?.scopeId || "").trim() : "",
+        loanPartyId: type === "loan_lend" || type === "loan_repay" ? String(item?.loanPartyId || "").trim() : "",
+        interestRate: type === "loan_lend" ? Math.max(0, Number(item?.interestRate || 0)) : 0,
+        note: String(item?.note || "").trim(),
+        createdAt: item?.createdAt || null,
+        updatedAt: item?.updatedAt || null,
+      };
+    });
+}
+
+export async function listLoanTransactions(uid) {
+  const [lendSnap, repaySnap] = await Promise.all([
+    getDocs(query(colTransactions(uid), where("type", "==", "loan_lend"))),
+    getDocs(query(colTransactions(uid), where("type", "==", "loan_repay"))),
+  ]);
+
+  return mapLedgerTransactionRows({
+    docs: [...lendSnap.docs, ...repaySnap.docs],
+  }).sort((a, b) => {
+    const aMs = a?.occurredAt?.toMillis?.() ?? 0;
+    const bMs = b?.occurredAt?.toMillis?.() ?? 0;
+    return bMs - aMs;
+  });
+}
+
 export async function listTransactions(uid, options = {}) {
   const ym = String(options?.month || "").trim();
   const fromDate = String(options?.fromDate || "").trim();
@@ -1052,26 +1090,7 @@ export async function listTransactions(uid, options = {}) {
   }
 
   const snap = await getDocs(qy);
-  return mapDocs(snap)
-    .filter((item) => Number(item?.schemaVersion || 0) === LEDGER_SCHEMA_VERSION)
-    .map((item) => {
-      const type = normalizeLedgerTransactionType(item?.type);
-      return {
-        id: item.id,
-        type,
-        amount: Number(item?.amount || 0),
-        occurredAt: item?.occurredAt || null,
-        accountId: String(item?.accountId || "").trim(),
-        toAccountId: type === "transfer" ? String(item?.toAccountId || "").trim() : "",
-        categoryKey: type === "expense" ? String(item?.categoryKey || "").trim() : "",
-        scopeId: type === "expense" ? String(item?.scopeId || "").trim() : "",
-        loanPartyId: type === "loan_lend" || type === "loan_repay" ? String(item?.loanPartyId || "").trim() : "",
-        interestRate: type === "loan_lend" ? Math.max(0, Number(item?.interestRate || 0)) : 0,
-        note: String(item?.note || "").trim(),
-        createdAt: item?.createdAt || null,
-        updatedAt: item?.updatedAt || null,
-      };
-    });
+  return mapLedgerTransactionRows(snap);
 }
 
 export async function archiveAccount(uid, accountId = "") {

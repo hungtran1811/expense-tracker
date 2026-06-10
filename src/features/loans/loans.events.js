@@ -25,6 +25,11 @@ function readLoanEntryForm() {
 
 export function bindLoanEvents(handlers = {}) {
   document.addEventListener("click", (event) => {
+    if (event.target.closest("#btnLoadLoansData")) {
+      handlers.onLoadLoans?.();
+      return;
+    }
+
     const actionEl = event.target.closest("[data-loan-action]");
     if (!actionEl) return;
 

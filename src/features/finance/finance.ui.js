@@ -52,8 +52,27 @@ function renderLedgerEmpty(container, title = "", body = "", hasAccounts = false
   `;
 }
 
-function renderLedgerTimeline(container, ledger = {}, accountsPanel = {}) {
+function renderFinanceMonthLoadPrompt(container) {
   if (!container) return;
+  container.innerHTML = `
+    <div class="workspace-load-prompt workspace-load-prompt-inline">
+      <strong>${escapeHtml(t("finance.monthLoadTitle", "Giao dịch tháng này"))}</strong>
+      <p>${escapeHtml(t("finance.monthLoadBody", "Bấm tải để xem toàn bộ giao dịch trong tháng — mặc định trang Chi tiêu chỉ hiển thị theo ngày."))}</p>
+      <button type="button" class="btn btn-sm btn-primary" id="btnLoadFinanceMonth">
+        ${escapeHtml(t("finance.monthLoadAction", "Tải giao dịch tháng"))}
+      </button>
+    </div>
+  `;
+}
+
+function renderLedgerTimeline(container, ledger = {}, accountsPanel = {}, options = {}) {
+  if (!container) return;
+
+  if (options?.monthLoadPending) {
+    renderFinanceMonthLoadPrompt(container);
+    return;
+  }
+
   const groups = Array.isArray(ledger?.groups) ? ledger.groups : [];
 
   if (!groups.length) {
@@ -291,21 +310,32 @@ function syncFilterControlLabels() {
   if (searchEl) searchEl.placeholder = t("finance.filter.searchPlaceholder", "Tìm ghi chú, tài khoản... (/ để focus)");
 }
 
-export function renderExpensesLedgerView(vm = {}) {
+export function renderExpensesLedgerView(vm = {}, options = {}) {
+  const preset = String(vm?.filters?.preset || "today").trim();
+  const monthLoadPending = preset === "month" && options?.financeMonthLoaded === false;
+
   document.querySelectorAll("[data-finance-preset]").forEach((button) => {
-    button.classList.toggle("active", button.getAttribute("data-finance-preset") === String(vm?.filters?.preset || "month"));
+    button.classList.toggle("active", button.getAttribute("data-finance-preset") === preset);
   });
 
   const infoEl = byId("financeLedgerInfo");
-  if (infoEl) infoEl.textContent = vm?.ledger?.info || t("finance.ledgerInfo", "Giao dịch trong kỳ đang xem.");
+  if (infoEl) {
+    infoEl.textContent = monthLoadPending
+      ? t("finance.monthLoadLedgerInfo", "Đang xem theo ngày. Tải tháng để xem toàn bộ giao dịch trong kỳ.")
+      : vm?.ledger?.info || t("finance.ledgerInfo", "Giao dịch trong kỳ đang xem.");
+  }
 
   const transferMetaEl = byId("financeTransferMeta");
-  if (transferMetaEl) transferMetaEl.textContent = vm?.ledger?.transferMeta || "";
+  if (transferMetaEl) transferMetaEl.textContent = monthLoadPending ? "" : vm?.ledger?.transferMeta || "";
 
   const countEl = byId("financeLedgerCount");
-  if (countEl) countEl.textContent = `${Number(vm?.ledger?.count || 0)} giao dịch`;
+  if (countEl) {
+    countEl.textContent = monthLoadPending ? "—" : `${Number(vm?.ledger?.count || 0)} giao dịch`;
+  }
 
-  renderLedgerTimeline(byId("ledgerTimeline"), vm?.ledger || {}, vm?.accountsPanel || {});
+  renderLedgerTimeline(byId("ledgerTimeline"), vm?.ledger || {}, vm?.accountsPanel || {}, {
+    monthLoadPending,
+  });
 
   fillSelect(
     byId("ledgerFilterAccount"),
@@ -364,7 +394,7 @@ export function renderExpensesManageView(vm = {}) {
   if (createScopeBtn) createScopeBtn.textContent = t("finance.scope.create", "Thêm nhóm");
 }
 
-export function renderFinanceRoute(vm = {}, expensesView = "ledger") {
+export function renderFinanceRoute(vm = {}, expensesView = "ledger", options = {}) {
   const view = expensesView === "manage" ? "manage" : "ledger";
 
   document.querySelectorAll("[data-expenses-tab]").forEach((link) => {
@@ -385,7 +415,7 @@ export function renderFinanceRoute(vm = {}, expensesView = "ledger") {
         : t("finance.subTab.ledger", "Giao dịch");
   });
 
-  renderExpensesLedgerView(vm);
+  renderExpensesLedgerView(vm, options);
   renderExpensesManageView(vm);
 }
 

@@ -228,6 +228,19 @@ function hasDailyActivity(item = {}) {
 function renderHomeDailyFlow(container, block = {}) {
   if (!container) return;
 
+  if (block?.loadPending) {
+    container.innerHTML = `
+      <div class="workspace-load-prompt workspace-load-prompt-inline">
+        <strong>${escapeHtml(block?.emptyTitle || t("home.dailyFlowLoadTitle", "Dòng tiền theo ngày"))}</strong>
+        <p>${escapeHtml(block?.emptyBody || t("home.dailyFlowLoadBody", "Bấm để xem biến động từng ngày trong tháng — không tải tự động."))}</p>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoadHomeDailyFlow">
+          ${escapeHtml(t("home.dailyFlowLoadAction", "Xem dòng tiền"))}
+        </button>
+      </div>
+    `;
+    return;
+  }
+
   const items = (Array.isArray(block?.items) ? block.items : [])
     .filter(hasDailyActivity)
     .slice()
@@ -335,7 +348,7 @@ function renderDailyFlowSection(block = {}, accountFilter = {}) {
   if (countEl) {
     const countText = formatTemplate(t("home.dailyFlowDayCount", "{{count}} ngày"), { count: activeCount });
     countEl.textContent = countText;
-    countEl.classList.toggle("d-none", activeCount <= 0);
+    countEl.classList.toggle("d-none", block?.loadPending || activeCount <= 0);
   }
 
   renderHomeDailyFlow(byId("homeDailyFlow"), block);

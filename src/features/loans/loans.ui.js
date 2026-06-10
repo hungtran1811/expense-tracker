@@ -109,8 +109,32 @@ function renderPartyList(container, block = {}, selectedPartyId = "") {
   `;
 }
 
-function renderTimeline(container, vm = {}) {
+function renderLoadPrompt(container, { title = "", body = "", actionId = "", actionLabel = "" } = {}) {
   if (!container) return;
+  container.innerHTML = `
+    <div class="workspace-load-prompt workspace-load-prompt-inline">
+      <strong>${escapeHtml(title)}</strong>
+      <p>${escapeHtml(body)}</p>
+      <button type="button" class="btn btn-sm btn-outline-primary" id="${escapeHtml(actionId)}">
+        ${escapeHtml(actionLabel)}
+      </button>
+    </div>
+  `;
+}
+
+function renderTimeline(container, vm = {}, options = {}) {
+  if (!container) return;
+
+  if (options?.loansDataLoaded === false) {
+    renderLoadPrompt(container, {
+      title: t("loans.loadTitle", "Lịch sử công nợ"),
+      body: t("loans.loadBody", "Tải giao dịch cho mượn khi cần — tránh quét toàn bộ lịch sử mỗi lần mở app."),
+      actionId: "btnLoadLoansData",
+      actionLabel: t("loans.loadAction", "Tải lịch sử công nợ"),
+    });
+    return;
+  }
+
   const selectedParty = vm?.selectedParty || null;
   const groups = Array.isArray(vm?.timeline?.groups) ? vm.timeline.groups : [];
   if (!selectedParty || !groups.length) {
@@ -340,7 +364,26 @@ function renderDetailActions(vm = {}) {
   actionsEl.append(editButton, deleteButton);
 }
 
-export function renderLoansRoute(vm = {}) {
+function buildPartiesFallback(parties = []) {
+  const items = (Array.isArray(parties) ? parties : []).map((party) => ({
+    id: String(party?.id || "").trim(),
+    name: String(party?.name || "").trim(),
+    note: String(party?.note || "").trim(),
+    outstandingText: "—",
+    lendTotalText: "—",
+    repayTotalText: "—",
+    metaItems: [t("loans.loadPartyHint", "Tải lịch sử để xem số liệu")],
+    canDelete: false,
+  }));
+
+  return {
+    items,
+    countText: `${items.length} ${t("loans.party.countSuffix", "người")}`,
+  };
+}
+
+export function renderLoansRoute(vm = {}, options = {}) {
+  const loansDataLoaded = options?.loansDataLoaded !== false;
   const pageTitleEl = byId("loansPageTitle");
   if (pageTitleEl) pageTitleEl.textContent = t("loans.pageTitle", "Cho mượn");
 
@@ -357,32 +400,52 @@ export function renderLoansRoute(vm = {}) {
     partiesSubtitleEl.textContent = t("loans.partiesStripHint", "Chọn người để xem và ghi công nợ.");
   }
 
-  renderSummary(byId("loansSummary"), vm?.summary || {});
+  const summaryEl = byId("loansSummary");
+  if (loansDataLoaded) {
+    renderSummary(summaryEl, vm?.summary || {});
+  } else if (summaryEl) {
+    renderLoadPrompt(summaryEl, {
+      title: t("loans.summaryLoadTitle", "Tóm tắt cho mượn"),
+      body: t("loans.summaryLoadBody", "Bấm tải để xem tổng còn nợ và lịch sử giao dịch."),
+      actionId: "btnLoadLoansData",
+      actionLabel: t("loans.loadAction", "Tải lịch sử công nợ"),
+    });
+  }
 
+  const partiesBlock = loansDataLoaded ? vm?.parties || {} : buildPartiesFallback(options?.partiesFallback || []);
+  const selectedPartyId = loansDataLoaded
+    ? String(vm?.selectedPartyId || "").trim()
+    : String(options?.selectedPartyId || "").trim();
+  const selectedParty =
+    (loansDataLoaded ? vm?.selectedParty : null) ||
+    partiesBlock.items?.find((item) => String(item?.id || "").trim() === selectedPartyId) ||
+    null;
   const countEl = byId("loanPartiesCount");
-  if (countEl) countEl.textContent = vm?.parties?.countText || `0 ${t("loans.party.countSuffix", "người")}`;
+  if (countEl) countEl.textContent = partiesBlock?.countText || `0 ${t("loans.party.countSuffix", "người")}`;
 
   const heroEl = byId("loanDetailHero");
-  if (heroEl) heroEl.classList.toggle("has-party", !!vm?.selectedParty);
+  if (heroEl) heroEl.classList.toggle("has-party", !!selectedParty);
 
   const selectedTitleEl = byId("loanSelectedPartyTitle");
   if (selectedTitleEl) {
-    selectedTitleEl.textContent = vm?.selectedParty?.name || t("loans.historyTitle", "Lịch sử công nợ");
+    selectedTitleEl.textContent = selectedParty?.name || t("loans.historyTitle", "Lịch sử công nợ");
   }
 
   const selectedMetaEl = byId("loanSelectedPartyMeta");
   if (selectedMetaEl) {
-    const metaText = vm?.selectedParty
+    const metaText = loansDataLoaded && vm?.selectedParty
       ? [
           `Còn nợ ${vm.selectedParty.outstandingText}`,
           `Đã mượn ${vm.selectedParty.lendTotalText}`,
           ...(Number(vm.selectedParty.interestTotal || 0) > 0 ? [`Lãi ${vm.selectedParty.interestTotalText}`] : []),
           `Đã trả ${vm.selectedParty.repayTotalText}`,
         ].join(" • ")
-      : t("loans.selectedPartyMetaEmpty", "Chọn một người mượn để xem lịch sử công nợ.");
+      : selectedParty
+        ? t("loans.loadSelectedPartyMeta", "Tải lịch sử để xem chi tiết công nợ của người này.")
+        : t("loans.selectedPartyMetaEmpty", "Chọn một người mượn để xem lịch sử công nợ.");
 
     selectedMetaEl.textContent = metaText;
-    if (vm?.selectedParty) {
+    if (loansDataLoaded && vm?.selectedParty) {
       selectedMetaEl.classList.add("u-ellipsis");
       selectedMetaEl.title = metaText;
     } else {
@@ -391,7 +454,7 @@ export function renderLoansRoute(vm = {}) {
     }
   }
 
-  renderDetailActions(vm);
-  renderPartyList(byId("loanPartiesList"), vm?.parties || {}, vm?.selectedPartyId || "");
-  renderTimeline(byId("loanTimeline"), vm);
+  renderDetailActions(loansDataLoaded ? vm : null);
+  renderPartyList(byId("loanPartiesList"), partiesBlock, selectedPartyId);
+  renderTimeline(byId("loanTimeline"), vm, { loansDataLoaded });
 }

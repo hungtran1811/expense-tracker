@@ -154,6 +154,8 @@ export function buildHomeVm({
   previousMonthTransactions = [],
   loanParties = [],
   loanTransactions = [],
+  loansDataLoaded = true,
+  includeDailyFlow = true,
   accountId = "all",
 } = {}) {
   const normalizedMonth = String(monthKey || getCurrentYm()).trim() || getCurrentYm();
@@ -187,11 +189,9 @@ export function buildHomeVm({
     },
   });
 
-  const dailyFlowRaw = buildDailyFlow(
-    filteredMonthTransactions,
-    monthFilters.fromDate,
-    monthFilters.toDate
-  );
+  const dailyFlowRaw = includeDailyFlow
+    ? buildDailyFlow(filteredMonthTransactions, monthFilters.fromDate, monthFilters.toDate)
+    : null;
 
   const loansVm = buildLoansVm({
     accounts,
@@ -285,9 +285,15 @@ export function buildHomeVm({
     {
       key: "debt",
       label: t("home.kpiDebt", "Tiền cho mượn"),
-      valueText: formatCurrency(loansVm?.summary?.totalOutstanding || 0),
+      valueText: loansDataLoaded ? formatCurrency(loansVm?.summary?.totalOutstanding || 0) : "—",
       valueTitle: "",
-      note: loansVm?.summary?.activePartyCountText || "0 người",
+      note: loansDataLoaded
+        ? loansVm?.summary?.activePartyCountText || "0 người"
+        : loanParties.length
+          ? formatTemplate(t("home.kpiDebtLoadHint", "{{count}} người · tải tab Cho mượn"), {
+              count: loanParties.length,
+            })
+          : t("home.kpiDebtEmpty", "Chưa có người mượn"),
       tone: "warning",
       link: "#loans",
     },
@@ -303,11 +309,17 @@ export function buildHomeVm({
     todayLedger,
     monthBar,
     momComparison: buildMomComparison(currentSummary, previousSummary),
-    dailyFlow: {
-      ...dailyFlowRaw,
-      emptyTitle: t("home.dailyFlowEmpty", "Chưa có dòng tiền tháng này"),
-      emptyBody: t("home.dailyFlowEmptyBody", "Ghi thu hoặc chi để theo dõi biến động từng ngày."),
-    },
+    dailyFlow: includeDailyFlow
+      ? {
+          ...dailyFlowRaw,
+          emptyTitle: t("home.dailyFlowEmpty", "Chưa có dòng tiền tháng này"),
+          emptyBody: t("home.dailyFlowEmptyBody", "Ghi thu hoặc chi để theo dõi biến động từng ngày."),
+        }
+      : {
+          loadPending: true,
+          emptyTitle: t("home.dailyFlowLoadTitle", "Dòng tiền theo ngày"),
+          emptyBody: t("home.dailyFlowLoadBody", "Bấm để xem biến động từng ngày trong tháng — không tải tự động."),
+        },
     accountFilter: {
       accountId: accountFilterId,
       options: activeAccounts.map((account) => ({

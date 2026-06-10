@@ -23,6 +23,7 @@ import {
   getCurrentYm,
   getTodayInputValue,
   getYmFromDateInput,
+  toDateInputValue,
   sanitizeAccountDraft,
   sanitizeAccountEditDraft,
   sanitizeTransactionDraft,
@@ -74,6 +75,7 @@ import {
   listAccountsWithBalances,
   listExpenseScopes,
   listLoanParties,
+  listLoanTransactions,
   listTransactions,
   resetFinanceData,
   updateExpenseScope,
@@ -84,7 +86,7 @@ import {
 
 function createDefaultFilters() {
   return {
-    preset: "month",
+    preset: "today",
     accountId: "all",
     type: "all",
     categoryKey: "all",
@@ -125,6 +127,9 @@ const state = {
   loanParties: [],
   loanTransactions: [],
   loansLoaded: false,
+  reportsDataLoaded: false,
+  homeDailyFlowLoaded: false,
+  financeMonthLoaded: false,
   loanSelectedPartyId: "",
   filters: createDefaultFilters(),
   composerDraft: buildTransactionDraft(),
@@ -301,11 +306,51 @@ function updateMenuState(user) {
   if (resetEl) resetEl.classList.toggle("d-none", !user);
 }
 
+function getFinanceTransactionsForVm() {
+  if (String(state.filters?.preset || "").trim() === "month" && !state.financeMonthLoaded) {
+    return [];
+  }
+  return state.transactions;
+}
+
+function applyFinanceLedgerFromCache() {
+  const normalizedMonth = String(state.month || getCurrentYm()).trim() || getCurrentYm();
+  const monthTransactions = state.transactionsByMonth[normalizedMonth] || state.monthTransactions || [];
+  const preset = String(state.filters?.preset || "today").trim();
+
+  if (preset === "month" && state.financeMonthLoaded) {
+    const financeRange = getFinanceRange(state.filters);
+    state.transactions = filterTransactionsByDateRange(
+      monthTransactions,
+      financeRange.fromDate,
+      financeRange.toDate
+    );
+    return;
+  }
+
+  if (preset === "today") {
+    const todayRange = getFinanceRange({ ...state.filters, preset: "today" });
+    state.transactions = filterTransactionsByDateRange(
+      monthTransactions,
+      todayRange.fromDate,
+      todayRange.toDate
+    );
+    return;
+  }
+
+  const financeRange = getFinanceRange(state.filters);
+  state.transactions = filterTransactionsByDateRange(
+    monthTransactions,
+    financeRange.fromDate,
+    financeRange.toDate
+  );
+}
+
 function buildRenderedFinanceVm() {
   const vm = buildFinanceVm({
     month: state.month,
     accounts: state.accounts,
-    transactions: state.transactions,
+    transactions: getFinanceTransactionsForVm(),
     expenseScopes: state.expenseScopes,
     filters: state.filters,
   });
@@ -329,7 +374,9 @@ function buildRenderedLoansVm() {
 function renderFinanceView() {
   syncExpensesViewFromHash();
   state.financeVm = buildRenderedFinanceVm();
-  renderFinanceRoute(state.financeVm, state.expensesView);
+  renderFinanceRoute(state.financeVm, state.expensesView, {
+    financeMonthLoaded: state.financeMonthLoaded,
+  });
   syncFilterControls();
   renderFinanceComposer({
     draft: state.composerDraft,
@@ -342,9 +389,15 @@ function renderFinanceView() {
     const range = state.financeVm?.range || {};
     const rangeLabel = String(range?.presetLabel || "").trim();
     const anchorDate = String(state.financeVm?.filters?.date || "").trim();
-    infoEl.textContent = range?.preset === "month"
-      ? `Theo dõi giao dịch trong ${rangeLabel.toLowerCase()}.`
-      : `Theo dõi ${rangeLabel.toLowerCase()} kết thúc vào ${formatDateLabel(anchorDate)}.`;
+    infoEl.textContent =
+      range?.preset === "month" && !state.financeMonthLoaded
+        ? t(
+            "finance.monthLoadWorkspaceInfo",
+            "Chọn Tháng này rồi bấm Tải giao dịch tháng để xem toàn bộ giao dịch trong tháng."
+          )
+        : range?.preset === "month"
+          ? `Theo dõi giao dịch trong ${rangeLabel.toLowerCase()}.`
+          : `Theo dõi ${rangeLabel.toLowerCase()} kết thúc vào ${formatDateLabel(anchorDate)}.`;
   }
   renderExpenseScopeForm({
     draft: state.expenseScopeDraft,
@@ -362,9 +415,15 @@ function renderLoanEntryView() {
 }
 
 function renderLoansView() {
-  state.loansVm = buildRenderedLoansVm();
-  state.loanSelectedPartyId = state.loansVm?.selectedPartyId || "";
-  renderLoansRoute(state.loansVm);
+  if (state.loansLoaded) {
+    state.loansVm = buildRenderedLoansVm();
+    state.loanSelectedPartyId = state.loansVm?.selectedPartyId || "";
+  }
+  renderLoansRoute(state.loansVm, {
+    loansDataLoaded: state.loansLoaded,
+    partiesFallback: state.loanParties,
+    selectedPartyId: state.loanSelectedPartyId,
+  });
   renderLoanPartyForm({
     draft: state.loanPartyDraft,
   });
@@ -419,7 +478,9 @@ function rebuildHomeVm() {
     currentMonthTransactions: getHomeMonthTransactions(),
     previousMonthTransactions: state.homePreviousMonthTransactions,
     loanParties: state.loanParties,
-    loanTransactions: state.loanTransactions,
+    loanTransactions: state.loansLoaded ? state.loanTransactions : [],
+    loansDataLoaded: state.loansLoaded,
+    includeDailyFlow: state.homeDailyFlowLoaded,
     accountId: state.homeAccountFilter,
   });
   renderHomeView();
@@ -440,6 +501,7 @@ function renderReportsView() {
     draftFilters: state.reportFilters,
     error: state.reportError,
     activePreset: resolveReportPreset(state.reportAppliedFilters),
+    reportsDataLoaded: state.reportsDataLoaded,
   });
   syncFilterControls();
 }
@@ -513,6 +575,9 @@ function resetRuntimeState() {
   state.loanParties = [];
   state.loanTransactions = [];
   state.loansLoaded = false;
+  state.reportsDataLoaded = false;
+  state.homeDailyFlowLoaded = false;
+  state.financeMonthLoaded = false;
   state.loanSelectedPartyId = "";
   state.filters = createDefaultFilters();
   state.composerDraft = buildTransactionDraft();
@@ -581,29 +646,17 @@ function normalizeWorkspaceAfterFetch() {
   state.homeAccountFilter = normalizeHomeAccountFilter(state.homeAccountFilter, state.accounts);
 }
 
-function rebuildAllViewModels() {
-  state.homeVm = buildHomeVm({
-    monthKey: state.month,
-    accounts: state.accounts,
-    expenseScopes: state.expenseScopes,
-    currentMonthTransactions: getHomeMonthTransactions(),
-    previousMonthTransactions: state.homePreviousMonthTransactions,
-    loanParties: state.loanParties,
-    loanTransactions: state.loanTransactions,
-    accountId: state.homeAccountFilter,
-  });
-  state.homeLoadedKey = getHomeLoadKey(state.month);
-
-  state.financeVm = buildRenderedFinanceVm();
+function rebuildLoansVmOnly() {
   state.loansVm = buildRenderedLoansVm();
-  state.loansLoaded = true;
   state.loanSelectedPartyId = state.loansVm?.selectedPartyId || "";
   state.loanEntryContext = buildLoanEntryContext({
     draft: state.loanEntryDraft,
     parties: state.loanParties,
     transactions: state.loanTransactions,
   });
+}
 
+function rebuildReportsVm() {
   state.reportVm = buildFinanceReportVm({
     filters: state.reportAppliedFilters,
     accounts: state.accounts,
@@ -613,7 +666,146 @@ function rebuildAllViewModels() {
   state.reportLoadedKey = getReportLoadKey(state.reportAppliedFilters);
 }
 
-async function refreshWorkspaceData(uid) {
+function rebuildCoreViewModels() {
+  state.homeVm = buildHomeVm({
+    monthKey: state.month,
+    accounts: state.accounts,
+    expenseScopes: state.expenseScopes,
+    currentMonthTransactions: getHomeMonthTransactions(),
+    previousMonthTransactions: state.homePreviousMonthTransactions,
+    loanParties: state.loanParties,
+    loanTransactions: state.loansLoaded ? state.loanTransactions : [],
+    loansDataLoaded: state.loansLoaded,
+    includeDailyFlow: state.homeDailyFlowLoaded,
+    accountId: state.homeAccountFilter,
+  });
+  state.homeLoadedKey = getHomeLoadKey(state.month);
+  state.financeVm = buildRenderedFinanceVm();
+
+  if (state.loansLoaded) {
+    rebuildLoansVmOnly();
+  } else {
+    state.loansVm = null;
+  }
+
+  if (state.reportsDataLoaded) {
+    rebuildReportsVm();
+  } else {
+    state.reportVm = null;
+    state.reportLoadedKey = "";
+  }
+}
+
+function filterTransactionsByDateRange(transactions = [], fromDate = "", toDate = "") {
+  const from = String(fromDate || "").trim();
+  const to = String(toDate || "").trim();
+
+  return (Array.isArray(transactions) ? transactions : []).filter((transaction) => {
+    const dateKey = toDateInputValue(transaction?.occurredAt);
+    if (!dateKey) return false;
+    if (from && dateKey < from) return false;
+    if (to && dateKey > to) return false;
+    return true;
+  });
+}
+
+function financeRangeCanUseMonthCache(financeRange = {}, monthKey = "") {
+  const preset = String(financeRange?.preset || "").trim();
+  const rangeMonth = getYmFromDateInput(financeRange?.fromDate);
+  return (preset === "month" || preset === "today") && rangeMonth === monthKey;
+}
+
+function resolveReportTransactionsFromCache(
+  reportFilters = {},
+  monthTransactions = [],
+  previousMonthTransactions = [],
+  workspaceMonth = ""
+) {
+  const normalized = normalizeReportFilters(reportFilters);
+  const currentDefault = buildDefaultReportFilters(getCurrentYm());
+  const previousDefault = buildDefaultReportFilters(prevYm(getCurrentYm()));
+
+  if (
+    normalized.fromDate === currentDefault.fromDate &&
+    normalized.toDate === currentDefault.toDate &&
+    normalized.month === currentDefault.month &&
+    normalized.month === workspaceMonth
+  ) {
+    return filterTransactionsByDateRange(monthTransactions, normalized.fromDate, normalized.toDate);
+  }
+
+  if (
+    normalized.fromDate === previousDefault.fromDate &&
+    normalized.toDate === previousDefault.toDate &&
+    normalized.month === previousDefault.month
+  ) {
+    return previousMonthTransactions;
+  }
+
+  if (normalized.month === workspaceMonth) {
+    return filterTransactionsByDateRange(monthTransactions, normalized.fromDate, normalized.toDate);
+  }
+
+  if (normalized.month === prevYm(workspaceMonth)) {
+    return filterTransactionsByDateRange(previousMonthTransactions, normalized.fromDate, normalized.toDate);
+  }
+
+  return null;
+}
+
+async function loadCoreWorkspaceTransactions(uid, { normalizedMonth }) {
+  const monthTransactions = await listTransactions(uid, { month: normalizedMonth });
+  return { monthTransactions };
+}
+
+async function loadFinanceMonthData(uid) {
+  const normalizedMonth = String(state.month || getCurrentYm()).trim() || getCurrentYm();
+  let monthTransactions = state.transactionsByMonth[normalizedMonth] || state.monthTransactions || [];
+
+  if (!monthTransactions.length) {
+    monthTransactions = await listTransactions(uid, { month: normalizedMonth });
+    state.transactionsByMonth[normalizedMonth] = monthTransactions;
+    state.monthTransactions = monthTransactions;
+  } else {
+    state.monthTransactions = monthTransactions;
+  }
+
+  state.financeMonthLoaded = true;
+  applyFinanceLedgerFromCache();
+  state.financeVm = buildRenderedFinanceVm();
+  rebuildHomeVm();
+  renderFinanceView();
+  syncTopbarStatsForActiveRoute();
+}
+
+async function fetchReportTransactions(uid, reportFilters = state.reportAppliedFilters) {
+  const normalizedMonth = String(state.month || getCurrentYm()).trim() || getCurrentYm();
+  const normalized = normalizeReportFilters(reportFilters);
+  const monthTransactions = state.transactionsByMonth[normalizedMonth] || state.monthTransactions || [];
+
+  let reportTransactions = resolveReportTransactionsFromCache(
+    normalized,
+    monthTransactions,
+    state.homePreviousMonthTransactions,
+    normalizedMonth
+  );
+
+  if (reportTransactions) return reportTransactions;
+
+  const previousDefault = buildDefaultReportFilters(prevYm(getCurrentYm()));
+  if (normalized.month === previousDefault.month && !state.homePreviousMonthTransactions.length) {
+    const previousMonthTransactions = await listTransactions(uid, { month: normalized.month });
+    state.homePreviousMonthTransactions = previousMonthTransactions;
+    return filterTransactionsByDateRange(previousMonthTransactions, normalized.fromDate, normalized.toDate);
+  }
+
+  return listTransactions(uid, {
+    fromDate: normalized.fromDate,
+    toDate: normalized.toDate,
+  });
+}
+
+async function refreshWorkspaceCore(uid) {
   state.filters = {
     ...createDefaultFilters(),
     ...state.filters,
@@ -623,64 +815,69 @@ async function refreshWorkspaceData(uid) {
   ensureMonthValue(normalizedMonth);
   normalizeDateFilterForMonth(normalizedMonth);
 
-  const financeRange = getFinanceRange(state.filters);
-  const reportFilters = normalizeReportFilters(state.reportAppliedFilters);
-  const prevMonthKey = prevYm(normalizedMonth);
-
-  const [
-    accounts,
-    expenseScopes,
-    monthTransactions,
-    previousMonthTransactions,
-    financeLedgerTransactions,
-    reportTransactions,
-    loanParties,
-    allTransactions,
-  ] = await Promise.all([
+  const [accounts, expenseScopes, loanParties, coreTransactions] = await Promise.all([
     listAccountsWithBalances(uid),
     listExpenseScopes(uid),
-    listTransactions(uid, { month: normalizedMonth }),
-    listTransactions(uid, { month: prevMonthKey }),
-    listTransactions(uid, {
-      fromDate: financeRange.fromDate,
-      toDate: financeRange.toDate,
-    }),
-    listTransactions(uid, {
-      fromDate: reportFilters.fromDate,
-      toDate: reportFilters.toDate,
-    }),
     listLoanParties(uid),
-    listTransactions(uid),
+    loadCoreWorkspaceTransactions(uid, { normalizedMonth }),
   ]);
 
-  const loanTransactions = allTransactions.filter((item) =>
-    ["loan_lend", "loan_repay"].includes(String(item?.type || "").trim())
-  );
+  const { monthTransactions } = coreTransactions;
 
   state.accounts = accounts;
   state.expenseScopes = expenseScopes;
   state.monthTransactions = monthTransactions;
-  state.homePreviousMonthTransactions = previousMonthTransactions;
-  state.transactions = financeLedgerTransactions;
   state.transactionsByMonth[normalizedMonth] = monthTransactions;
   state.loanParties = loanParties;
-  state.loanTransactions = loanTransactions;
-  state.reportAppliedFilters = reportFilters;
-  state.reportTransactions = reportTransactions;
 
   normalizeWorkspaceAfterFetch();
-  rebuildAllViewModels();
+  applyFinanceLedgerFromCache();
+
+  const optionalLoads = [];
+  if (state.loansLoaded) {
+    optionalLoads.push(
+      listLoanTransactions(uid).then((items) => {
+        state.loanTransactions = items;
+      })
+    );
+  }
+  if (state.reportsDataLoaded) {
+    optionalLoads.push(
+      fetchReportTransactions(uid, state.reportAppliedFilters).then((items) => {
+        state.reportTransactions = items;
+      })
+    );
+  }
+  if (optionalLoads.length) await Promise.all(optionalLoads);
+
+  rebuildCoreViewModels();
   renderApp();
 }
 
-async function refreshFinance(uid, { month = state.month } = {}) {
+async function refreshWorkspaceData(uid) {
+  await refreshWorkspaceCore(uid);
+}
+
+async function refreshFinance(uid, { month = state.month, resetFinanceMonth = true } = {}) {
   const budgetMonth = getYmFromDateInput(state.filters.date) || month || getCurrentYm();
   ensureMonthValue(budgetMonth);
+  if (resetFinanceMonth) {
+    state.financeMonthLoaded = false;
+  }
   await refreshWorkspaceData(uid);
 }
 
 async function refreshLoans(uid) {
-  await refreshWorkspaceData(uid);
+  if (!state.accounts.length) {
+    await refreshWorkspaceCore(uid);
+  }
+
+  state.loanTransactions = await listLoanTransactions(uid);
+  state.loansLoaded = true;
+  rebuildLoansVmOnly();
+  rebuildHomeVm();
+  renderLoansView();
+  syncTopbarStatsForActiveRoute();
 }
 
 async function refreshHome(uid, monthKey = getCurrentYm()) {
@@ -690,8 +887,16 @@ async function refreshHome(uid, monthKey = getCurrentYm()) {
 }
 
 async function refreshReports(uid, filters = state.reportAppliedFilters) {
+  if (!state.accounts.length) {
+    await refreshWorkspaceCore(uid);
+  }
+
   state.reportAppliedFilters = normalizeReportFilters(filters);
-  await refreshWorkspaceData(uid);
+  state.reportTransactions = await fetchReportTransactions(uid, state.reportAppliedFilters);
+  state.reportsDataLoaded = true;
+  rebuildReportsVm();
+  renderReportsView();
+  syncTopbarStatsForActiveRoute();
 }
 
 function findTransactionById(transactionId = "") {
@@ -804,6 +1009,10 @@ bindHomeEvents({
     state.homeAccountFilter = normalizeHomeAccountFilter(accountId, state.accounts);
     rebuildHomeVm();
   },
+  onLoadDailyFlow: () => {
+    state.homeDailyFlowLoaded = true;
+    rebuildHomeVm();
+  },
   onEditTransaction: (transactionId) => {
     if (!ensureUser()) return;
     const current = findTransactionById(transactionId);
@@ -813,6 +1022,20 @@ bindHomeEvents({
 });
 
 bindFinanceEvents({
+  onLoadFinanceMonth: async () => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    setGlobalLoading(true);
+    try {
+      await loadFinanceMonthData(uid);
+    } catch (err) {
+      console.error("load finance month error", err);
+      showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
   onChangeFilters: async (patch = {}) => {
     const nextPatch = { ...patch };
     const nextDate = String(nextPatch?.date ?? state.filters?.date ?? "").trim();
@@ -844,17 +1067,16 @@ bindFinanceEvents({
     };
 
     if (shouldReload) {
-      const uid = ensureUser();
-      if (!uid) return;
-      setGlobalLoading(true);
-      try {
-        await refreshFinance(uid, { month: nextMonth || state.month });
-      } catch (err) {
-        console.error("change finance filter error", err);
-        showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
-      } finally {
-        setGlobalLoading(false);
+      if (state.filters.preset === "month" && !state.financeMonthLoaded) {
+        renderFinanceView();
+        syncTopbarStatsForActiveRoute();
+        return;
       }
+
+      applyFinanceLedgerFromCache();
+      state.financeVm = buildRenderedFinanceVm();
+      renderFinanceView();
+      syncTopbarStatsForActiveRoute();
       return;
     }
 
@@ -863,21 +1085,23 @@ bindFinanceEvents({
     syncTopbarStatsForActiveRoute();
   },
   onChangePreset: async (preset) => {
-    const uid = ensureUser();
-    if (!uid) return;
+    const normalizedPreset = String(preset || "today").trim() === "month" ? "month" : "today";
     state.filters = {
       ...state.filters,
-      preset,
+      preset: normalizedPreset,
     };
-    setGlobalLoading(true);
-    try {
-      await refreshFinance(uid, { month: getYmFromDateInput(state.filters.date) || state.month });
-    } catch (err) {
-      console.error("change finance preset error", err);
-      showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
-    } finally {
-      setGlobalLoading(false);
+
+    if (normalizedPreset === "month") {
+      state.financeMonthLoaded = false;
+      renderFinanceView();
+      syncTopbarStatsForActiveRoute();
+      return;
     }
+
+    applyFinanceLedgerFromCache();
+    state.financeVm = buildRenderedFinanceVm();
+    renderFinanceView();
+    syncTopbarStatsForActiveRoute();
   },
   onOpenComposer: (type) => {
     if (!ensureUser()) return;
@@ -1126,6 +1350,20 @@ bindFinanceEvents({
 });
 
 bindLoanEvents({
+  onLoadLoans: async () => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    setGlobalLoading(true);
+    try {
+      await refreshLoans(uid);
+    } catch (err) {
+      console.error("load loans error", err);
+      showToast("Không thể tải dữ liệu cho mượn.", "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
   onOpenPartyCreate: () => {
     if (!ensureUser()) return;
     openLoanPartyPanel();
@@ -1262,6 +1500,26 @@ bindLoanEvents({
 });
 
 bindReportEvents({
+  onLoadReports: async () => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    const nextFilters = normalizeReportFilters(state.reportFilters);
+    state.reportFilters = nextFilters;
+    state.reportError = validateReportFilters(nextFilters);
+    renderReportsView();
+    if (state.reportError) return;
+
+    setGlobalLoading(true);
+    try {
+      await refreshReports(uid, nextFilters);
+    } catch (err) {
+      console.error("load reports error", err);
+      showToast(t("toast.reportLoadFail", "Không thể tải báo cáo tài chính."), "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
   onChangeDraftFilters: (draft) => {
     state.reportFilters = {
       ...state.reportFilters,
@@ -1362,12 +1620,14 @@ watchAuth(async (user) => {
     await refreshHome(user.uid, state.month);
     if (requestedRoute === "expenses") {
       await refreshFinance(user.uid, { month: state.month });
-    } else if (requestedRoute === "loans") {
-      await refreshLoans(user.uid);
-    } else if (requestedRoute === "reports") {
-      await refreshReports(user.uid, state.reportAppliedFilters);
     }
     setActiveRoute(requestedRoute);
+    if (requestedRoute === "loans") {
+      renderLoansView();
+    } else if (requestedRoute === "reports") {
+      renderReportsView();
+    }
+    syncTopbarStatsForActiveRoute();
   } catch (err) {
     console.error("watchAuth refresh error", err);
     showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
@@ -1424,41 +1684,14 @@ window.addEventListener("nexus:route-changed", async (event) => {
   }
 
   if (routeId === "loans") {
-    if (state.loansLoaded) {
-      renderLoansView();
-      syncTopbarStatsForActiveRoute();
-      return;
-    }
-
-    setGlobalLoading(true);
-    try {
-      await refreshLoans(state.currentUser.uid);
-    } catch (err) {
-      console.error("route loans refresh error", err);
-      showToast("Không thể tải dữ liệu cho mượn.", "error");
-    } finally {
-      setGlobalLoading(false);
-    }
-    return;
-  }
-
-  if (routeId !== "reports") return;
-
-  const nextLoadKey = getReportLoadKey(state.reportAppliedFilters);
-  if (state.reportVm && state.reportLoadedKey === nextLoadKey) {
-    renderReportsView();
+    renderLoansView();
     syncTopbarStatsForActiveRoute();
     return;
   }
 
-  setGlobalLoading(true);
-  try {
-    await refreshReports(state.currentUser.uid, state.reportAppliedFilters);
-  } catch (err) {
-    console.error("route reports refresh error", err);
-    showToast(t("toast.reportLoadFail", "Không thể tải báo cáo tài chính."), "error");
-  } finally {
-    setGlobalLoading(false);
+  if (routeId === "reports") {
+    renderReportsView();
+    syncTopbarStatsForActiveRoute();
   }
 });
 
