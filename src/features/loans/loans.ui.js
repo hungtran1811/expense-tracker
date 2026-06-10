@@ -1,3 +1,4 @@
+import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
 import { LOAN_TRANSACTION_TYPE_OPTIONS } from "../../shared/constants/finance.constants.js";
 import { formatCurrency } from "../finance/finance.controller.js";
 
@@ -41,72 +42,68 @@ function renderEmpty(container, title = "", body = "") {
 
 function renderSummary(container, summary = {}) {
   if (!container) return;
-  const cards = [
-    { label: "Tổng còn nợ", value: summary.totalOutstandingText || "0đ", tone: "net" },
-    { label: "Người đang nợ", value: summary.activePartyCountText || "0 người", tone: "transfer" },
-    { label: "Đã cho mượn", value: summary.lentTotalText || "0đ", tone: "expense" },
-    { label: "Đã nhận trả", value: summary.repaidTotalText || "0đ", tone: "income" },
-  ];
+  const totalOutstandingText = summary.totalOutstandingText || "0đ";
+  const activeCount = Number(summary.activePartyCount || 0);
+  const spotlightNote = formatTemplate(t("loans.spotlightNote", "{{count}} người đang nợ"), {
+    count: activeCount,
+  });
 
-  container.innerHTML = cards
-    .map(
-      (card) => `
-        <article class="finance-metric-card report-metric-card ${escapeHtml(card.tone)}">
-          <span class="finance-metric-label">${escapeHtml(card.label)}</span>
-          <strong class="finance-metric-value">${escapeHtml(card.value)}</strong>
-        </article>
-      `
-    )
-    .join("");
+  container.innerHTML = `
+    <article class="loans-spotlight-main">
+      <span class="loans-spotlight-label">${escapeHtml(t("loans.summary.totalOutstanding", "Tổng còn nợ"))}</span>
+      <strong class="loans-spotlight-value u-money" title="${escapeHtml(totalOutstandingText)}">${escapeHtml(totalOutstandingText)}</strong>
+      <span class="loans-spotlight-note">${escapeHtml(spotlightNote)}</span>
+    </article>
+    <div class="loans-spotlight-side">
+      <article class="loans-spotlight-stat tone-lent">
+        <span>${escapeHtml(t("loans.summary.lentTotal", "Đã cho mượn"))}</span>
+        <strong class="u-money" title="${escapeHtml(summary.lentTotalText || "0đ")}">${escapeHtml(summary.lentTotalText || "0đ")}</strong>
+      </article>
+      <article class="loans-spotlight-stat tone-repaid">
+        <span>${escapeHtml(t("loans.summary.repaidTotal", "Đã nhận trả"))}</span>
+        <strong class="u-money" title="${escapeHtml(summary.repaidTotalText || "0đ")}">${escapeHtml(summary.repaidTotalText || "0đ")}</strong>
+      </article>
+    </div>
+  `;
 }
 
 function renderPartyList(container, block = {}, selectedPartyId = "") {
   if (!container) return;
   const items = Array.isArray(block?.items) ? block.items : [];
   if (!items.length) {
-    renderEmpty(container, block?.emptyTitle || "", block?.emptyBody || "");
+    renderEmpty(
+      container,
+      block?.emptyTitle || t("loans.party.emptyTitle", "Chưa có người mượn nào"),
+      block?.emptyBody || t("loans.party.emptyBody", "Thêm người mượn đầu tiên để bắt đầu theo dõi công nợ.")
+    );
     return;
   }
 
   container.innerHTML = `
-    <div class="loan-party-list">
+    <div class="loans-party-strip-track">
       ${items
-        .map(
-          (item) => `
-            <article class="loan-party-card ${item.id === selectedPartyId ? "is-active" : ""}">
-              <button type="button" class="loan-party-main" data-loan-action="select-party" data-party-id="${escapeHtml(item.id)}">
-                <div class="loan-party-head">
-                  <strong>${escapeHtml(item.name)}</strong>
-                  <span class="loan-party-outstanding">${escapeHtml(item.outstandingText)}</span>
-                </div>
-                <div class="loan-party-meta">
-                  ${(Array.isArray(item.metaItems) ? item.metaItems : [])
-                    .map((label) => `<span>${escapeHtml(label)}</span>`)
-                    .join("")}
-                </div>
-                ${
-                  item.note
-                    ? `<div class="loan-party-note">${escapeHtml(item.note)}</div>`
-                    : ""
-                }
-              </button>
-              <div class="loan-party-actions">
-                <button type="button" class="btn btn-sm btn-outline-primary" data-loan-action="edit-party" data-party-id="${escapeHtml(item.id)}">
-                  Sửa
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-danger"
-                  data-loan-action="delete-party"
-                  data-party-id="${escapeHtml(item.id)}"
-                  ${item.canDelete ? "" : "disabled"}
-                >
-                  Xóa
-                </button>
-              </div>
-            </article>
-          `
-        )
+        .map((item) => {
+          const isActive = item.id === selectedPartyId;
+          const initial = String(item.name || "?").trim().charAt(0).toUpperCase() || "?";
+          const hasDebt = Number(item.outstanding || 0) > 0;
+          return `
+            <button
+              type="button"
+              class="loans-party-chip ${isActive ? "is-active" : ""}"
+              data-loan-action="select-party"
+              data-party-id="${escapeHtml(item.id)}"
+              aria-pressed="${isActive ? "true" : "false"}"
+            >
+              <span class="loans-party-chip-initial" aria-hidden="true">${escapeHtml(initial)}</span>
+              <span class="loans-party-chip-copy">
+                <span class="loans-party-chip-name u-ellipsis">${escapeHtml(item.name)}</span>
+                <span class="loans-party-chip-meta u-ellipsis">${escapeHtml(
+                  hasDebt ? `Còn nợ ${item.outstandingText}` : t("loans.party.settled", "Đã trả hết")
+                )}</span>
+              </span>
+            </button>
+          `;
+        })
         .join("")}
     </div>
   `;
@@ -119,8 +116,11 @@ function renderTimeline(container, vm = {}) {
   if (!selectedParty || !groups.length) {
     renderEmpty(
       container,
-      vm?.timeline?.emptyTitle || "",
-      vm?.timeline?.emptyBody || ""
+      vm?.timeline?.emptyTitle || t("loans.historyEmpty", "Chưa có lịch sử công nợ"),
+      vm?.timeline?.emptyBody ||
+        (selectedParty
+          ? t("loans.historyEmptyParty", "Người này chưa có giao dịch cho mượn hoặc trả lại.")
+          : t("loans.historyEmptyBody", "Chọn hoặc thêm người để xem lịch sử."))
     );
     return;
   }
@@ -133,7 +133,7 @@ function renderTimeline(container, vm = {}) {
             <div>
               <div class="ledger-day-title">${escapeHtml(group.dateLabel)}</div>
             </div>
-            <span class="ledger-day-count">${Number(group.items?.length || 0)} giao dịch</span>
+            <span class="ledger-day-count">${Number(group.items?.length || 0)} ${escapeHtml(t("loans.party.txSuffix", "giao dịch"))}</span>
           </header>
 
           <div class="ledger-day-list">
@@ -153,17 +153,17 @@ function renderTimeline(container, vm = {}) {
                               .join("")}</div>`
                           : ""
                       }
-                      <div class="ledger-item-note">${escapeHtml(row.note || "Không có ghi chú")}</div>
+                      <div class="ledger-item-note">${escapeHtml(row.note || t("loans.entry.noNote", "Không có ghi chú"))}</div>
                     </div>
 
                     <div class="ledger-entry-side">
-                      <div class="ledger-entry-amount ${escapeHtml(row.amountClass)}">${escapeHtml(row.amountText)}</div>
+                      <div class="ledger-entry-amount u-money ${escapeHtml(row.amountClass)}" title="${escapeHtml(row.amountText)}">${escapeHtml(row.amountText)}</div>
                       <div class="ledger-entry-actions">
                         <button class="btn btn-sm btn-outline-primary" data-loan-action="edit-entry" data-entry-id="${escapeHtml(row.id)}">
-                          Sửa
+                          ${escapeHtml(t("common.edit", "Sửa"))}
                         </button>
                         <button class="btn btn-sm btn-outline-danger" data-loan-action="delete-entry" data-entry-id="${escapeHtml(row.id)}">
-                          Xóa
+                          ${escapeHtml(t("common.delete", "Xóa"))}
                         </button>
                       </div>
                     </div>
@@ -179,8 +179,18 @@ function renderTimeline(container, vm = {}) {
 }
 
 export function renderLoanPartyForm({ draft = {} } = {}) {
+  const isEdit = !!String(draft?.id || "").trim();
   const titleEl = byId("loanPartyTitle");
-  if (titleEl) titleEl.textContent = String(draft?.id || "").trim() ? "Sửa người mượn" : "Thêm người mượn";
+  const hintEl = byId("loanPartyPanel")?.querySelector(".modal-header .small.text-muted");
+
+  if (titleEl) {
+    titleEl.textContent = isEdit
+      ? t("loans.partyForm.editTitle", "Sửa người mượn")
+      : t("loans.partyForm.createTitle", "Thêm người mượn");
+  }
+  if (hintEl) {
+    hintEl.textContent = t("loans.partyForm.hint", "Dùng tên người hoặc nhóm bạn cần theo dõi công nợ riêng.");
+  }
 
   const idEl = byId("lpId");
   const nameEl = byId("lpName");
@@ -191,27 +201,39 @@ export function renderLoanPartyForm({ draft = {} } = {}) {
 }
 
 export function renderLoanEntryForm({ draft = {}, parties = [], accounts = [], context = {} } = {}) {
+  const isRepay = String(draft?.type || "").trim() === "loan_repay";
+  const isEdit = !!String(draft?.id || "").trim();
+
   const titleEl = byId("loanEntryTitle");
   const hintEl = byId("loanEntryHint");
-  const isRepay = String(draft?.type || "").trim() === "loan_repay";
   if (titleEl) {
-    titleEl.textContent = String(draft?.id || "").trim()
+    titleEl.textContent = isEdit
       ? isRepay
-        ? "Sửa nhận trả"
-        : "Sửa cho mượn"
+        ? t("loans.entry.editRepay", "Sửa nhận trả")
+        : t("loans.entry.editLend", "Sửa cho mượn")
       : isRepay
-        ? "Nhận trả"
-        : "Cho mượn";
+        ? t("loans.entry.createRepay", "Nhận trả")
+        : t("loans.entry.createLend", "Cho mượn");
   }
   if (hintEl) {
     hintEl.textContent = isRepay
-      ? "Khoản này sẽ tăng lại số dư tài khoản nhận tiền."
-      : "Khoản này sẽ trừ trực tiếp khỏi số dư tài khoản bạn chọn.";
+      ? t("loans.entry.repayHint", "Khoản này sẽ tăng lại số dư tài khoản nhận tiền.")
+      : t("loans.entry.lendHint", "Khoản này sẽ trừ trực tiếp khỏi số dư tài khoản bạn chọn.");
   }
 
   fillSelect(byId("leType"), LOAN_TRANSACTION_TYPE_OPTIONS, draft?.type || "loan_lend");
-  fillSelect(byId("leLoanPartyId"), parties, draft?.loanPartyId || "", "Chọn người mượn");
-  fillSelect(byId("leAccountId"), accounts, draft?.accountId || "", "Chọn tài khoản");
+  fillSelect(
+    byId("leLoanPartyId"),
+    parties,
+    draft?.loanPartyId || "",
+    t("loans.entry.pickParty", "Chọn người mượn")
+  );
+  fillSelect(
+    byId("leAccountId"),
+    accounts,
+    draft?.accountId || "",
+    t("loans.entry.pickAccount", "Chọn tài khoản")
+  );
 
   const idEl = byId("leId");
   const amountEl = byId("leAmount");
@@ -226,6 +248,14 @@ export function renderLoanEntryForm({ draft = {}, parties = [], accounts = [], c
   if (occurredAtEl) occurredAtEl.value = draft?.occurredAt || "";
   if (noteEl) noteEl.value = draft?.note || "";
 
+  const shortcutsEl = byId("loanEntryShortcuts");
+  if (shortcutsEl) {
+    shortcutsEl.classList.remove("d-none");
+    shortcutsEl.textContent = isRepay
+      ? t("loans.entry.shortcutsRepay", "Từ tab Cho mượn: dùng chip Nhận trả để ghi nhanh khoản nhận trả.")
+      : t("loans.entry.shortcutsLend", "Từ tab Cho mượn: dùng chip Cho mượn để ghi nhanh khoản cho mượn.");
+  }
+
   const contextEl = byId("loanEntryContext");
   if (contextEl) {
     contextEl.classList.toggle("d-none", !context?.visible);
@@ -238,26 +268,26 @@ export function renderLoanEntryForm({ draft = {}, parties = [], accounts = [], c
           </div>
           <div class="loan-entry-context-grid">
             <span>Còn nợ hiện tại</span>
-            <strong>${escapeHtml(context.outstandingBeforeText || formatCurrency(0))}</strong>
+            <strong class="u-money" title="${escapeHtml(context.outstandingBeforeText || formatCurrency(0))}">${escapeHtml(context.outstandingBeforeText || formatCurrency(0))}</strong>
             ${
               context?.type === "loan_lend"
                 ? `
                   <span>Gốc cho mượn</span>
-                  <strong>${escapeHtml(context.principalText || formatCurrency(0))}</strong>
+                  <strong class="u-money" title="${escapeHtml(context.principalText || formatCurrency(0))}">${escapeHtml(context.principalText || formatCurrency(0))}</strong>
                   <span>Lãi</span>
-                  <strong>${escapeHtml(context.interestRateText || "0%")} • ${escapeHtml(
+                  <strong>${escapeHtml(context.interestRateText || "0%")} • <span class="u-money" title="${escapeHtml(context.interestAmountText || formatCurrency(0))}">${escapeHtml(
                     context.interestAmountText || formatCurrency(0)
-                  )}</strong>
+                  )}</span></strong>
                   <span>Tổng phải thu</span>
-                  <strong>${escapeHtml(context.receivableAmountText || formatCurrency(0))}</strong>
+                  <strong class="u-money" title="${escapeHtml(context.receivableAmountText || formatCurrency(0))}">${escapeHtml(context.receivableAmountText || formatCurrency(0))}</strong>
                 `
                 : `
                   <span>Số tiền nhận trả</span>
-                  <strong>${escapeHtml(context.amountText || formatCurrency(0))}</strong>
+                  <strong class="u-money" title="${escapeHtml(context.amountText || formatCurrency(0))}">${escapeHtml(context.amountText || formatCurrency(0))}</strong>
                 `
             }
             <span>Sau khi lưu</span>
-            <strong>${escapeHtml(context.outstandingAfterText || formatCurrency(0))}</strong>
+            <strong class="u-money" title="${escapeHtml(context.outstandingAfterText || formatCurrency(0))}">${escapeHtml(context.outstandingAfterText || formatCurrency(0))}</strong>
           </div>
         </div>
       `
@@ -265,42 +295,103 @@ export function renderLoanEntryForm({ draft = {}, parties = [], accounts = [], c
   }
 }
 
+function renderDetailActions(vm = {}) {
+  const actionsEl = byId("loanDetailActions");
+  if (!actionsEl) return;
+
+  const lendButton = byId("btnLoanSelectedLend");
+  const repayButton = byId("btnLoanSelectedRepay");
+  const party = vm?.selectedParty || null;
+  const partyId = vm?.selectedPartyId || "";
+
+  if (lendButton) {
+    lendButton.disabled = !partyId;
+    lendButton.setAttribute("data-party-id", partyId);
+    lendButton.textContent = t("loans.chipLend", "Cho mượn");
+  }
+  if (repayButton) {
+    repayButton.disabled = !partyId;
+    repayButton.setAttribute("data-party-id", partyId);
+    repayButton.textContent = t("loans.chipRepay", "Nhận trả");
+  }
+
+  const manageButtons = actionsEl.querySelectorAll("[data-loan-manage-action]");
+  manageButtons.forEach((button) => button.remove());
+
+  if (!party) return;
+
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.className = "btn btn-sm btn-outline-secondary";
+  editButton.setAttribute("data-loan-action", "edit-party");
+  editButton.setAttribute("data-loan-manage-action", "true");
+  editButton.setAttribute("data-party-id", party.id);
+  editButton.textContent = t("loans.party.edit", "Sửa");
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "btn btn-sm btn-outline-danger";
+  deleteButton.setAttribute("data-loan-action", "delete-party");
+  deleteButton.setAttribute("data-loan-manage-action", "true");
+  deleteButton.setAttribute("data-party-id", party.id);
+  deleteButton.textContent = t("loans.party.delete", "Xóa");
+  if (!party.canDelete) deleteButton.disabled = true;
+
+  actionsEl.append(editButton, deleteButton);
+}
+
 export function renderLoansRoute(vm = {}) {
+  const pageTitleEl = byId("loansPageTitle");
+  if (pageTitleEl) pageTitleEl.textContent = t("loans.pageTitle", "Cho mượn");
+
+  const workspaceInfoEl = byId("loansWorkspaceInfo");
+  if (workspaceInfoEl) {
+    workspaceInfoEl.textContent = t("loans.workspaceInfo", "Tiền cho bạn bè mượn — tách khỏi chi tiêu hằng ngày.");
+  }
+
+  const partiesTitleEl = byId("loanPartiesTitle");
+  if (partiesTitleEl) partiesTitleEl.textContent = t("loans.partiesTitle", "Người mượn");
+
+  const partiesSubtitleEl = byId("loanPartiesSubtitle");
+  if (partiesSubtitleEl) {
+    partiesSubtitleEl.textContent = t("loans.partiesStripHint", "Chọn người để xem và ghi công nợ.");
+  }
+
   renderSummary(byId("loansSummary"), vm?.summary || {});
 
   const countEl = byId("loanPartiesCount");
-  if (countEl) countEl.textContent = vm?.parties?.countText || "0 người";
+  if (countEl) countEl.textContent = vm?.parties?.countText || `0 ${t("loans.party.countSuffix", "người")}`;
+
+  const heroEl = byId("loanDetailHero");
+  if (heroEl) heroEl.classList.toggle("has-party", !!vm?.selectedParty);
 
   const selectedTitleEl = byId("loanSelectedPartyTitle");
   if (selectedTitleEl) {
-    selectedTitleEl.textContent = vm?.selectedParty?.name || "Lịch sử công nợ";
+    selectedTitleEl.textContent = vm?.selectedParty?.name || t("loans.historyTitle", "Lịch sử công nợ");
   }
 
   const selectedMetaEl = byId("loanSelectedPartyMeta");
   if (selectedMetaEl) {
-    selectedMetaEl.textContent = vm?.selectedParty
+    const metaText = vm?.selectedParty
       ? [
           `Còn nợ ${vm.selectedParty.outstandingText}`,
           `Đã mượn ${vm.selectedParty.lendTotalText}`,
           ...(Number(vm.selectedParty.interestTotal || 0) > 0 ? [`Lãi ${vm.selectedParty.interestTotalText}`] : []),
           `Đã trả ${vm.selectedParty.repayTotalText}`,
         ].join(" • ")
-      : "Chọn một người mượn để xem lịch sử công nợ.";
+      : t("loans.selectedPartyMetaEmpty", "Chọn một người mượn để xem lịch sử công nợ.");
+
+    selectedMetaEl.textContent = metaText;
+    if (vm?.selectedParty) {
+      selectedMetaEl.classList.add("u-ellipsis");
+      selectedMetaEl.title = metaText;
+    } else {
+      selectedMetaEl.classList.remove("u-ellipsis");
+      selectedMetaEl.removeAttribute("title");
+    }
   }
 
-  const lendButtons = [byId("btnLoanSelectedLend")];
-  const repayButtons = [byId("btnLoanSelectedRepay")];
-  lendButtons.forEach((button) => {
-    if (!button) return;
-    button.disabled = !vm?.selectedPartyId;
-    button.setAttribute("data-party-id", vm?.selectedPartyId || "");
-  });
-  repayButtons.forEach((button) => {
-    if (!button) return;
-    button.disabled = !vm?.selectedPartyId;
-    button.setAttribute("data-party-id", vm?.selectedPartyId || "");
-  });
-
+  renderDetailActions(vm);
   renderPartyList(byId("loanPartiesList"), vm?.parties || {}, vm?.selectedPartyId || "");
   renderTimeline(byId("loanTimeline"), vm);
 }

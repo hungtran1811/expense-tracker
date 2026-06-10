@@ -1,3 +1,4 @@
+import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
 import { buildDefaultReportFilters } from "./reports.controller.js";
 
 const CHART_COLORS = ["#245cff", "#59e1c1", "#7d8cff", "#f2c054", "#f07a9a"];
@@ -46,6 +47,12 @@ function clampPercent(value = 0, fallback = 8) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric) || numeric <= 0) return `${fallback}%`;
   return `${Math.max(fallback, Math.min(numeric, 100))}%`;
+}
+
+function toDailyBarWidth(widthValue = "0%", minWhenPositive = 6) {
+  const numeric = Number(String(widthValue || "0").replace("%", ""));
+  if (!Number.isFinite(numeric) || numeric <= 0) return "0%";
+  return clampPercent(numeric, minWhenPositive);
 }
 
 function toneToChip(tone = "") {
@@ -146,12 +153,56 @@ function renderSummary(container, summary = {}) {
       (card) => `
         <article class="finance-metric-card report-metric-card ${escapeHtml(card.tone)}">
           <span class="finance-metric-label">${escapeHtml(card.label)}</span>
-          <strong class="finance-metric-value">${escapeHtml(card.value)}</strong>
+          <strong class="finance-metric-value u-money" title="${escapeHtml(card.value)}">${escapeHtml(card.value)}</strong>
           <div class="finance-metric-note">${escapeHtml(card.note)}</div>
         </article>
       `
     )
     .join("");
+}
+
+function syncReportsChrome(options = {}) {
+  const activePreset = String(options?.activePreset || "").trim();
+
+  const titleEl = byId("reportsPageTitle");
+  if (titleEl) titleEl.textContent = t("routeMeta.reports.title", "Báo cáo");
+
+  const infoEl = byId("reportsWorkspaceInfo");
+  if (infoEl) infoEl.textContent = t("reports.workspaceInfo", "Phân tích chi tiêu theo kỳ bạn chọn.");
+
+  const sectionMap = [
+    ["reportCashSnapshotTitle", "reports.sectionCash"],
+    ["reportQuickSignalsTitle", "reports.sectionSignals"],
+    ["reportAttentionTitle", "reports.sectionAttention"],
+    ["reportCategoryBreakdownTitle", "reports.sectionCategory"],
+    ["reportScopeBreakdownTitle", "reports.sectionScope"],
+    ["reportAccountBreakdownTitle", "reports.sectionAccounts"],
+  ];
+
+  sectionMap.forEach(([id, key]) => {
+    const el = byId(id);
+    if (el) el.textContent = t(key, el.textContent);
+  });
+
+  const categoryMetaEl = byId("reportCategoryBreakdownMeta");
+  if (categoryMetaEl) categoryMetaEl.textContent = t("reports.categorySubtitle", categoryMetaEl.textContent);
+
+  const accountsMetaEl = byId("reportAccountBreakdownMeta");
+  if (accountsMetaEl) accountsMetaEl.textContent = t("reports.accountsSubtitle", accountsMetaEl.textContent);
+
+  const applyBtn = byId("btnApplyReportFilters");
+  if (applyBtn) applyBtn.textContent = t("reports.apply", "Áp dụng");
+
+  const resetBtn = byId("btnResetReportFilters");
+  if (resetBtn) resetBtn.textContent = t("reports.reset", "Đặt lại");
+
+  document.querySelectorAll("[data-report-preset]").forEach((button) => {
+    const preset = String(button.getAttribute("data-report-preset") || "").trim();
+    const labelKey =
+      preset === "previous-month" ? "reports.presetPreviousMonth" : "reports.presetCurrentMonth";
+    button.textContent = t(labelKey, button.textContent);
+    button.classList.toggle("is-active", !!activePreset && preset === activePreset);
+  });
 }
 
 function renderCashSnapshot(container, snapshot = {}) {
@@ -307,43 +358,6 @@ function renderBreakdownChart(container, breakdown = {}) {
   `;
 }
 
-function renderBudgetComparison(container, comparison = {}) {
-  if (!container) return;
-  const items = Array.isArray(comparison?.items) ? comparison.items : [];
-  const hasBudgets = Number(comparison?.configuredCount || 0) > 0;
-  if (!items.length || !hasBudgets) {
-    renderEmptyBlock(container, comparison?.emptyTitle || "", comparison?.emptyBody || "");
-    return;
-  }
-
-  container.innerHTML = `
-    <div class="report-budget-grid">
-      ${items
-        .map(
-          (item) => `
-            <article class="report-budget-card ${escapeHtml(item.statusKey || "safe")}">
-              <div class="report-budget-head">
-                <div>
-                  <div class="report-budget-title">${escapeHtml(item.scopeName)}</div>
-                  <div class="report-budget-meta">${escapeHtml(item.percentText)} • ${escapeHtml(item.remainingText)}</div>
-                </div>
-                <span class="ledger-chip ${escapeHtml(item.statusTone || "transfer")}">${escapeHtml(item.statusLabel)}</span>
-              </div>
-              <div class="report-budget-bar">
-                <span style="width:${escapeHtml(item.progressWidth || "0%")}"></span>
-              </div>
-              <div class="report-budget-values">
-                <span>Đã chi <strong>${escapeHtml(item.spentText)}</strong></span>
-                <span>Ngân sách <strong>${escapeHtml(item.limitText)}</strong></span>
-              </div>
-            </article>
-          `
-        )
-        .join("")}
-    </div>
-  `;
-}
-
 function renderAccountBreakdown(container, breakdown = {}) {
   if (!container) return;
   const items = Array.isArray(breakdown?.items) ? breakdown.items : [];
@@ -403,49 +417,80 @@ function renderAccountBreakdown(container, breakdown = {}) {
   `;
 }
 
-function renderDailyFlow(container, dailyFlow = {}) {
+export function renderDailyFlow(container, dailyFlow = {}) {
   if (!container) return;
   const items = Array.isArray(dailyFlow?.items) ? dailyFlow.items : [];
-  const activeItems = items.filter((item) => item.income || item.expense || item.net || item.transfer);
+  const activeItems = items
+    .filter((item) => item.income || item.expense || item.net || item.transfer)
+    .slice()
+    .reverse();
+
   if (!activeItems.length) {
     renderEmptyBlock(container, dailyFlow?.emptyTitle || "", dailyFlow?.emptyBody || "");
     return;
   }
 
   container.innerHTML = `
-    <div class="report-flow-layout">
-      <div class="report-flow-legend">
+    <div class="report-daily-layout">
+      <div class="report-daily-legend" aria-hidden="true">
         <span><i class="income"></i> Thu</span>
         <span><i class="expense"></i> Chi</span>
-        <span><i class="positive"></i> Ròng</span>
+        <span><i class="net"></i> Ròng</span>
       </div>
-      <div class="report-flow-columns">
+      <div class="report-daily-list">
         ${activeItems
-        .map(
-          (item) => `
-            <article class="report-flow-column-card">
-              <div class="report-flow-column-bars">
-                <span class="report-flow-column income" style="height:${escapeHtml(item.incomeWidth || "0%")}"></span>
-                <span class="report-flow-column expense" style="height:${escapeHtml(item.expenseWidth || "0%")}"></span>
-                <span class="report-flow-column ${escapeHtml(item.netClass || "positive")}" style="height:${escapeHtml(item.netWidth || "0%")}"></span>
-              </div>
-              <div class="report-flow-column-label">${escapeHtml(toShortDateLabel(item.dateLabel))}</div>
-              <div class="report-flow-column-net ${escapeHtml(item.netClass || "positive")}">${escapeHtml(item.netText)}</div>
-              ${
-                Number(item.transfer || 0) > 0
-                  ? `<div class="report-flow-transfer">Chuyển khoản ${escapeHtml(item.transferText)}</div>`
-                  : ""
-              }
-            </article>
-          `
-        )
-        .join("")}
+          .map((item) => {
+            const netClass = escapeHtml(item.netClass || "positive");
+            const incomeWidth = toDailyBarWidth(item.incomeWidth);
+            const expenseWidth = toDailyBarWidth(item.expenseWidth);
+            return `
+              <article class="report-daily-row">
+                <div class="report-daily-head">
+                  <div class="report-daily-head-copy">
+                    <div class="report-daily-date">${escapeHtml(item.dateLabel)}</div>
+                    ${
+                      Number(item.transfer || 0) > 0
+                        ? `<div class="report-daily-meta">Chuyển khoản <span class="u-money">${escapeHtml(item.transferText)}</span></div>`
+                        : ""
+                    }
+                  </div>
+                  <strong class="report-daily-net ${netClass} u-money" title="${escapeHtml(item.netText)}">${escapeHtml(item.netText)}</strong>
+                </div>
+                <div class="report-daily-bars">
+                  <div class="report-daily-bar-row">
+                    <span class="report-daily-bar-label">Thu</span>
+                    <div class="report-daily-bar-track">
+                      <span class="report-daily-bar income" style="width:${incomeWidth}"></span>
+                    </div>
+                    <strong class="report-daily-bar-value u-money" title="${escapeHtml(item.incomeText)}">${escapeHtml(item.incomeText)}</strong>
+                  </div>
+                  <div class="report-daily-bar-row">
+                    <span class="report-daily-bar-label">Chi</span>
+                    <div class="report-daily-bar-track">
+                      <span class="report-daily-bar expense" style="width:${expenseWidth}"></span>
+                    </div>
+                    <strong class="report-daily-bar-value u-money" title="${escapeHtml(item.expenseText)}">${escapeHtml(item.expenseText)}</strong>
+                  </div>
+                </div>
+              </article>
+            `;
+          })
+          .join("")}
       </div>
     </div>
   `;
 }
 
+function withReportEmptyCopy(block = {}, titleKey = "") {
+  return {
+    ...block,
+    emptyTitle: block?.emptyTitle || t(titleKey, ""),
+    emptyBody: block?.emptyBody || "",
+  };
+}
+
 export function renderReportsRoute(vm = {}, options = {}) {
+  syncReportsChrome(options);
   const draftFilters = options?.draftFilters || vm?.filters || buildDefaultReportFilters();
   fillSelect(
     byId("reportAccountFilter"),
@@ -473,15 +518,29 @@ export function renderReportsRoute(vm = {}, options = {}) {
     } · ${vm?.summary?.transferMetaText || "Chuyển khoản 0đ"} · ${vm?.meta?.exclusionNote || ""}`;
   }
 
+  const cashMetaEl = byId("reportCashSnapshotMeta");
+  if (cashMetaEl) {
+    cashMetaEl.textContent = formatTemplate(t("reports.cashSnapshotSubtitle", "{{count}} ví đang dùng"), {
+      count: vm?.meta?.cashSnapshotCount ?? 0,
+    });
+  }
+
+  const signalsMetaEl = byId("reportQuickSignalsMeta");
+  if (signalsMetaEl) signalsMetaEl.textContent = t("reports.periodSummarySubtitle", "Điểm nổi bật trong kỳ đang xem.");
+
+  const attentionMetaEl = byId("reportAttentionMeta");
+  if (attentionMetaEl) attentionMetaEl.textContent = t("reports.worthNotingSubtitle", "Gợi ý từ dữ liệu kỳ này.");
+
+  const scopeMetaEl = byId("reportScopeBreakdownMeta");
+  if (scopeMetaEl) scopeMetaEl.textContent = t("reports.scopeSubtitle", "Nhóm nào đang chi nhiều hơn.");
+
   renderSummary(byId("reportsSummary"), vm?.summary || {});
   renderCashSnapshot(byId("reportCashSnapshot"), vm?.cashSnapshot || {});
-  renderQuickSignals(byId("reportQuickSignals"), vm?.quickSignals || {});
-  renderAttentionItems(byId("reportAttentionItems"), vm?.attentionItems || {});
-  renderBreakdownChart(byId("reportCategoryBreakdown"), vm?.categoryBreakdown || {});
-  renderBreakdownChart(byId("reportScopeBreakdown"), vm?.scopeBreakdown || {});
-  renderBudgetComparison(byId("reportBudgetComparison"), vm?.budgetComparison || {});
-  renderAccountBreakdown(byId("reportAccountBreakdown"), vm?.accountBreakdown || {});
-  renderDailyFlow(byId("reportDailyFlow"), vm?.dailyFlow || {});
+  renderQuickSignals(byId("reportQuickSignals"), withReportEmptyCopy(vm?.quickSignals, "reports.emptySignals"));
+  renderAttentionItems(byId("reportAttentionItems"), withReportEmptyCopy(vm?.attentionItems, "reports.emptyAttention"));
+  renderBreakdownChart(byId("reportCategoryBreakdown"), withReportEmptyCopy(vm?.categoryBreakdown, "reports.emptyCategory"));
+  renderBreakdownChart(byId("reportScopeBreakdown"), withReportEmptyCopy(vm?.scopeBreakdown, "reports.emptyScope"));
+  renderAccountBreakdown(byId("reportAccountBreakdown"), withReportEmptyCopy(vm?.accountBreakdown, "reports.emptyAccount"));
 
   const emptyEl = byId("reportsEmptyState");
   if (emptyEl) {

@@ -47,12 +47,6 @@ function buildScopeMap(expenseScopes = []) {
   );
 }
 
-function buildScopeBudgetMap(scopeBudgets = []) {
-  return new Map(
-    (Array.isArray(scopeBudgets) ? scopeBudgets : []).map((item) => [String(item?.scopeId || "").trim(), item])
-  );
-}
-
 function isFinanceTransactionType(type = "") {
   return ["expense", "income", "transfer", "adjustment"].includes(String(type || "").trim());
 }
@@ -90,7 +84,7 @@ function getTransactionTitle(transaction) {
   if (type === "expense") return getFinanceCategoryLabel(transaction?.categoryKey);
   if (type === "income") return "Khoản thu";
   if (type === "transfer") return "Chuyển khoản nội bộ";
-  if (type === "adjustment") return "Bút toán điều chỉnh";
+  if (type === "adjustment") return "Sửa số dư";
   return "Giao dịch";
 }
 
@@ -167,7 +161,7 @@ function buildLedgerInfoText(filters = {}) {
     parts.push("Đã lọc theo danh mục.");
   }
   if (filters?.scopeId && filters.scopeId !== "all") {
-    parts.push("Đã lọc theo phạm vi.");
+    parts.push("Đã lọc theo nhóm chi.");
   }
   if (filters?.search) {
     parts.push("Đã áp dụng từ khóa tìm kiếm.");
@@ -184,7 +178,7 @@ function buildExpenseDetailsInfoText(filters = {}) {
     parts.push("Đã áp dụng lọc theo danh mục.");
   }
   if (filters?.scopeId && filters.scopeId !== "all") {
-    parts.push("Đã áp dụng lọc theo phạm vi.");
+    parts.push("Đã áp dụng lọc theo nhóm chi.");
   }
   if (filters?.search) {
     parts.push("Đã áp dụng từ khóa tìm kiếm.");
@@ -253,7 +247,7 @@ export function getTodayInputValue() {
 
 function normalizeFinancePreset(value = "") {
   const raw = String(value || "").trim();
-  if (raw === "today" || raw === "7d" || raw === "month") return raw;
+  if (raw === "today" || raw === "month") return raw;
   return "month";
 }
 
@@ -267,15 +261,6 @@ export function getFinanceRange(filters = {}) {
       preset,
       presetLabel: "Hôm nay",
       fromDate: safeDate,
-      toDate: safeDate,
-    };
-  }
-
-  if (preset === "7d") {
-    return {
-      preset,
-      presetLabel: "7 ngày gần nhất",
-      fromDate: shiftDateInput(safeDate, -6),
       toDate: safeDate,
     };
   }
@@ -310,200 +295,43 @@ export function formatMonthLabel(ym = getCurrentYm()) {
 }
 
 export function formatCurrency(amount = 0) {
-  return `${new Intl.NumberFormat("vi-VN").format(Number(amount || 0))}đ`;
+  const value = Math.round(Number(amount || 0));
+  return `${new Intl.NumberFormat("vi-VN", {
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+  }).format(value)}đ`;
+}
+
+export function formatCurrencyCompact(amount = 0) {
+  const value = Number(amount || 0);
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+
+  if (abs >= 1_000_000_000) {
+    const scaled = abs / 1_000_000_000;
+    const text = scaled >= 10 ? scaled.toFixed(0) : scaled.toFixed(1).replace(/\.0$/, "");
+    return `${sign}${text} tỷ`;
+  }
+
+  if (abs >= 1_000_000) {
+    const scaled = abs / 1_000_000;
+    const text = scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(1).replace(/\.0$/, "");
+    return `${sign}${text} tr`;
+  }
+
+  if (abs >= 10_000) {
+    const scaled = abs / 1_000;
+    const text = scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(1).replace(/\.0$/, "");
+    return `${sign}${text} k`;
+  }
+
+  return formatCurrency(value);
 }
 
 export function formatDateLabel(value) {
   const date = toDate(value);
   if (!date) return "--";
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
-}
-
-function getBudgetState(hasBudget = false, percent = 0) {
-  if (!hasBudget) {
-    return {
-      key: "missing",
-      label: "Chưa đặt ngân sách",
-      tone: "transfer",
-    };
-  }
-
-  if (percent > 100) {
-    return {
-      key: "over",
-      label: "Đã vượt mức",
-      tone: "expense",
-    };
-  }
-
-  if (percent >= 80) {
-    return {
-      key: "near",
-      label: "Sắp chạm mức",
-      tone: "adjustment",
-    };
-  }
-
-  return {
-    key: "safe",
-    label: "Trong hạn mức",
-    tone: "income",
-  };
-}
-
-function formatBudgetRemaining(remainingAmount = 0, hasBudget = false) {
-  if (!hasBudget) return "Chưa đặt ngân sách";
-  const value = Number(remainingAmount || 0);
-  if (value >= 0) return `Còn ${formatCurrency(value)}`;
-  return `Vượt ${formatCurrency(Math.abs(value))}`;
-}
-
-function sortScopeBudgetItems(items = []) {
-  const rankMap = new Map([
-    ["over", 0],
-    ["near", 1],
-    ["missing", 2],
-    ["safe", 3],
-  ]);
-
-  return [...items].sort((a, b) => {
-    const rankA = rankMap.get(String(a?.statusKey || "")) ?? 99;
-    const rankB = rankMap.get(String(b?.statusKey || "")) ?? 99;
-    if (rankA !== rankB) return rankA - rankB;
-    if (Number(b?.spentAmount || 0) !== Number(a?.spentAmount || 0)) {
-      return Number(b?.spentAmount || 0) - Number(a?.spentAmount || 0);
-    }
-    return String(a?.scopeName || "").localeCompare(String(b?.scopeName || ""), "vi");
-  });
-}
-
-export function buildScopeBudgetOverview({
-  month = getCurrentYm(),
-  transactions = [],
-  scopeBudgets = [],
-  expenseScopes = [],
-} = {}) {
-  const scopeMap = buildScopeMap(expenseScopes);
-  const budgetMap = buildScopeBudgetMap(scopeBudgets);
-  const spendingByScope = new Map();
-
-  (Array.isArray(transactions) ? transactions : []).forEach((transaction) => {
-    if (String(transaction?.type || "").trim() !== "expense") return;
-    const scopeId = String(transaction?.scopeId || "").trim();
-    if (!scopeId) return;
-    spendingByScope.set(scopeId, (spendingByScope.get(scopeId) || 0) + Math.abs(Number(transaction?.amount || 0)));
-  });
-
-  const items = (Array.isArray(expenseScopes) ? expenseScopes : []).map((scope) => {
-    const scopeId = String(scope?.id || "").trim();
-    const budget = budgetMap.get(scopeId) || null;
-    const hasBudget = !!budget;
-    const limitAmount = Number(budget?.limitAmount || 0);
-    const spentAmount = Number(spendingByScope.get(scopeId) || 0);
-    const remainingAmount = hasBudget ? limitAmount - spentAmount : 0;
-    const percent = hasBudget && limitAmount > 0 ? (spentAmount / limitAmount) * 100 : 0;
-    const status = getBudgetState(hasBudget, percent);
-
-    return {
-      budgetId: String(budget?.id || "").trim(),
-      scopeId,
-      scopeName: String(scope?.name || "").trim(),
-      monthKey: String(month || getCurrentYm()).trim(),
-      monthLabel: formatMonthLabel(month),
-      hasBudget,
-      limitAmount,
-      spentAmount,
-      remainingAmount,
-      percent,
-      percentText: hasBudget ? `${Math.round(percent)}%` : "--",
-      limitText: hasBudget ? formatCurrency(limitAmount) : "Chưa đặt",
-      spentText: formatCurrency(spentAmount),
-      remainingText: formatBudgetRemaining(remainingAmount, hasBudget),
-      progressWidth: `${Math.max(0, Math.min(percent, 100))}%`,
-      statusKey: status.key,
-      statusLabel: status.label,
-      statusTone: status.tone,
-      actionLabel: hasBudget ? "Sửa mức" : "Đặt mức",
-      canDeleteBudget: hasBudget,
-    };
-  });
-
-  const configuredCount = items.filter((item) => item.hasBudget).length;
-  return {
-    monthKey: String(month || getCurrentYm()).trim(),
-    monthLabel: formatMonthLabel(month),
-    configuredCount,
-    totalCount: items.length,
-    summaryText: `${configuredCount}/${items.length} phạm vi đã đặt`,
-    hasBudgets: configuredCount > 0,
-    items: sortScopeBudgetItems(items),
-    emptyTitle: "Chưa có phạm vi chi nào",
-    emptyBody: "Tạo phạm vi chi trước để bắt đầu đặt ngân sách theo tháng.",
-  };
-}
-
-export function buildScopeBudgetPreview({
-  draft = {},
-  transactions = [],
-  scopeBudgets = [],
-  expenseScopes = [],
-} = {}) {
-  const type = String(draft?.type || "").trim();
-  const scopeId = String(draft?.scopeId || "").trim();
-  if (type !== "expense" || !scopeId) {
-    return { visible: false };
-  }
-
-  const amount = Math.abs(Number(draft?.amount || 0));
-  const currentId = String(draft?.id || "").trim();
-  const overview = buildScopeBudgetOverview({
-    month: getYmFromDateInput(draft?.occurredAt) || getCurrentYm(),
-    transactions: (Array.isArray(transactions) ? transactions : []).filter(
-      (item) => String(item?.id || "").trim() !== currentId
-    ),
-    scopeBudgets,
-    expenseScopes,
-  });
-  const currentItem = overview.items.find((item) => item.scopeId === scopeId);
-  if (!currentItem) {
-    return { visible: false };
-  }
-
-  const afterSpent = Number(currentItem.spentAmount || 0) + (Number.isFinite(amount) ? amount : 0);
-  const afterRemaining = currentItem.hasBudget ? Number(currentItem.limitAmount || 0) - afterSpent : 0;
-  const afterPercent =
-    currentItem.hasBudget && Number(currentItem.limitAmount || 0) > 0
-      ? (afterSpent / Number(currentItem.limitAmount || 0)) * 100
-      : 0;
-  const afterStatus = getBudgetState(currentItem.hasBudget, afterPercent);
-
-  return {
-    visible: true,
-    monthKey: overview.monthKey,
-    monthLabel: overview.monthLabel,
-    scopeId: currentItem.scopeId,
-    scopeName: currentItem.scopeName,
-    hasBudget: currentItem.hasBudget,
-    spentBeforeAmount: Number(currentItem.spentAmount || 0),
-    spentBeforeText: currentItem.spentText,
-    spentAfterAmount: afterSpent,
-    spentAfterText: formatCurrency(afterSpent),
-    limitAmount: Number(currentItem.limitAmount || 0),
-    limitText: currentItem.limitText,
-    remainingAfterAmount: afterRemaining,
-    remainingAfterText: formatBudgetRemaining(afterRemaining, currentItem.hasBudget),
-    statusKey: afterStatus.key,
-    statusLabel: afterStatus.label,
-    statusTone: afterStatus.tone,
-    warningText:
-      afterStatus.key === "over"
-        ? `Khoản chi này sẽ làm phạm vi ${currentItem.scopeName} vượt ngân sách tháng ${overview.monthLabel}.`
-        : afterStatus.key === "near"
-          ? `Khoản chi này sẽ đưa phạm vi ${currentItem.scopeName} lên vùng gần chạm ngân sách tháng ${overview.monthLabel}.`
-          : currentItem.hasBudget
-            ? `Phạm vi ${currentItem.scopeName} vẫn còn trong hạn mức tháng ${overview.monthLabel}.`
-            : `Phạm vi ${currentItem.scopeName} chưa được đặt ngân sách cho tháng ${overview.monthLabel}.`,
-  };
 }
 
 export function toDateInputValue(value) {
@@ -547,6 +375,24 @@ export function sanitizeAccountDraft(payload = {}) {
   };
 }
 
+export function sanitizeAccountEditDraft(payload = {}) {
+  const id = String(payload?.id || "").trim();
+  const name = String(payload?.name || "").trim();
+  const type = String(payload?.type || "bank").trim();
+  const isDefault = !!payload?.isDefault;
+
+  if (!id) throw new Error("Không tìm thấy tài khoản cần cập nhật.");
+  if (!name) throw new Error("Vui lòng nhập tên tài khoản.");
+
+  const typeValid = ACCOUNT_TYPE_OPTIONS.some((item) => item.key === type) ? type : "other";
+  return {
+    id,
+    name,
+    type: typeValid,
+    isDefault,
+  };
+}
+
 export function sanitizeTransactionDraft(payload = {}) {
   const id = String(payload?.id || "").trim();
   const type = String(payload?.type || "expense").trim();
@@ -570,14 +416,14 @@ export function sanitizeTransactionDraft(payload = {}) {
     if (!(amount > 0)) throw new Error("Số tiền chuyển phải lớn hơn 0.");
   } else if (type === "adjustment") {
     if (!Number.isFinite(amount) || amount === 0) {
-      throw new Error("Bút toán điều chỉnh cần số tiền khác 0.");
+      throw new Error("Sửa số dư cần số tiền khác 0.");
     }
   } else if (!(amount > 0)) {
     throw new Error("Số tiền phải lớn hơn 0.");
   }
 
   if (type === "expense" && !scopeId) {
-    throw new Error("Vui lòng chọn phạm vi chi.");
+    throw new Error("Vui lòng chọn nhóm chi.");
   }
 
   return {
@@ -638,9 +484,7 @@ export function buildFinanceVm({
   month,
   accounts = [],
   transactions = [],
-  budgetTransactions = [],
   expenseScopes = [],
-  scopeBudgets = [],
   filters = {},
 } = {}) {
   const normalizedFilters = normalizeFinanceFilters(filters);
@@ -651,10 +495,6 @@ export function buildFinanceVm({
   const orderedTransactions = sortTransactions(transactions).filter((transaction) =>
     isFinanceTransactionType(transaction?.type)
   );
-  const orderedBudgetTransactions = sortTransactions(budgetTransactions).filter((transaction) =>
-    isFinanceTransactionType(transaction?.type)
-  );
-
   const filteredTransactions = orderedTransactions.filter((transaction) => {
     if (
       normalizedFilters.accountId !== "all" &&
@@ -664,34 +504,6 @@ export function buildFinanceVm({
       return false;
     }
     if (normalizedFilters.type !== "all" && String(transaction?.type || "").trim() !== normalizedFilters.type) {
-      return false;
-    }
-    if (
-      normalizedFilters.categoryKey !== "all" &&
-      String(transaction?.categoryKey || "").trim() !== normalizedFilters.categoryKey
-    ) {
-      return false;
-    }
-    if (
-      normalizedFilters.scopeId !== "all" &&
-      String(transaction?.scopeId || "").trim() !== normalizedFilters.scopeId
-    ) {
-      return false;
-    }
-    if (normalizedFilters.search) {
-      const haystack = buildSearchText(transaction, accountMap, scopeMap);
-      if (!haystack.includes(normalizedFilters.search.toLowerCase())) return false;
-    }
-    return true;
-  });
-
-  const expenseDetailTransactions = orderedTransactions.filter((transaction) => {
-    if (String(transaction?.type || "").trim() !== "expense") return false;
-    if (
-      normalizedFilters.accountId !== "all" &&
-      String(transaction?.accountId || "").trim() !== normalizedFilters.accountId &&
-      String(transaction?.toAccountId || "").trim() !== normalizedFilters.accountId
-    ) {
       return false;
     }
     if (
@@ -746,29 +558,8 @@ export function buildFinanceVm({
     amountClass: getTransactionAmountClass(transaction),
   }));
   const ledgerGroups = groupTransactionsByDate(filteredTransactions, accountMap, scopeMap);
-  const expenseDetailRows = expenseDetailTransactions.map((transaction) => ({
-    id: String(transaction?.id || "").trim(),
-    dateLabel: formatDateLabel(transaction?.occurredAt),
-    title: getTransactionTitle(transaction),
-    note: String(transaction?.note || "").trim(),
-    typeKey: String(transaction?.type || "").trim(),
-    typeLabel: getTransactionTypeLabel(transaction?.type),
-    categoryLabel: getFinanceCategoryLabel(transaction?.categoryKey),
-    scopeLabel: buildScopeLabel(transaction, scopeMap),
-    accountLabel: buildAccountLabel(transaction, accountMap),
-    amountText: getTransactionAmountText(transaction),
-    amountClass: getTransactionAmountClass(transaction),
-  }));
-  const expenseDetailGroups = groupTransactionsByDate(expenseDetailTransactions, accountMap, scopeMap);
-
   const activeAccounts = orderedAccounts.filter((item) => String(item?.status || "active") !== "archived");
   const archivedAccounts = orderedAccounts.filter((item) => String(item?.status || "active") === "archived");
-  const scopeBudgetOverview = buildScopeBudgetOverview({
-    month,
-    transactions: orderedBudgetTransactions,
-    scopeBudgets,
-    expenseScopes,
-  });
   const scopeUsageMap = new Map();
   filteredTransactions.forEach((transaction) => {
     if (String(transaction?.type || "").trim() !== "expense") return;
@@ -826,14 +617,6 @@ export function buildFinanceVm({
       transferMeta: `Chuyển khoản trong kỳ ${formatCurrency(transferTotal)} • Không tính vào thu hoặc chi`,
       info: buildLedgerInfoText(normalizedFilters),
     },
-    expenseDetails: {
-      count: expenseDetailRows.length,
-      rows: expenseDetailRows,
-      groups: expenseDetailGroups,
-      emptyTitle: "Chưa có khoản chi nào trong kỳ đang xem",
-      emptyBody: "Khi bạn thêm khoản chi, phần này sẽ hiển thị lịch sử chi tiêu theo đúng kỳ đang xem.",
-      info: buildExpenseDetailsInfoText(normalizedFilters),
-    },
     accountsPanel: {
       hasActiveAccounts: activeAccounts.length > 0,
       hasArchivedAccounts: archivedAccounts.length > 0,
@@ -872,25 +655,22 @@ export function buildFinanceVm({
     },
     scopePanel: {
       count: Array.isArray(expenseScopes) ? expenseScopes.length : 0,
-      summaryText: `${Array.isArray(expenseScopes) ? expenseScopes.length : 0} phạm vi`,
+      summaryText: `${Array.isArray(expenseScopes) ? expenseScopes.length : 0} nhóm chi`,
       items: (Array.isArray(expenseScopes) ? expenseScopes : []).map((scope) => ({
         id: scope.id,
         name: scope.name,
         usageCount: Number(scopeUsageMap.get(scope.id) || 0),
         canDelete: (Array.isArray(expenseScopes) ? expenseScopes.length : 0) > 1,
       })),
-      emptyTitle: "Chưa có phạm vi chi nào",
-      emptyBody: "Thêm phạm vi chi để tách khoản cá nhân, gia đình hoặc người nhận ngân sách.",
-    },
-    budgetPanel: {
-      ...scopeBudgetOverview,
+      emptyTitle: "Chưa có nhóm chi nào",
+      emptyBody: "Thêm nhóm chi để tách khoản cá nhân, gia đình hoặc mục đích.",
     },
   };
 }
 
 export function buildCsvContent(vm = {}) {
   const rows = Array.isArray(vm?.ledger?.rows) ? vm.ledger.rows : [];
-  const header = ["Ngày", "Loại", "Tài khoản", "Danh mục", "Phạm vi chi", "Ghi chú", "Số tiền"];
+  const header = ["Ngày", "Loại", "Tài khoản", "Danh mục", "Nhóm chi chi", "Ghi chú", "Số tiền"];
   const lines = [header.join(",")];
 
   rows.forEach((row) => {

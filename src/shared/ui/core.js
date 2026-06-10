@@ -1,5 +1,6 @@
 ﻿import { t } from "../constants/copy.vi.js";
 import { PROFILE_VI } from "../constants/profile.vi.js";
+import { formatCurrency } from "../../features/finance/finance.controller.js";
 
 export function mustGet(id) {
   const el = document.getElementById(id);
@@ -63,6 +64,27 @@ export function setGlobalLoading(on) {
   el.classList.toggle("show", !!on);
 }
 
+export function syncBrandUI() {
+  const brandName = t("brand.name", "Hung Tran Finance");
+  const brandTagline = t("brand.tagline", "Tài chính cá nhân");
+  const authTitle = t("auth.title", brandName);
+  const authSubtitle = t("auth.subtitle", brandTagline);
+
+  document.title = brandName;
+
+  const brandNameEl = document.getElementById("brandNameLabel");
+  const brandTaglineEl = document.getElementById("brandTaglineLabel");
+  const authTitleEl = document.getElementById("authTitle");
+  const authSubtitleEl = document.getElementById("authSubtitle");
+  const brandLinkEl = document.getElementById("brandHomeLink");
+
+  if (brandNameEl) brandNameEl.textContent = brandName;
+  if (brandTaglineEl) brandTaglineEl.textContent = brandTagline;
+  if (authTitleEl) authTitleEl.textContent = authTitle;
+  if (authSubtitleEl) authSubtitleEl.textContent = authSubtitle;
+  if (brandLinkEl) brandLinkEl.setAttribute("aria-label", brandName);
+}
+
 export function updateUserMenuUI(user) {
   const lbl = document.getElementById("userNameLabel");
   const mLogin = document.getElementById("menu-login");
@@ -81,15 +103,64 @@ export function updateUserMenuUI(user) {
   }
 }
 
-export function updateNavbarStats(expTotal, incTotal) {
+export function updateNavbarStats(summary = {}) {
+  const expenseTotal = Number(summary?.expenseTotal ?? summary?.expTotal ?? 0);
+  const incomeTotal = Number(summary?.incomeTotal ?? summary?.incTotal ?? 0);
+  const balanceTotal = Number(summary?.balanceTotal ?? summary?.totalBalance ?? 0);
+
+  const balanceEl = document.getElementById("navBalanceTotal");
   const expEl = document.getElementById("navExpTotal");
   const incEl = document.getElementById("navIncTotal");
-  if (expEl) expEl.textContent = formatVND(expTotal);
-  if (incEl) incEl.textContent = formatVND(incTotal);
+  const statsWrap = document.getElementById("topbarStats");
+
+  if (balanceEl) {
+    balanceEl.textContent = formatVNDCompact(balanceTotal);
+    balanceEl.title = formatVND(balanceTotal);
+  }
+  if (expEl) {
+    expEl.textContent = formatVNDCompact(expenseTotal);
+    expEl.title = formatVND(expenseTotal);
+  }
+  if (incEl) {
+    incEl.textContent = formatVNDCompact(incomeTotal);
+    incEl.title = formatVND(incomeTotal);
+  }
+  if (statsWrap) statsWrap.classList.toggle("is-ready", true);
+}
+
+export function setTopbarStatsVisible(visible = false) {
+  const statsWrap = document.getElementById("topbarStats");
+  if (statsWrap) statsWrap.classList.toggle("is-visible", !!visible);
 }
 
 export function formatVND(n) {
   return `${Number(n || 0).toLocaleString("vi-VN")}đ`;
+}
+
+export function formatVNDCompact(n) {
+  const value = Number(n || 0);
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+
+  if (abs >= 1_000_000_000) {
+    const scaled = abs / 1_000_000_000;
+    const text = scaled >= 10 ? scaled.toFixed(0) : scaled.toFixed(1).replace(/\.0$/, "");
+    return `${sign}${text} tỷ`;
+  }
+
+  if (abs >= 1_000_000) {
+    const scaled = abs / 1_000_000;
+    const text = scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(1).replace(/\.0$/, "");
+    return `${sign}${text} tr`;
+  }
+
+  if (abs >= 10_000) {
+    const scaled = abs / 1_000;
+    const text = scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(1).replace(/\.0$/, "");
+    return `${sign}${text} k`;
+  }
+
+  return formatVND(value);
 }
 
 export function prevYm(ym) {
@@ -104,7 +175,7 @@ export function prevYm(ym) {
 export const sumAmounts = (arr) =>
   (Array.isArray(arr) ? arr : []).reduce((sum, item) => sum + Number(item?.amount || 0), 0);
 
-export const VND = (n) => `${new Intl.NumberFormat("vi-VN").format(Number(n || 0))}đ`;
+export const VND = (n) => formatCurrency(n);
 
 export const YM = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 

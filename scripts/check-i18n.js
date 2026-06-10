@@ -16,6 +16,10 @@ const BAD_PATTERNS = [
   { label: "mojibake-latin", regex: /Ã¡Âº|Ã¡Â»|Ã¢â‚¬/g },
   { label: "broken-word", regex: /Tï¿½m|thï¿½ng|cÃƒÂ¡|mc tiu|ng lc|cha c d liu/gi },
   { label: "mojibake-html", regex: /Ã¯Â¿Â½/g },
+  { label: "unauthorized-font-space-grotesk", regex: /Space Grotesk/g },
+  { label: "unauthorized-font-manrope", regex: /Manrope/g },
+  { label: "unauthorized-font-inter", regex: /"Inter"/g },
+  { label: "unauthorized-font-outfit", regex: /Outfit/g },
 ];
 
 function walk(dir, output = []) {

@@ -1,17 +1,20 @@
-import { setActiveRoute } from "./router.js";
+import { parseHashRoute, setActiveRoute } from "./router.js";
+import { bindKeyboardShortcuts } from "./shortcuts.js";
 import { bindAuthButtons, watchAuth } from "../services/firebase/auth.js";
 import {
   setGlobalLoading,
   showToast,
+  prevYm,
+  setTopbarStatsVisible,
   updateNavbarStats,
   updateUserMenuUI,
+  syncBrandUI,
 } from "../shared/ui/core.js";
 import { bindFilterControls, syncFilterControls } from "../shared/ui/filterControls.js";
 import { t } from "../shared/constants/copy.vi.js";
 import {
   buildCsvContent,
   buildFinanceVm,
-  buildScopeBudgetPreview,
   buildTransactionDraft,
   formatCurrency,
   formatDateLabel,
@@ -21,13 +24,14 @@ import {
   getTodayInputValue,
   getYmFromDateInput,
   sanitizeAccountDraft,
+  sanitizeAccountEditDraft,
   sanitizeTransactionDraft,
 } from "../features/finance/finance.controller.js";
 import { bindFinanceEvents } from "../features/finance/finance.events.js";
 import {
   renderExpenseScopeForm,
   renderFinanceComposer,
-  renderFinanceBudgetForm,
+  renderFinanceAccountForm,
   renderFinanceRoute,
   resetFinanceAccountForm,
 } from "../features/finance/finance.ui.js";
@@ -48,22 +52,16 @@ import {
 import {
   buildDefaultReportFilters,
   buildFinanceReportVm,
+  buildReportFiltersForPreset,
   normalizeReportFilters,
+  resolveReportPreset,
   validateReportFilters,
 } from "../features/reports/reports.controller.js";
 import { bindReportEvents } from "../features/reports/reports.events.js";
 import { renderReportsRoute } from "../features/reports/reports.ui.js";
-import {
-  buildDefaultOverviewFilters,
-  buildOverviewVm,
-  getOverviewBudgetMonthKey,
-  getOverviewRange,
-  getPreviousOverviewRange,
-  normalizeOverviewFilters,
-  validateOverviewFilters,
-} from "../features/overview/overview.controller.js";
-import { bindOverviewEvents } from "../features/overview/overview.events.js";
-import { renderOverviewRoute } from "../features/overview/overview.ui.js";
+import { buildHomeVm, normalizeHomeAccountFilter } from "../features/home/home.controller.js";
+import { bindHomeEvents } from "../features/home/home.events.js";
+import { renderHomeRoute } from "../features/home/home.ui.js";
 import {
   archiveAccount,
   createAccount,
@@ -72,16 +70,14 @@ import {
   createTransaction,
   deleteExpenseScope,
   deleteLoanParty,
-  deleteScopeBudget,
   deleteTransaction,
   listAccountsWithBalances,
   listExpenseScopes,
   listLoanParties,
-  listScopeBudgets,
   listTransactions,
   resetFinanceData,
-  saveScopeBudget,
   updateExpenseScope,
+  updateLedgerAccount,
   updateLoanParty,
   updateTransaction,
 } from "../services/firebase/firestore.js";
@@ -95,14 +91,6 @@ function createDefaultFilters() {
     scopeId: "all",
     date: getTodayInputValue(),
     search: "",
-  };
-}
-
-function createDefaultOverviewState() {
-  const filters = buildDefaultOverviewFilters();
-  return {
-    draft: { ...filters },
-    applied: { ...filters },
   };
 }
 
@@ -122,12 +110,12 @@ function createDefaultLoanEntryDraft() {
   return buildLoanEntryDraft();
 }
 
-const overviewDefaults = createDefaultOverviewState();
 const reportDefaults = createDefaultReportState();
 
 const state = {
   currentUser: null,
-  pendingRoute: "expenses",
+  pendingRoute: "home",
+  expensesView: "ledger",
   month: getCurrentYm(),
   accounts: [],
   transactions: [],
@@ -137,19 +125,8 @@ const state = {
   loanTransactions: [],
   loansLoaded: false,
   loanSelectedPartyId: "",
-  scopeBudgetsByMonth: {},
   filters: createDefaultFilters(),
-  overviewFilters: overviewDefaults.draft,
-  overviewAppliedFilters: overviewDefaults.applied,
-  overviewTransactions: [],
-  overviewPreviousTransactions: [],
-  overviewBudgetTransactions: [],
-  overviewScopeBudgets: [],
-  overviewVm: null,
-  overviewError: "",
-  overviewLoadedKey: "",
   composerDraft: buildTransactionDraft(),
-  composerBudgetPreview: { visible: false },
   loanPartyDraft: createDefaultLoanPartyDraft(),
   loanEntryDraft: createDefaultLoanEntryDraft(),
   loanEntryContext: { visible: false },
@@ -159,22 +136,18 @@ const state = {
     name: "",
     replacementScopeId: "",
   },
-  scopeBudgetDraft: {
-    id: "",
-    scopeId: "",
-    limitAmount: "",
-    monthKey: getCurrentYm(),
-    monthLabel: formatMonthLabel(getCurrentYm()),
-  },
   financeVm: null,
   loansVm: null,
   reportFilters: reportDefaults.draft,
   reportAppliedFilters: reportDefaults.applied,
   reportTransactions: [],
-  reportScopeBudgets: [],
   reportVm: null,
   reportError: "",
   reportLoadedKey: "",
+  homeVm: null,
+  homeLoadedKey: "",
+  homeAccountFilter: "all",
+  homePreviousMonthTransactions: [],
 };
 
 function byId(id) {
@@ -193,15 +166,6 @@ function openModal(id) {
 
 function closeModal(id) {
   getModal(id)?.hide();
-}
-
-function openBudgetPanel(draft = {}) {
-  state.scopeBudgetDraft = buildScopeBudgetDraft(draft);
-  renderFinanceBudgetForm({
-    draft: state.scopeBudgetDraft,
-    expenseScopes: state.expenseScopes,
-  });
-  openModal("financeBudgetPanel");
 }
 
 function getReplacementScopeId(currentScopeId = "", requestedId = "") {
@@ -239,18 +203,6 @@ function clearExpenseScopeInput() {
   if (input) input.value = "";
 }
 
-function buildScopeBudgetDraft(payload = {}) {
-  const monthKey = String(payload?.monthKey || state.month || getCurrentYm()).trim() || getCurrentYm();
-  return {
-    id: String(payload?.id || "").trim(),
-    scopeId: String(payload?.scopeId || "").trim(),
-    limitAmount:
-      payload?.limitAmount === "" || payload?.limitAmount == null ? "" : Number(payload?.limitAmount || 0),
-    monthKey,
-    monthLabel: formatMonthLabel(monthKey),
-  };
-}
-
 function findExpenseScopeByRef(rawValue = "") {
   const text = String(rawValue || "").trim();
   if (!text) return null;
@@ -268,84 +220,57 @@ function getCurrentHashRoute() {
 
 function resolveWorkspaceRoute(routeId = "") {
   const raw = String(routeId || "").trim();
-  if (raw === "overview") return "reports";
-  return raw || "expenses";
+  if (raw === "overview" || raw === "dashboard") return "home";
+  if (raw === "expenses" || raw.startsWith("expenses/")) return "expenses";
+  return raw || "home";
 }
 
-function getOverviewLoadKey(filters = state.overviewAppliedFilters) {
-  return JSON.stringify(normalizeOverviewFilters(filters));
+function syncExpensesViewFromHash() {
+  const parsed = parseHashRoute(getCurrentHashRoute());
+  state.expensesView = parsed.expensesView === "manage" ? "manage" : "ledger";
+}
+
+function getHomeLoadKey(monthKey = getCurrentYm()) {
+  return String(monthKey || getCurrentYm()).trim() || getCurrentYm();
+}
+
+function invalidateHomeCache() {
+  state.homeLoadedKey = "";
 }
 
 function getReportLoadKey(filters = state.reportAppliedFilters) {
   return JSON.stringify(normalizeReportFilters(filters));
 }
 
-function invalidateOverviewCache() {
-  state.overviewLoadedKey = "";
-}
-
 function invalidateReportsCache() {
   state.reportLoadedKey = "";
+  invalidateHomeCache();
 }
 
 function invalidateFinanceMonthCache(monthKey = "") {
   const normalizedMonth = String(monthKey || "").trim();
   if (!normalizedMonth) {
     state.transactionsByMonth = {};
-    state.scopeBudgetsByMonth = {};
     return;
   }
 
   delete state.transactionsByMonth[normalizedMonth];
-  delete state.scopeBudgetsByMonth[normalizedMonth];
-}
-
-function getScopeBudgetsForMonth(monthKey = state.month) {
-  return state.scopeBudgetsByMonth[String(monthKey || "").trim()] || [];
 }
 
 function getTransactionsForMonth(monthKey = state.month) {
   return state.transactionsByMonth[String(monthKey || "").trim()] || [];
 }
 
-function getReportBudgetMonthKey(filters = state.reportAppliedFilters) {
-  const fromDate = String(filters?.fromDate || "").trim();
-  const toDate = String(filters?.toDate || "").trim();
-  const fromMonth = getYmFromDateInput(fromDate);
-  const toMonth = getYmFromDateInput(toDate);
-  if (!fromMonth || !toMonth) return "";
-  return fromMonth === toMonth ? fromMonth : "";
-}
-
 async function ensureFinanceMonthResources(uid, monthKey = state.month) {
   const normalizedMonth = String(monthKey || "").trim() || getCurrentYm();
-  const tasks = [];
 
   if (!state.transactionsByMonth[normalizedMonth]) {
-    tasks.push(
-      listTransactions(uid, { month: normalizedMonth }).then((items) => {
-        state.transactionsByMonth[normalizedMonth] = items;
-        return items;
-      })
-    );
-  }
-
-  if (!state.scopeBudgetsByMonth[normalizedMonth]) {
-    tasks.push(
-      listScopeBudgets(uid, normalizedMonth).then((items) => {
-        state.scopeBudgetsByMonth[normalizedMonth] = items;
-        return items;
-      })
-    );
-  }
-
-  if (tasks.length) {
-    await Promise.all(tasks);
+    const items = await listTransactions(uid, { month: normalizedMonth });
+    state.transactionsByMonth[normalizedMonth] = items;
   }
 
   return {
     transactions: getTransactionsForMonth(normalizedMonth),
-    scopeBudgets: getScopeBudgetsForMonth(normalizedMonth),
   };
 }
 
@@ -380,9 +305,7 @@ function buildRenderedFinanceVm() {
     month: state.month,
     accounts: state.accounts,
     transactions: state.transactions,
-    budgetTransactions: getTransactionsForMonth(state.month),
     expenseScopes: state.expenseScopes,
-    scopeBudgets: getScopeBudgetsForMonth(state.month),
     filters: state.filters,
   });
   vm.summary.totalBalanceText = formatCurrency(vm.summary.totalBalance);
@@ -402,38 +325,22 @@ function buildRenderedLoansVm() {
   });
 }
 
-function renderOverviewView() {
-  const vm =
-    state.overviewVm ||
-    buildOverviewVm({
-      filters: state.overviewAppliedFilters,
-      accounts: state.accounts,
-      currentTransactions: state.overviewTransactions,
-      previousTransactions: state.overviewPreviousTransactions,
-      expenseScopes: state.expenseScopes,
-      scopeBudgets: state.overviewScopeBudgets,
-      budgetTransactions: state.overviewBudgetTransactions,
-    });
-
-  renderOverviewRoute(vm, {
-    draftFilters: state.overviewFilters,
-    error: state.overviewError,
-  });
-  syncFilterControls();
-}
-
 function renderFinanceView() {
+  syncExpensesViewFromHash();
   state.financeVm = buildRenderedFinanceVm();
-  renderFinanceRoute(state.financeVm);
+  renderFinanceRoute(state.financeVm, state.expensesView);
   syncFilterControls();
   renderFinanceComposer({
     draft: state.composerDraft,
     accounts: state.accounts,
     expenseScopes: state.expenseScopes,
-    budgetPreview: state.composerBudgetPreview,
   });
 
-  updateNavbarStats(state.financeVm.summary.expenseTotal, state.financeVm.summary.incomeTotal);
+  updateNavbarStats({
+    expenseTotal: state.financeVm.summary.expenseTotal,
+    incomeTotal: state.financeVm.summary.incomeTotal,
+    balanceTotal: state.financeVm.summary.totalBalance,
+  });
 
   const infoEl = byId("financeWorkspaceInfo");
   if (infoEl) {
@@ -444,10 +351,6 @@ function renderFinanceView() {
       ? `Theo dõi giao dịch trong ${rangeLabel.toLowerCase()}.`
       : `Theo dõi ${rangeLabel.toLowerCase()} kết thúc vào ${formatDateLabel(anchorDate)}.`;
   }
-  renderFinanceBudgetForm({
-    draft: state.scopeBudgetDraft,
-    expenseScopes: state.expenseScopes,
-  });
   renderExpenseScopeForm({
     draft: state.expenseScopeDraft,
     expenseScopes: state.expenseScopes,
@@ -473,6 +376,27 @@ function renderLoansView() {
   renderLoanEntryView();
 }
 
+function renderHomeView() {
+  if (!state.homeVm) return;
+  renderHomeRoute(state.homeVm);
+  updateNavbarStats(state.homeVm.navbar || {});
+}
+
+function rebuildHomeVm() {
+  if (!state.accounts.length) return;
+  state.homeVm = buildHomeVm({
+    monthKey: state.month,
+    accounts: state.accounts,
+    expenseScopes: state.expenseScopes,
+    currentMonthTransactions: state.transactions,
+    previousMonthTransactions: state.homePreviousMonthTransactions,
+    loanParties: state.loanParties,
+    loanTransactions: state.loanTransactions,
+    accountId: state.homeAccountFilter,
+  });
+  renderHomeView();
+}
+
 function renderReportsView() {
   const vm =
     state.reportVm ||
@@ -481,18 +405,18 @@ function renderReportsView() {
       accounts: state.accounts,
       transactions: state.reportTransactions,
       expenseScopes: state.expenseScopes,
-      scopeBudgets: state.reportScopeBudgets,
-      budgetMonthKey: getReportBudgetMonthKey(state.reportAppliedFilters),
     });
 
   renderReportsRoute(vm, {
     draftFilters: state.reportFilters,
     error: state.reportError,
+    activePreset: resolveReportPreset(state.reportAppliedFilters),
   });
   syncFilterControls();
 }
 
 function renderApp() {
+  renderHomeView();
   renderFinanceView();
   renderLoansView();
   renderReportsView();
@@ -503,35 +427,7 @@ function renderComposerView() {
     draft: state.composerDraft,
     accounts: state.accounts,
     expenseScopes: state.expenseScopes,
-    budgetPreview: state.composerBudgetPreview,
   });
-}
-
-async function updateComposerBudgetPreview() {
-  const uid = String(state.currentUser?.uid || "").trim();
-  const draft = state.composerDraft || {};
-  const monthKey = getYmFromDateInput(draft?.occurredAt) || state.month || getCurrentYm();
-
-  if (!uid || String(draft?.type || "").trim() !== "expense" || !String(draft?.scopeId || "").trim()) {
-    state.composerBudgetPreview = { visible: false };
-    renderComposerView();
-    return;
-  }
-
-  try {
-    await ensureFinanceMonthResources(uid, monthKey);
-    state.composerBudgetPreview = buildScopeBudgetPreview({
-      draft,
-      transactions: getTransactionsForMonth(monthKey),
-      scopeBudgets: getScopeBudgetsForMonth(monthKey),
-      expenseScopes: state.expenseScopes,
-    });
-  } catch (err) {
-    console.error("updateComposerBudgetPreview error", err);
-    state.composerBudgetPreview = { visible: false };
-  }
-
-  renderComposerView();
 }
 
 function openLoanPartyPanel(party = null) {
@@ -578,7 +474,6 @@ function syncLoanEntryDraft(nextDraft = {}) {
 }
 
 function resetRuntimeState() {
-  const defaultOverviewState = createDefaultOverviewState();
   const defaultReportState = createDefaultReportState();
   state.accounts = [];
   state.transactions = [];
@@ -588,33 +483,25 @@ function resetRuntimeState() {
   state.loanTransactions = [];
   state.loansLoaded = false;
   state.loanSelectedPartyId = "";
-  state.scopeBudgetsByMonth = {};
   state.filters = createDefaultFilters();
-  state.overviewFilters = defaultOverviewState.draft;
-  state.overviewAppliedFilters = defaultOverviewState.applied;
-  state.overviewTransactions = [];
-  state.overviewPreviousTransactions = [];
-  state.overviewBudgetTransactions = [];
-  state.overviewScopeBudgets = [];
-  state.overviewVm = null;
-  state.overviewError = "";
-  state.overviewLoadedKey = "";
   state.composerDraft = buildTransactionDraft();
-  state.composerBudgetPreview = { visible: false };
+  state.expensesView = "ledger";
   state.loanPartyDraft = createDefaultLoanPartyDraft();
   state.loanEntryDraft = createDefaultLoanEntryDraft();
   state.loanEntryContext = { visible: false };
   state.expenseScopeDraft = buildExpenseScopeDraft();
-  state.scopeBudgetDraft = buildScopeBudgetDraft();
   state.financeVm = null;
   state.loansVm = null;
   state.reportFilters = defaultReportState.draft;
   state.reportAppliedFilters = defaultReportState.applied;
   state.reportTransactions = [];
-  state.reportScopeBudgets = [];
   state.reportVm = null;
   state.reportError = "";
   state.reportLoadedKey = "";
+  state.homeVm = null;
+  state.homeLoadedKey = "";
+  state.homeAccountFilter = "all";
+  state.homePreviousMonthTransactions = [];
   ensureMonthValue(getYmFromDateInput(state.filters.date) || getCurrentYm());
   clearExpenseScopeInput();
   renderApp();
@@ -630,7 +517,7 @@ async function refreshFinance(uid, { month = state.month } = {}) {
   ensureMonthValue(budgetMonth);
   normalizeDateFilterForMonth(state.month);
 
-  const [accounts, transactions, budgetTransactions, expenseScopes, scopeBudgets] = await Promise.all([
+  const [accounts, transactions, budgetTransactions, expenseScopes] = await Promise.all([
     listAccountsWithBalances(uid),
     listTransactions(uid, {
       fromDate: range.fromDate,
@@ -638,14 +525,12 @@ async function refreshFinance(uid, { month = state.month } = {}) {
     }),
     listTransactions(uid, { month: state.month }),
     listExpenseScopes(uid),
-    listScopeBudgets(uid, state.month),
   ]);
 
   state.accounts = accounts;
   state.transactions = transactions;
   state.transactionsByMonth[state.month] = budgetTransactions;
   state.expenseScopes = expenseScopes;
-  state.scopeBudgetsByMonth[state.month] = scopeBudgets;
 
   if (
     state.filters.accountId !== "all" &&
@@ -692,12 +577,9 @@ async function refreshFinance(uid, { month = state.month } = {}) {
       accounts: state.accounts,
       transactions: state.reportTransactions,
       expenseScopes: state.expenseScopes,
-      scopeBudgets: state.reportScopeBudgets,
-      budgetMonthKey: getReportBudgetMonthKey(state.reportAppliedFilters),
     });
   }
 
-  await updateComposerBudgetPreview();
   renderApp();
 }
 
@@ -722,81 +604,94 @@ async function refreshLoans(uid) {
   renderApp();
 }
 
+async function refreshHome(uid, monthKey = getCurrentYm()) {
+  const normalizedMonth = String(monthKey || getCurrentYm()).trim() || getCurrentYm();
+  const prevMonthKey = prevYm(normalizedMonth);
+
+  const [
+    accounts,
+    expenseScopes,
+    currentMonthTransactions,
+    previousMonthTransactions,
+    loanParties,
+    allTransactions,
+  ] = await Promise.all([
+    listAccountsWithBalances(uid),
+    listExpenseScopes(uid),
+    listTransactions(uid, { month: normalizedMonth }),
+    listTransactions(uid, { month: prevMonthKey }),
+    listLoanParties(uid),
+    listTransactions(uid),
+  ]);
+
+  const loanTransactions = allTransactions.filter((item) =>
+    ["loan_lend", "loan_repay"].includes(String(item?.type || "").trim())
+  );
+
+  state.accounts = accounts;
+  state.expenseScopes = expenseScopes;
+  state.loanParties = loanParties;
+  state.loanTransactions = loanTransactions;
+  state.month = normalizedMonth;
+  state.transactions = currentMonthTransactions;
+  state.transactionsByMonth[normalizedMonth] = currentMonthTransactions;
+  state.homePreviousMonthTransactions = previousMonthTransactions;
+  state.homeAccountFilter = normalizeHomeAccountFilter(state.homeAccountFilter, accounts);
+
+  state.homeVm = buildHomeVm({
+    monthKey: normalizedMonth,
+    accounts,
+    expenseScopes,
+    currentMonthTransactions,
+    previousMonthTransactions,
+    loanParties,
+    loanTransactions,
+    accountId: state.homeAccountFilter,
+  });
+  state.homeLoadedKey = getHomeLoadKey(normalizedMonth);
+  renderApp();
+}
+
 async function refreshReports(uid, filters = state.reportAppliedFilters) {
   const normalized = normalizeReportFilters(filters);
-  const budgetMonthKey = getReportBudgetMonthKey(normalized);
-  const [accounts, transactions, scopeBudgets] = await Promise.all([
+  const [accounts, transactions, expenseScopes] = await Promise.all([
     listAccountsWithBalances(uid),
     listTransactions(uid, {
       fromDate: normalized.fromDate,
       toDate: normalized.toDate,
     }),
-    budgetMonthKey ? listScopeBudgets(uid, budgetMonthKey) : Promise.resolve([]),
+    listExpenseScopes(uid),
   ]);
 
   state.accounts = accounts;
+  state.expenseScopes = expenseScopes;
   state.reportAppliedFilters = normalized;
   state.reportTransactions = transactions;
-  state.reportScopeBudgets = scopeBudgets;
   state.reportVm = buildFinanceReportVm({
     filters: normalized,
     accounts,
     transactions,
     expenseScopes: state.expenseScopes,
-    scopeBudgets,
-    budgetMonthKey,
   });
   state.reportLoadedKey = getReportLoadKey(normalized);
   renderApp();
 }
 
-async function refreshOverview(uid, filters = state.overviewAppliedFilters) {
-  const normalized = normalizeOverviewFilters(filters);
-  const currentRange = getOverviewRange(normalized);
-  const previousRange = getPreviousOverviewRange(normalized);
-  const budgetMonthKey = getOverviewBudgetMonthKey(normalized);
-
-  const [accounts, expenseScopes, currentTransactions, previousTransactions, budgetTransactions, scopeBudgets] =
-    await Promise.all([
-      listAccountsWithBalances(uid),
-      listExpenseScopes(uid),
-      listTransactions(uid, {
-        fromDate: currentRange.fromDate,
-        toDate: currentRange.toDate,
-      }),
-      listTransactions(uid, {
-        fromDate: previousRange.fromDate,
-        toDate: previousRange.toDate,
-      }),
-      listTransactions(uid, { month: budgetMonthKey }),
-      listScopeBudgets(uid, budgetMonthKey),
-    ]);
-
-  state.accounts = accounts;
-  state.expenseScopes = expenseScopes;
-  state.overviewAppliedFilters = normalized;
-  state.overviewTransactions = currentTransactions;
-  state.overviewPreviousTransactions = previousTransactions;
-  state.overviewBudgetTransactions = budgetTransactions;
-  state.overviewScopeBudgets = scopeBudgets;
-  state.overviewVm = buildOverviewVm({
-    filters: normalized,
-    accounts,
-    currentTransactions,
-    previousTransactions,
-    expenseScopes,
-    scopeBudgets,
-    budgetTransactions,
-  });
-  state.overviewLoadedKey = getOverviewLoadKey(normalized);
-  renderApp();
+function findTransactionById(transactionId = "") {
+  const id = String(transactionId || "").trim();
+  if (!id) return null;
+  const direct = state.transactions.find((item) => String(item?.id || "").trim() === id);
+  if (direct) return direct;
+  for (const items of Object.values(state.transactionsByMonth || {})) {
+    const match = (Array.isArray(items) ? items : []).find((item) => String(item?.id || "").trim() === id);
+    if (match) return match;
+  }
+  return null;
 }
 
 function openComposer(type = "expense", options = {}) {
   const transactionId = String(options?.transactionId || "").trim();
-  const transaction = transactionId
-    ? state.transactions.find((item) => String(item?.id || "").trim() === transactionId) || null
-    : null;
+  const transaction = transactionId ? findTransactionById(transactionId) : null;
 
   state.composerDraft = buildTransactionDraft({
     accounts: state.accounts,
@@ -804,9 +699,7 @@ function openComposer(type = "expense", options = {}) {
     type,
     presetAccountId: options?.presetAccountId || "",
   });
-  state.composerBudgetPreview = { visible: false };
   renderComposerView();
-  void updateComposerBudgetPreview();
   openModal("financeComposerPanel");
 }
 
@@ -827,7 +720,6 @@ function syncComposerDraft(nextDraft = {}) {
     toAccountId,
   };
   renderComposerView();
-  void updateComposerBudgetPreview();
 }
 
 function exportCurrentLedger() {
@@ -866,6 +758,42 @@ async function handleResetFinanceData() {
     setGlobalLoading(false);
   }
 }
+
+bindKeyboardShortcuts({
+  onFocusSearch: () => {
+    const searchEl = byId("ledgerFilterSearch");
+    if (!searchEl) return;
+    const drawer = byId("ledgerFilterDrawer");
+    if (drawer && !drawer.open) drawer.open = true;
+    searchEl.focus();
+    searchEl.select?.();
+  },
+  onOpenExpense: () => {
+    if (!ensureUser()) return;
+    openComposer("expense");
+  },
+  onOpenIncome: () => {
+    if (!ensureUser()) return;
+    openComposer("income");
+  },
+  onOpenTransfer: () => {
+    if (!ensureUser()) return;
+    openComposer("transfer");
+  },
+});
+
+bindHomeEvents({
+  onChangeAccountFilter: (accountId) => {
+    state.homeAccountFilter = normalizeHomeAccountFilter(accountId, state.accounts);
+    rebuildHomeVm();
+  },
+  onEditTransaction: (transactionId) => {
+    if (!ensureUser()) return;
+    const current = findTransactionById(transactionId);
+    if (!current) return;
+    openComposer(current.type, { transactionId: current.id });
+  },
+});
 
 bindFinanceEvents({
   onChangeFilters: async (patch = {}) => {
@@ -938,9 +866,7 @@ bindFinanceEvents({
   },
   onEditTransaction: (transactionId) => {
     if (!ensureUser()) return;
-    const current = state.transactions.find(
-      (item) => String(item?.id || "").trim() === String(transactionId || "").trim()
-    );
+    const current = findTransactionById(transactionId);
     if (!current) return;
     openComposer(current.type, { transactionId: current.id });
   },
@@ -990,7 +916,6 @@ bindFinanceEvents({
         accounts: state.accounts,
         type: payload.type,
       });
-      state.composerBudgetPreview = { visible: false };
       renderComposerView();
       showToast(t("toast.transactionSaved", "Đã lưu giao dịch."), "success");
     } catch (err) {
@@ -1005,12 +930,43 @@ bindFinanceEvents({
     resetFinanceAccountForm();
     openModal("financeAccountPanel");
   },
+  onEditAccount: (accountId) => {
+    if (!ensureUser()) return;
+    const account =
+      state.accounts.find((item) => String(item?.id || "").trim() === String(accountId || "").trim()) || null;
+    if (!account) {
+      showToast(t("toast.accountNotFound", "Không tìm thấy tài khoản."), "error");
+      return;
+    }
+    renderFinanceAccountForm({
+      draft: {
+        id: account.id,
+        name: account.name,
+        type: account.type,
+        isDefault: account.isDefault,
+      },
+      mode: "edit",
+    });
+    openModal("financeAccountPanel");
+  },
   onSubmitAccount: async (rawAccount) => {
     const uid = ensureUser();
     if (!uid) return;
 
+    const accountId = String(rawAccount?.id || "").trim();
     setGlobalLoading(true);
     try {
+      if (accountId) {
+        const payload = sanitizeAccountEditDraft(rawAccount);
+        await updateLedgerAccount(uid, payload.id, payload);
+        invalidateReportsCache();
+        closeModal("financeAccountPanel");
+        resetFinanceAccountForm();
+        await refreshFinance(uid);
+        showToast(t("toast.accountUpdated", "Đã cập nhật tài khoản."), "success");
+        return;
+      }
+
       const payload = sanitizeAccountDraft(rawAccount);
       await createAccount(uid, payload);
       invalidateReportsCache();
@@ -1019,8 +975,15 @@ bindFinanceEvents({
       await refreshFinance(uid);
       showToast(t("toast.accountCreated", "Đã tạo tài khoản mới."), "success");
     } catch (err) {
-      console.error("createAccount error", err);
-      showToast(err?.message || t("toast.accountCreateFail", "Không thể tạo tài khoản."), "error");
+      console.error("saveAccount error", err);
+      showToast(
+        err?.message ||
+          t(
+            accountId ? "toast.accountUpdateFail" : "toast.accountCreateFail",
+            accountId ? "Không thể cập nhật tài khoản." : "Không thể tạo tài khoản."
+          ),
+        "error"
+      );
     } finally {
       setGlobalLoading(false);
     }
@@ -1059,10 +1022,10 @@ bindFinanceEvents({
       await createExpenseScope(uid, rawScope);
       clearExpenseScopeInput();
       await refreshFinance(uid);
-      showToast("Đã thêm phạm vi chi mới.", "success");
+      showToast(t("toast.scopeCreated", "Đã thêm nhóm chi mới."), "success");
     } catch (err) {
       console.error("createExpenseScope error", err);
-      showToast(err?.message || "Không thể thêm phạm vi chi.", "error");
+      showToast(err?.message || t("toast.scopeCreateFail", "Không thể thêm nhóm chi."), "error");
     } finally {
       setGlobalLoading(false);
     }
@@ -1084,7 +1047,7 @@ bindFinanceEvents({
       state.expenseScopes.find((item) => String(item?.name || "").trim() === String(scope?.name || "").trim()) ||
       null;
     if (!currentScope) {
-      showToast("Không tìm thấy phạm vi chi cần xóa.", "error");
+      showToast(t("toast.scopeNotFound", "Không tìm thấy nhóm chi cần xóa."), "error");
       return;
     }
 
@@ -1135,75 +1098,6 @@ bindFinanceEvents({
     } catch (err) {
       console.error("submit expense scope form error", err);
       showToast(err?.message || "Kh\u00f4ng th\u1ec3 c\u1eadp nh\u1eadt ph\u1ea1m vi chi.", "error");
-    } finally {
-      setGlobalLoading(false);
-    }
-  },
-  onSaveScopeBudget: async (budget) => {
-    if (!ensureUser()) return;
-    openBudgetPanel({
-      id: budget?.id,
-      scopeId: budget?.scopeId,
-      limitAmount: budget?.limitAmount,
-      monthKey: state.month,
-    });
-  },
-  onSubmitScopeBudget: async (rawBudget) => {
-    const uid = ensureUser();
-    if (!uid) return;
-
-    const scopeId = String(rawBudget?.scopeId || "").trim();
-    const limitAmount = Number(rawBudget?.limitAmount || 0);
-    if (!scopeId) {
-      showToast("Vui lòng chọn phạm vi chi.", "error");
-      return;
-    }
-    if (!Number.isFinite(limitAmount) || !(limitAmount > 0)) {
-      showToast("Ngân sách phải lớn hơn 0.", "error");
-      return;
-    }
-
-    setGlobalLoading(true);
-    try {
-      await saveScopeBudget(uid, {
-        scopeId,
-        monthKey: state.scopeBudgetDraft?.monthKey || state.month,
-        limitAmount,
-      });
-      invalidateFinanceMonthCache(state.scopeBudgetDraft?.monthKey || state.month);
-      invalidateReportsCache();
-      closeModal("financeBudgetPanel");
-      state.scopeBudgetDraft = buildScopeBudgetDraft();
-      await refreshFinance(uid);
-      showToast("Đã lưu ngân sách tháng.", "success");
-    } catch (err) {
-      console.error("saveScopeBudget error", err);
-      showToast(err?.message || "Không thể lưu ngân sách tháng.", "error");
-    } finally {
-      setGlobalLoading(false);
-    }
-  },
-  onDeleteScopeBudget: async (budget) => {
-    const uid = ensureUser();
-    if (!uid) return;
-
-    const allow = window.confirm(
-      `Bạn chắc chắn muốn xóa mức ngân sách tháng ${formatMonthLabel(state.month)} cho phạm vi "${String(
-        budget?.scopeName || ""
-      ).trim()}"?`
-    );
-    if (!allow) return;
-
-    setGlobalLoading(true);
-    try {
-      await deleteScopeBudget(uid, budget?.id);
-      invalidateFinanceMonthCache(state.month);
-      invalidateReportsCache();
-      await refreshFinance(uid);
-      showToast("Đã xóa ngân sách tháng.", "success");
-    } catch (err) {
-      console.error("deleteScopeBudget error", err);
-      showToast(err?.message || "Không thể xóa ngân sách tháng.", "error");
     } finally {
       setGlobalLoading(false);
     }
@@ -1413,44 +1307,19 @@ bindReportEvents({
       setGlobalLoading(false);
     }
   },
-});
-
-bindOverviewEvents({
-  onChangePreset: (preset) => {
-    state.overviewFilters = normalizeOverviewFilters({
-      ...state.overviewFilters,
-      preset,
-    });
-    state.overviewError = validateOverviewFilters(state.overviewFilters);
-    renderOverviewView();
-  },
-  onChangeDraftFilters: (draft) => {
-    state.overviewFilters = normalizeOverviewFilters({
-      ...state.overviewFilters,
-      ...draft,
-    });
-    state.overviewError = validateOverviewFilters(state.overviewFilters);
-    renderOverviewView();
-  },
-  onApplyFilters: async (rawFilters) => {
+  onSelectPreset: async (preset = "") => {
     const uid = ensureUser();
     if (!uid) return;
 
-    const nextFilters = normalizeOverviewFilters({
-      ...state.overviewFilters,
-      ...rawFilters,
-    });
-    state.overviewFilters = nextFilters;
-    state.overviewError = validateOverviewFilters(nextFilters);
-    renderOverviewView();
-    if (state.overviewError) return;
-
+    const nextFilters = buildReportFiltersForPreset(preset);
+    state.reportFilters = nextFilters;
+    state.reportError = "";
     setGlobalLoading(true);
     try {
-      await refreshOverview(uid, nextFilters);
+      await refreshReports(uid, nextFilters);
     } catch (err) {
-      console.error("apply overview filters error", err);
-      showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
+      console.error("select report preset error", err);
+      showToast(t("toast.reportLoadFail", "Không thể tải báo cáo tài chính."), "error");
     } finally {
       setGlobalLoading(false);
     }
@@ -1458,6 +1327,7 @@ bindOverviewEvents({
 });
 
 ensureMonthValue(getYmFromDateInput(state.filters.date) || getCurrentYm());
+syncBrandUI();
 bindFilterControls();
 bindAuthButtons();
 resetRuntimeState();
@@ -1468,22 +1338,27 @@ watchAuth(async (user) => {
   updateMenuState(user || null);
 
   if (!user) {
+    setTopbarStatsVisible(false);
     resetRuntimeState();
     setActiveRoute("auth");
     setGlobalLoading(false);
     return;
   }
 
+  setTopbarStatsVisible(true);
+
   const requestedRoute = resolveWorkspaceRoute(
     state.pendingRoute && state.pendingRoute !== "auth"
       ? state.pendingRoute
-      : getCurrentHashRoute() || "expenses"
+      : getCurrentHashRoute() || "home"
   );
 
   setGlobalLoading(true);
   try {
-    await refreshFinance(user.uid, { month: state.month });
-    if (requestedRoute === "loans") {
+    await refreshHome(user.uid, state.month);
+    if (requestedRoute === "expenses") {
+      await refreshFinance(user.uid, { month: state.month });
+    } else if (requestedRoute === "loans") {
       await refreshLoans(user.uid);
     } else if (requestedRoute === "reports") {
       await refreshReports(user.uid, state.reportAppliedFilters);
@@ -1499,22 +1374,49 @@ watchAuth(async (user) => {
 
 window.addEventListener("nexus:route-changed", async (event) => {
   const routeId = resolveWorkspaceRoute(String(event?.detail?.routeId || "").trim());
+  if (routeId === "expenses") {
+    state.expensesView = event?.detail?.expensesView === "manage" ? "manage" : "ledger";
+    if (state.financeVm) {
+      renderFinanceView();
+    }
+  }
+
   if (!state.currentUser && routeId !== "auth") {
-    state.pendingRoute = routeId || "expenses";
+    state.pendingRoute = routeId || "home";
     setActiveRoute("auth");
     return;
   }
 
   if (routeId !== "auth") {
-    state.pendingRoute = routeId || "expenses";
+    state.pendingRoute = routeId || "home";
   }
 
   if (state.currentUser && routeId === "auth") {
-    setActiveRoute(state.pendingRoute || "expenses");
+    setActiveRoute(state.pendingRoute || "home");
     return;
   }
 
   if (!state.currentUser) return;
+
+  if (routeId === "home") {
+    const nextLoadKey = getHomeLoadKey(getCurrentYm());
+    if (state.homeVm && state.homeLoadedKey === nextLoadKey) {
+      renderHomeView();
+      return;
+    }
+
+    setGlobalLoading(true);
+    try {
+      await refreshHome(state.currentUser.uid);
+    } catch (err) {
+      console.error("route home refresh error", err);
+      showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+    return;
+  }
+
   if (routeId === "loans") {
     if (state.loansLoaded) {
       renderLoansView();

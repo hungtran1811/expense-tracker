@@ -2,8 +2,8 @@ import {
   getAccountTypeLabel,
   getFinanceCategoryLabel,
 } from "../../shared/constants/finance.constants.js";
+import { prevYm } from "../../shared/ui/core.js";
 import {
-  buildScopeBudgetOverview,
   formatCurrency,
   formatDateLabel,
   formatMonthLabel,
@@ -194,7 +194,7 @@ function buildScopeBreakdown(transactions = [], expenseScopes = [], totalExpense
   transactions.forEach((transaction) => {
     if (String(transaction?.type || "").trim() !== "expense") return;
     const scopeId = String(transaction?.scopeId || "").trim() || "unknown";
-    const label = scopeMap.get(scopeId) || "Chưa gắn phạm vi";
+    const label = scopeMap.get(scopeId) || "Chưa gắn nhóm";
     if (!bucket.has(scopeId)) {
       bucket.set(scopeId, {
         key: scopeId,
@@ -260,19 +260,16 @@ function buildLargestExpenseHighlight(transactions = [], accounts = [], expenseS
     amountText: formatCurrency(Math.abs(Number(current?.amount || 0))),
     dateLabel: formatDateLabel(current?.occurredAt),
     accountLabel: String(accountMap.get(String(current?.accountId || "").trim())?.name || "Không rõ").trim(),
-    scopeLabel: String(scopeMap.get(String(current?.scopeId || "").trim()) || "Chưa gắn phạm vi").trim(),
+    scopeLabel: String(scopeMap.get(String(current?.scopeId || "").trim()) || "Chưa gắn nhóm").trim(),
     note: String(current?.note || "").trim(),
   };
 }
 
 function buildQuickSignals({
-  budgetComparison = {},
   scopeItems = [],
   categoryItems = [],
   accountItems = [],
 } = {}) {
-  const budgetItems = Array.isArray(budgetComparison?.items) ? budgetComparison.items : [];
-  const budgetRisk = budgetItems.find((item) => item.statusKey === "over") || budgetItems.find((item) => item.statusKey === "near");
   const topScope = scopeItems[0] || null;
   const topCategory = categoryItems[0] || null;
   const topOutflowAccount = [...(Array.isArray(accountItems) ? accountItems : [])]
@@ -284,28 +281,9 @@ function buildQuickSignals({
     )[0];
 
   return [
-    budgetRisk
-      ? {
-          label: "Ngân sách",
-          valueText: budgetRisk.scopeName,
-          note:
-            budgetRisk.statusKey === "over"
-              ? `Vượt ${formatCurrency(Math.abs(budgetRisk.remainingAmount || 0))}.`
-              : `Còn ${formatCurrency(Math.max(budgetRisk.remainingAmount || 0, 0))}.`,
-          tone: budgetRisk.statusKey === "over" ? "danger" : "warning",
-        }
-      : {
-          label: "Ngân sách",
-          valueText: Number(budgetComparison?.configuredCount || 0) > 0 ? "Ổn định" : "Chưa đặt",
-          note:
-            Number(budgetComparison?.configuredCount || 0) > 0
-              ? `${budgetComparison?.configuredCount || 0} phạm vi trong mức.`
-              : "Chưa có ngân sách cho kỳ này.",
-          tone: "neutral",
-        },
     topScope
       ? {
-          label: "Phạm vi chi mạnh",
+          label: "Nhóm chi nhiều nhất",
           valueText: topScope.label,
           note: `${topScope.shareText} tổng chi.`,
           tone: "brand",
@@ -321,7 +299,7 @@ function buildQuickSignals({
       : null,
     topOutflowAccount
       ? {
-          label: "Tài khoản chi nhiều",
+          label: "Ví chi nhiều nhất",
           valueText: topOutflowAccount.name,
           note: `${formatCurrency(topOutflowAccount.outflow)} chi ra.`,
           tone: "neutral",
@@ -331,15 +309,12 @@ function buildQuickSignals({
 }
 
 function buildAttentionItems({
-  budgetComparison = {},
   scopeItems = [],
   categoryItems = [],
   accountItems = [],
   largestExpense = null,
 } = {}) {
   const items = [];
-  const budgetItems = Array.isArray(budgetComparison?.items) ? budgetComparison.items : [];
-  const budgetRisk = budgetItems.find((item) => item.statusKey === "over") || budgetItems.find((item) => item.statusKey === "near");
   const topOutflowAccount = [...(Array.isArray(accountItems) ? accountItems : [])]
     .filter((item) => Number(item?.outflow || 0) > 0)
     .sort(
@@ -348,13 +323,6 @@ function buildAttentionItems({
         String(a?.name || "").localeCompare(String(b?.name || ""), "vi")
     )[0];
 
-  if (budgetRisk) {
-    items.push(
-      budgetRisk.statusKey === "over"
-        ? `${budgetRisk.scopeName} vượt ${formatCurrency(Math.abs(budgetRisk.remainingAmount || 0))}.`
-        : `${budgetRisk.scopeName} còn ${formatCurrency(Math.max(budgetRisk.remainingAmount || 0, 0))} trước ngưỡng.`
-    );
-  }
   if (scopeItems[0]) {
     items.push(`${scopeItems[0].label} chiếm ${scopeItems[0].shareText} tổng chi.`);
   }
@@ -369,37 +337,6 @@ function buildAttentionItems({
   }
 
   return Array.from(new Set(items)).slice(0, 5);
-}
-
-function buildBudgetComparison({
-  budgetMonthKey = "",
-  transactions = [],
-  scopeBudgets = [],
-  expenseScopes = [],
-} = {}) {
-  const monthKey = String(budgetMonthKey || "").trim();
-  if (!monthKey) {
-    return {
-      monthKey: "",
-      monthLabel: "",
-      items: [],
-      emptyTitle: "So với ngân sách chỉ áp dụng trong một tháng",
-      emptyBody: "Hãy chọn khoảng ngày nằm gọn trong cùng một tháng để xem mức chi đang sát hay vượt ngân sách.",
-    };
-  }
-
-  const overview = buildScopeBudgetOverview({
-    month: monthKey,
-    transactions,
-    scopeBudgets,
-    expenseScopes,
-  });
-
-  return {
-    ...overview,
-    emptyTitle: `Chưa đặt ngân sách tháng ${formatMonthLabel(monthKey)}`,
-    emptyBody: "Đặt ngân sách cho từng phạm vi để thấy mức chi đang an toàn, sắp chạm hay đã vượt mức.",
-  };
 }
 
 function buildAccountBreakdown(transactions = [], accounts = [], selectedAccountId = "all") {
@@ -472,7 +409,7 @@ function buildAccountBreakdown(transactions = [], accounts = [], selectedAccount
     .sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || a.name.localeCompare(b.name, "vi"));
 }
 
-function buildDailyFlow(transactions = [], fromDate = "", toDate = "") {
+export function buildDailyFlow(transactions = [], fromDate = "", toDate = "") {
   const keys = buildDateRange(fromDate, toDate);
   const dailyMap = new Map(keys.map((dateKey) => [dateKey, createEmptyDailyBucket(dateKey)]));
 
@@ -570,6 +507,40 @@ export function buildDefaultReportFilters(month = getCurrentYm()) {
   };
 }
 
+export function buildReportFiltersForPreset(preset = "current-month") {
+  const monthKey =
+    String(preset || "").trim() === "previous-month"
+      ? prevYm(getCurrentYm())
+      : getCurrentYm();
+  return buildDefaultReportFilters(monthKey);
+}
+
+export function resolveReportPreset(filters = {}) {
+  const normalized = normalizeReportFilters(filters);
+  const current = buildDefaultReportFilters(getCurrentYm());
+  const previous = buildDefaultReportFilters(prevYm(getCurrentYm()));
+
+  if (
+    normalized.fromDate === current.fromDate &&
+    normalized.toDate === current.toDate &&
+    normalized.month === current.month &&
+    normalized.accountId === current.accountId
+  ) {
+    return "current-month";
+  }
+
+  if (
+    normalized.fromDate === previous.fromDate &&
+    normalized.toDate === previous.toDate &&
+    normalized.month === previous.month &&
+    normalized.accountId === previous.accountId
+  ) {
+    return "previous-month";
+  }
+
+  return "";
+}
+
 export function syncReportFiltersWithMonth(month = getCurrentYm(), currentFilters = {}) {
   const normalizedMonth = normalizeYm(month);
   return {
@@ -620,8 +591,6 @@ export function buildFinanceReportVm({
   accounts = [],
   transactions = [],
   expenseScopes = [],
-  scopeBudgets = [],
-  budgetMonthKey = "",
 } = {}) {
   const normalizedFilters = normalizeReportFilters(filters);
   const filteredTransactions = (Array.isArray(transactions) ? transactions : []).filter(
@@ -635,12 +604,6 @@ export function buildFinanceReportVm({
     normalizedFilters.toDate
   );
   const balanceSnapshot = buildReportBalanceSnapshot(accounts, normalizedFilters.accountId);
-  const budgetComparison = buildBudgetComparison({
-    budgetMonthKey,
-    transactions: filteredTransactions,
-    scopeBudgets,
-    expenseScopes,
-  });
   const categoryItems = buildCategoryBreakdown(filteredTransactions, summary.expenseTotal);
   const scopeItems = buildScopeBreakdown(filteredTransactions, expenseScopes, summary.expenseTotal);
   const accountItems = buildAccountBreakdown(
@@ -649,11 +612,6 @@ export function buildFinanceReportVm({
     normalizedFilters.accountId
   );
   const largestExpense = buildLargestExpenseHighlight(filteredTransactions, accounts, expenseScopes);
-  const dailyFlow = buildDailyFlow(
-    filteredTransactions,
-    normalizedFilters.fromDate,
-    normalizedFilters.toDate
-  );
   summary.totalBalanceText = balanceSnapshot.totalBalanceText;
   summary.transferMetaText = `Chuyển khoản ${summary.transferTotalText}`;
 
@@ -663,25 +621,23 @@ export function buildFinanceReportVm({
     cashSnapshot: balanceSnapshot,
     quickSignals: {
       items: buildQuickSignals({
-        budgetComparison,
         scopeItems,
         categoryItems,
         accountItems,
       }),
-      emptyTitle: "Chưa có tín hiệu nhanh",
-      emptyBody: "Khi có giao dịch và ngân sách, phần này sẽ chỉ ra ngay nơi cần nhìn trước.",
+      emptyTitle: "Chưa có tóm tắt kỳ",
+      emptyBody: "Khi có giao dịch trong kỳ, phần này sẽ gợi ý điểm đáng chú ý.",
     },
     attentionItems: {
       items: buildAttentionItems({
-        budgetComparison,
         scopeItems,
         categoryItems,
         accountItems,
         largestExpense,
       }),
       largestExpense,
-      emptyTitle: "Chưa có điều gì nổi bật",
-      emptyBody: "Các kết luận ngắn sẽ hiện ra khi kỳ đang xem đã có đủ giao dịch để đọc xu hướng.",
+      emptyTitle: "Chưa có điểm đáng lưu ý",
+      emptyBody: "Gợi ý sẽ hiện khi kỳ đang xem có đủ giao dịch.",
     },
     categoryBreakdown: {
       items: categoryItems,
@@ -690,19 +646,13 @@ export function buildFinanceReportVm({
     },
     scopeBreakdown: {
       items: scopeItems,
-      emptyTitle: "Chưa có phạm vi chi trong kỳ này",
-      emptyBody: "Phạm vi chi sẽ xuất hiện khi các khoản chi đã được gắn cho người hoặc nhóm cụ thể.",
+      emptyTitle: "Chưa có nhóm chi trong kỳ này",
+      emptyBody: "Nhóm chi sẽ xuất hiện khi các khoản chi đã được gắn nhóm cụ thể.",
     },
-    budgetComparison,
     accountBreakdown: {
       items: accountItems,
       emptyTitle: "Chưa có biến động tài khoản trong kỳ này",
       emptyBody: "Phát sinh vào, phát sinh ra và biến động ròng sẽ xuất hiện khi có giao dịch phù hợp.",
-    },
-    dailyFlow: {
-      ...dailyFlow,
-      emptyTitle: "Chưa có dòng tiền trong kỳ này",
-      emptyBody: "Dòng tiền theo ngày sẽ hiện lên khi có giao dịch thu, chi hoặc điều chỉnh.",
     },
     filterOptions: {
       accountOptions: buildAccountFilterOptions(
@@ -719,12 +669,13 @@ export function buildFinanceReportVm({
     meta: {
       rangeLabel: summary.rangeLabel,
       transactionCountLabel: `${summary.transactionCount} giao dịch`,
-      budgetMonthLabel: budgetMonthKey ? formatMonthLabel(budgetMonthKey) : "",
       accountFilterLabel:
         normalizedFilters.accountId === "all"
           ? "Tất cả tài khoản"
           : filterAccountLabel(accounts, normalizedFilters.accountId),
       exclusionNote: "Không gồm cho mượn / trả lại",
+      cashSnapshotCount: balanceSnapshot?.items?.length || 0,
+      cashSnapshotSubtitle: `${balanceSnapshot?.items?.length || 0} ví đang dùng`,
     },
   };
 }

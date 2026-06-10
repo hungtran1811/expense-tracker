@@ -18,6 +18,7 @@ function readTransactionForm() {
 
 function readAccountForm() {
   return {
+    id: byId("faId")?.value || "",
     name: byId("faName")?.value || "",
     type: byId("faType")?.value || "bank",
     openingBalance: byId("faOpeningBalance")?.value || "0",
@@ -28,14 +29,6 @@ function readAccountForm() {
 function readScopeCreateForm() {
   return {
     name: byId("expenseScopeName")?.value || "",
-  };
-}
-
-function readBudgetForm() {
-  return {
-    id: byId("fbId")?.value || "",
-    scopeId: byId("fbScopeId")?.value || "",
-    limitAmount: byId("fbLimitAmount")?.value || "",
   };
 }
 
@@ -80,10 +73,17 @@ export function bindFinanceEvents(handlers = {}) {
       return;
     }
 
+    const ledgerMain = event.target.closest("[data-ledger-main]");
+    if (ledgerMain) {
+      handlers.onEditTransaction?.(ledgerMain.getAttribute("data-id") || "");
+      return;
+    }
+
     const accountAction = event.target.closest("[data-account-action]");
     if (accountAction) {
       const action = accountAction.getAttribute("data-account-action") || "";
       const accountId = accountAction.getAttribute("data-account-id") || "";
+      if (action === "edit") handlers.onEditAccount?.(accountId);
       if (action === "adjustment") handlers.onOpenAdjustment?.(accountId);
       if (action === "remove") handlers.onRemoveAccount?.(accountId);
       return;
@@ -102,19 +102,6 @@ export function bindFinanceEvents(handlers = {}) {
       return;
     }
 
-    const budgetAction = event.target.closest("[data-budget-action]");
-    if (budgetAction) {
-      const payload = {
-        id: budgetAction.getAttribute("data-budget-id") || "",
-        scopeId: budgetAction.getAttribute("data-budget-scope-id") || "",
-        scopeName: budgetAction.getAttribute("data-budget-scope-name") || "",
-        limitAmount: Number(budgetAction.getAttribute("data-budget-limit") || 0),
-      };
-      const action = budgetAction.getAttribute("data-budget-action") || "";
-      if (action === "save") handlers.onSaveScopeBudget?.(payload);
-      if (action === "delete") handlers.onDeleteScopeBudget?.(payload);
-      return;
-    }
   });
 
   byId("ledgerFilterAccount")?.addEventListener("change", (event) => {
@@ -168,10 +155,6 @@ export function bindFinanceEvents(handlers = {}) {
 
   byId("btnSaveFinanceAccount")?.addEventListener("click", () => {
     handlers.onSubmitAccount?.(readAccountForm());
-  });
-
-  byId("btnSaveFinanceBudget")?.addEventListener("click", () => {
-    handlers.onSubmitScopeBudget?.(readBudgetForm());
   });
 
   byId("btnSaveExpenseScope")?.addEventListener("click", () => {

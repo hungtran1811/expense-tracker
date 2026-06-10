@@ -30,4 +30,12 @@ export function bindReportEvents(handlers = {}) {
   byId("btnResetReportFilters")?.addEventListener("click", () => {
     handlers.onResetFilters?.();
   });
+
+  document.querySelectorAll("[data-report-preset]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const preset = String(button.getAttribute("data-report-preset") || "").trim();
+      if (!preset) return;
+      handlers.onSelectPreset?.(preset);
+    });
+  });
 }

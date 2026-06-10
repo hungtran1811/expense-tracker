@@ -1,5 +1,4 @@
 export const ENABLED_ROUTES = {
-  overview: false,
   dashboard: false,
   accounts: false,
   classes: false,

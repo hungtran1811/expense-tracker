@@ -35,65 +35,6 @@ function fillSelect(selectEl, items = [], selectedValue = "", placeholder = "") 
   ).trim();
 }
 
-function renderOverview(container, summary = {}) {
-  if (!container) return;
-  const accountCards = Array.isArray(summary?.accountHighlights) ? summary.accountHighlights : [];
-
-  if (accountCards.length) {
-    container.innerHTML = accountCards
-      .map(
-        (card) => `
-          <article class="finance-metric-card finance-account-highlight">
-            <span class="finance-metric-label">${escapeHtml(card.typeLabel || "Tài khoản")}</span>
-            <strong class="finance-metric-value">${escapeHtml(card.balanceText || "0đ")}</strong>
-            <div class="finance-account-highlight-name">
-              ${escapeHtml(card.name || "Không rõ")}
-              ${card.isDefault ? '<span class="ledger-chip transfer">Mặc định</span>' : ""}
-            </div>
-            <div class="finance-metric-note">${escapeHtml(card.metaText || "")}</div>
-          </article>
-        `
-      )
-      .join("");
-    return;
-  }
-
-  const cards = [
-    {
-      label: t("finance.summary.totalBalance", "Tổng số dư"),
-      value: summary.totalBalanceText,
-      note: "Tổng của các tài khoản đang dùng",
-    },
-    {
-      label: t("finance.summary.income", "Thu trong tháng"),
-      value: summary.incomeTotalText,
-      note: "Chỉ tính giao dịch thu",
-    },
-    {
-      label: t("finance.summary.expense", "Chi trong tháng"),
-      value: summary.expenseTotalText,
-      note: "Chỉ tính giao dịch chi",
-    },
-    {
-      label: t("finance.summary.net", "Chênh lệch tháng"),
-      value: summary.netTotalText,
-      note: "Thu - Chi + Điều chỉnh",
-    },
-  ];
-
-  container.innerHTML = cards
-    .map(
-      (card) => `
-        <article class="finance-metric-card">
-          <span class="finance-metric-label">${escapeHtml(card.label)}</span>
-          <strong class="finance-metric-value">${escapeHtml(card.value)}</strong>
-          <div class="finance-metric-note">${escapeHtml(card.note)}</div>
-        </article>
-      `
-    )
-    .join("");
-}
-
 function renderLedgerEmpty(container, title = "", body = "", hasAccounts = false) {
   if (!container) return;
   container.innerHTML = `
@@ -132,11 +73,11 @@ function renderLedgerTimeline(container, ledger = {}, accountsPanel = {}) {
           <header class="ledger-day-head">
             <div>
               <div class="ledger-day-title">${escapeHtml(group.dateLabel)}</div>
-              <div class="ledger-day-meta">
+              <div class="ledger-day-meta u-ellipsis" title="Thu ${escapeHtml(group.incomeTotalText)} • Chi ${escapeHtml(group.expenseTotalText)}${group.transferTotal > 0 ? ` • Chuyển ${escapeHtml(group.transferTotalText)}` : ""} • Còn lại ${escapeHtml(group.netTotalText)}">
                 Thu ${escapeHtml(group.incomeTotalText)} •
                 Chi ${escapeHtml(group.expenseTotalText)} •
                 ${group.transferTotal > 0 ? `Chuyển ${escapeHtml(group.transferTotalText)} • ` : ""}
-                Chênh lệch ${escapeHtml(group.netTotalText)}
+                Còn lại ${escapeHtml(group.netTotalText)}
               </div>
             </div>
             <span class="ledger-day-count">${Number(group.items?.length || 0)} giao dịch</span>
@@ -146,8 +87,8 @@ function renderLedgerTimeline(container, ledger = {}, accountsPanel = {}) {
             ${(Array.isArray(group.items) ? group.items : [])
               .map(
                 (row) => `
-                  <article class="ledger-entry">
-                    <div class="ledger-entry-main">
+                  <article class="ledger-entry ledger-entry-clickable">
+                    <div class="ledger-entry-main" data-ledger-main data-id="${escapeHtml(row.id)}" title="Bấm để sửa">
                       <div class="ledger-entry-top">
                         <div class="ledger-item-title">${escapeHtml(row.title)}</div>
                         <span class="ledger-chip ${escapeHtml(row.typeKey)}">${escapeHtml(row.typeLabel)}</span>
@@ -155,13 +96,13 @@ function renderLedgerTimeline(container, ledger = {}, accountsPanel = {}) {
                       <div class="ledger-entry-meta">
                         <span>${escapeHtml(row.accountLabel)}</span>
                         ${row.categoryLabel ? `<span>${escapeHtml(row.categoryLabel)}</span>` : ""}
-                        ${row.scopeLabel ? `<span>Phạm vi: ${escapeHtml(row.scopeLabel)}</span>` : ""}
+                        ${row.scopeLabel ? `<span>Nhóm: ${escapeHtml(row.scopeLabel)}</span>` : ""}
                       </div>
                       <div class="ledger-item-note">${escapeHtml(row.note || "Không có ghi chú")}</div>
                     </div>
 
                     <div class="ledger-entry-side">
-                      <div class="ledger-entry-amount ${escapeHtml(row.amountClass)}">${escapeHtml(row.amountText)}</div>
+                      <div class="ledger-entry-amount u-money ${escapeHtml(row.amountClass)}" title="${escapeHtml(row.amountText)}">${escapeHtml(row.amountText)}</div>
                       <div class="ledger-entry-actions">
                         <button class="btn btn-sm btn-outline-primary" data-ledger-action="edit" data-id="${escapeHtml(row.id)}">
                           Sửa
@@ -220,7 +161,7 @@ function renderAccounts(container, accountsPanel = {}) {
                   }
                 </div>
               </div>
-              <div class="account-balance">${escapeHtml(account.currentBalanceText)}</div>
+              <div class="account-balance u-money" title="${escapeHtml(account.currentBalanceText)}">${escapeHtml(account.currentBalanceText)}</div>
             </div>
 
             <div class="account-foot">
@@ -229,7 +170,10 @@ function renderAccounts(container, accountsPanel = {}) {
               ${
                 archived
                   ? ""
-                  : `<button type="button" class="btn btn-sm btn-outline-primary" data-account-action="adjustment" data-account-id="${escapeHtml(account.id)}">Điều chỉnh</button>`
+                  : `
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-account-action="edit" data-account-id="${escapeHtml(account.id)}">Sửa</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-account-action="adjustment" data-account-id="${escapeHtml(account.id)}">Sửa số dư</button>
+                  `
               }
               <button type="button" class="btn btn-sm btn-outline-danger" data-account-action="remove" data-account-id="${escapeHtml(account.id)}">
                 ${archived ? "Xóa hẳn" : "Lưu trữ"}
@@ -323,86 +267,37 @@ function renderExpenseScopes(container, scopePanel = {}) {
   `;
 }
 
-function renderScopeBudgetManagement(container, budgetPanel = {}) {
-  if (!container) return;
-  const items = Array.isArray(budgetPanel?.items) ? budgetPanel.items : [];
-  if (!items.length) {
-    container.innerHTML = `
-      <div class="finance-empty">
-        <strong>${escapeHtml(budgetPanel.emptyTitle || "")}</strong>
-        <div>${escapeHtml(budgetPanel.emptyBody || "")}</div>
-      </div>
-    `;
-    return;
-  }
+function syncFilterControlLabels() {
+  const labelMap = {
+    ledgerFilterAccount: t("finance.filter.account", "Tài khoản"),
+    ledgerFilterType: t("finance.filter.type", "Loại"),
+    ledgerFilterCategory: t("finance.filter.category", "Danh mục"),
+    ledgerFilterScope: t("finance.filter.scope", "Nhóm chi"),
+  };
 
-  container.innerHTML = `
-    <div class="scope-list">
-      ${items
-        .map(
-          (item) => `
-            <article class="scope-card scope-budget-card">
-              <div class="scope-card-main">
-                <div class="scope-card-title-row">
-                  <div class="scope-card-title">${escapeHtml(item.scopeName)}</div>
-                  <span class="ledger-chip ${escapeHtml(item.statusTone || "transfer")}">${escapeHtml(item.statusLabel)}</span>
-                </div>
-                <div class="scope-card-meta">
-                  ${escapeHtml(item.spentText)} / ${escapeHtml(item.limitText)} • ${escapeHtml(item.remainingText)}
-                </div>
-              </div>
-              <div class="scope-card-actions">
-                <button
-                  type="button"
-                  class="btn btn-sm btn-outline-primary"
-                  data-budget-action="save"
-                  data-budget-id="${escapeHtml(item.budgetId || "")}"
-                  data-budget-scope-id="${escapeHtml(item.scopeId)}"
-                  data-budget-scope-name="${escapeHtml(item.scopeName)}"
-                  data-budget-limit="${escapeHtml(item.limitAmount)}"
-                >
-                  ${escapeHtml(item.actionLabel)}
-                </button>
-                ${
-                  item.canDeleteBudget
-                    ? `
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-outline-danger"
-                        data-budget-action="delete"
-                        data-budget-id="${escapeHtml(item.budgetId || "")}"
-                        data-budget-scope-id="${escapeHtml(item.scopeId)}"
-                        data-budget-scope-name="${escapeHtml(item.scopeName)}"
-                      >
-                        Xóa mức
-                      </button>
-                    `
-                    : ""
-                }
-              </div>
-            </article>
-          `
-        )
-        .join("")}
-    </div>
-  `;
+  Object.entries(labelMap).forEach(([controlId, label]) => {
+    const control = byId(controlId)?.closest("[data-filter-control]");
+    const labelEl = control?.querySelector(".filter-control-label");
+    if (labelEl) labelEl.textContent = label;
+  });
+
+  const drawer = byId("ledgerFilterDrawer");
+  const drawerLabel = drawer?.querySelector(".filter-drawer-summary > span:not(.filter-drawer-hint)");
+  if (drawerLabel) drawerLabel.textContent = t("finance.filterDrawer", "Bộ lọc");
+  const drawerHint = drawer?.querySelector(".filter-drawer-hint");
+  if (drawerHint) drawerHint.textContent = t("finance.filterDrawerHint", "Tài khoản, loại, danh mục...");
+
+  const searchEl = byId("ledgerFilterSearch");
+  if (searchEl) searchEl.placeholder = t("finance.filter.searchPlaceholder", "Tìm ghi chú, tài khoản... (/ để focus)");
 }
 
-export function renderFinanceRoute(vm = {}) {
+export function renderExpensesLedgerView(vm = {}) {
   document.querySelectorAll("[data-finance-preset]").forEach((button) => {
     button.classList.toggle("active", button.getAttribute("data-finance-preset") === String(vm?.filters?.preset || "month"));
   });
 
-  renderOverview(byId("financeOverview"), {
-    totalBalanceText: vm?.summary?.totalBalanceText || "0đ",
-    incomeTotalText: vm?.summary?.incomeTotalText || "0đ",
-    expenseTotalText: vm?.summary?.expenseTotalText || "0đ",
-    netTotalText: vm?.summary?.netTotalText || "0đ",
-    accountHighlights: vm?.summary?.accountHighlights || [],
-  });
-
   const infoEl = byId("financeLedgerInfo");
-  if (infoEl) infoEl.textContent = vm?.ledger?.info || "";
+  if (infoEl) infoEl.textContent = vm?.ledger?.info || t("finance.ledgerInfo", "Giao dịch trong kỳ đang xem.");
 
   const transferMetaEl = byId("financeTransferMeta");
   if (transferMetaEl) transferMetaEl.textContent = vm?.ledger?.transferMeta || "";
@@ -411,28 +306,6 @@ export function renderFinanceRoute(vm = {}) {
   if (countEl) countEl.textContent = `${Number(vm?.ledger?.count || 0)} giao dịch`;
 
   renderLedgerTimeline(byId("ledgerTimeline"), vm?.ledger || {}, vm?.accountsPanel || {});
-
-  const expenseDetailsInfoEl = byId("expenseDetailsInfo");
-  if (expenseDetailsInfoEl) expenseDetailsInfoEl.textContent = vm?.expenseDetails?.info || "";
-
-  const expenseDetailsCountEl = byId("expenseDetailsCount");
-  if (expenseDetailsCountEl) {
-    expenseDetailsCountEl.textContent = `${Number(vm?.expenseDetails?.count || 0)} khoản chi`;
-  }
-
-  renderLedgerTimeline(byId("expenseDetailsTimeline"), vm?.expenseDetails || {}, vm?.accountsPanel || {});
-  renderAccounts(byId("financeAccountsList"), vm?.accountsPanel || {});
-  renderExpenseScopes(byId("expenseScopesList"), vm?.scopePanel || {});
-  renderScopeBudgetManagement(byId("scopeBudgetsList"), vm?.budgetPanel || {});
-
-  const accountsSummaryEl = byId("financeAccountsSummary");
-  if (accountsSummaryEl) accountsSummaryEl.textContent = String(vm?.accountsPanel?.summaryText || "Chưa có tài khoản");
-
-  const scopeSummaryEl = byId("expenseScopesSummary");
-  if (scopeSummaryEl) scopeSummaryEl.textContent = String(vm?.scopePanel?.summaryText || "0 phạm vi");
-
-  const budgetSummaryEl = byId("scopeBudgetsSummary");
-  if (budgetSummaryEl) budgetSummaryEl.textContent = String(vm?.budgetPanel?.summaryText || "0/0 phạm vi đã đặt");
 
   fillSelect(
     byId("ledgerFilterAccount"),
@@ -456,7 +329,7 @@ export function renderFinanceRoute(vm = {}) {
     byId("ledgerFilterScope"),
     vm?.filtersMeta?.scopeOptions || [],
     vm?.filters?.scopeId || "all",
-    "Tất cả phạm vi"
+    t("finance.filter.allScopes", "Tất cả nhóm")
   );
 
   const dayFilterEl = byId("dayFilter");
@@ -464,13 +337,62 @@ export function renderFinanceRoute(vm = {}) {
 
   const searchEl = byId("ledgerFilterSearch");
   if (searchEl) searchEl.value = String(vm?.filters?.search || "");
+
+  syncFilterControlLabels();
+}
+
+export function renderExpensesManageView(vm = {}) {
+  renderAccounts(byId("financeAccountsList"), vm?.accountsPanel || {});
+
+  const syncNoteEl = byId("financeAccountsSyncNote");
+  if (syncNoteEl) syncNoteEl.textContent = t("finance.accountsSyncNote", "Số dư hiện tại được đồng bộ từ giao dịch.");
+
+  renderExpenseScopes(byId("expenseScopesList"), vm?.scopePanel || {});
+
+  const scopeHintEl = byId("expenseScopesHint");
+  if (scopeHintEl) scopeHintEl.textContent = t("finance.scopeHint", "Tách khoản chi theo người hoặc mục đích.");
+
+  const scopeSummaryEl = byId("expenseScopesSummary");
+  if (scopeSummaryEl) scopeSummaryEl.textContent = String(vm?.scopePanel?.summaryText || "0 nhóm");
+
+  const scopeNameInput = byId("expenseScopeName");
+  if (scopeNameInput) {
+    scopeNameInput.placeholder = t("finance.scopePlaceholder", "Ví dụ: Tôi, Gia đình, Thuê nhà");
+  }
+
+  const createScopeBtn = byId("btnCreateExpenseScope");
+  if (createScopeBtn) createScopeBtn.textContent = t("finance.scope.create", "Thêm nhóm");
+}
+
+export function renderFinanceRoute(vm = {}, expensesView = "ledger") {
+  const view = expensesView === "manage" ? "manage" : "ledger";
+
+  document.querySelectorAll("[data-expenses-tab]").forEach((link) => {
+    const tab = link.getAttribute("data-expenses-tab") || "ledger";
+    link.classList.toggle("active", tab === view);
+  });
+
+  const ledgerView = byId("expensesLedgerView");
+  const manageView = byId("expensesManageView");
+  if (ledgerView) ledgerView.classList.toggle("d-none", view !== "ledger");
+  if (manageView) manageView.classList.toggle("d-none", view !== "manage");
+
+  document.querySelectorAll(".expenses-subnav-btn").forEach((link) => {
+    const tab = link.getAttribute("data-expenses-tab") || "ledger";
+    link.textContent =
+      tab === "manage"
+        ? t("finance.subTab.manage", "Quản lý")
+        : t("finance.subTab.ledger", "Giao dịch");
+  });
+
+  renderExpensesLedgerView(vm);
+  renderExpensesManageView(vm);
 }
 
 export function renderFinanceComposer({
   draft = {},
   accounts = [],
   expenseScopes = [],
-  budgetPreview = {},
 } = {}) {
   const type = String(draft?.type || "expense").trim();
   const isEdit = !!String(draft?.id || "").trim();
@@ -501,7 +423,7 @@ export function renderFinanceComposer({
     label: item.name,
   }));
   const scopeOptions = [
-    { value: "", label: "Chọn phạm vi chi" },
+    { value: "", label: t("finance.filter.pickScope", "Chọn nhóm chi") },
     ...(Array.isArray(expenseScopes) ? expenseScopes : []).map((item) => ({
       value: item.id,
       label: item.name,
@@ -519,37 +441,6 @@ export function renderFinanceComposer({
   byId("ftCategoryWrap")?.classList.toggle("d-none", type !== "expense");
   byId("ftScopeWrap")?.classList.toggle("d-none", type !== "expense");
 
-  const budgetPreviewWrap = byId("ftBudgetPreviewWrap");
-  const budgetPreviewEl = byId("ftBudgetPreview");
-  const showBudgetPreview = type === "expense" && !!budgetPreview?.visible;
-  if (budgetPreviewWrap) budgetPreviewWrap.classList.toggle("d-none", !showBudgetPreview);
-  if (budgetPreviewEl) {
-    budgetPreviewEl.innerHTML = showBudgetPreview
-      ? `
-        <div class="composer-budget-preview ${escapeHtml(`is-${budgetPreview.statusKey || "safe"}`)}">
-          <div class="composer-budget-preview-head">
-            <strong>${escapeHtml(budgetPreview.scopeName || "")}</strong>
-            <span class="ledger-chip ${escapeHtml(budgetPreview.statusTone || "transfer")}">${escapeHtml(
-              budgetPreview.statusLabel || ""
-            )}</span>
-          </div>
-          <div class="composer-budget-preview-meta">Tháng ${escapeHtml(budgetPreview.monthLabel || "")}</div>
-          <div class="composer-budget-preview-grid">
-            <span>Đã chi</span>
-            <strong>${escapeHtml(budgetPreview.spentBeforeText || "0đ")}</strong>
-            <span>Sau khi lưu</span>
-            <strong>${escapeHtml(budgetPreview.spentAfterText || "0đ")}</strong>
-            <span>Ngân sách</span>
-            <strong>${escapeHtml(budgetPreview.limitText || "Chưa đặt")}</strong>
-            <span>Còn lại</span>
-            <strong>${escapeHtml(budgetPreview.remainingAfterText || "Chưa đặt ngân sách")}</strong>
-          </div>
-          <div class="composer-budget-preview-note">${escapeHtml(budgetPreview.warningText || "")}</div>
-        </div>
-      `
-      : "";
-  }
-
   const amountInput = byId("ftAmount");
   const occurredAtInput = byId("ftOccurredAt");
   const noteInput = byId("ftNote");
@@ -558,47 +449,67 @@ export function renderFinanceComposer({
   if (occurredAtInput) occurredAtInput.value = draft?.occurredAt || "";
   if (noteInput) noteInput.value = draft?.note || "";
   if (idInput) idInput.value = draft?.id || "";
+
+  const shortcutsEl = byId("financeComposerShortcuts");
+  if (shortcutsEl) {
+    if (type === "expense") {
+      shortcutsEl.classList.remove("d-none");
+      shortcutsEl.innerHTML =
+        'Phím tắt: <kbd>C</kbd> mở form chi nhanh (tab Tổng quan hoặc Chi tiêu) · <kbd>/</kbd> tìm trong sổ (tab Chi tiêu)';
+    } else if (type === "income") {
+      shortcutsEl.classList.remove("d-none");
+      shortcutsEl.innerHTML =
+        'Phím tắt: <kbd>I</kbd> mở form thu nhanh (tab Tổng quan hoặc Chi tiêu)';
+    } else {
+      shortcutsEl.classList.add("d-none");
+      shortcutsEl.textContent = "";
+    }
+  }
 }
 
-export function resetFinanceAccountForm() {
+export function renderFinanceAccountForm({ draft = {}, mode = "create" } = {}) {
+  const isEdit = mode === "edit" || !!String(draft?.id || "").trim();
+
+  const titleEl = byId("financeAccountTitle");
+  const hintEl = byId("financeAccountHint");
+  const saveButton = byId("btnSaveFinanceAccount");
+  const openingWrap = byId("faOpeningBalanceWrap");
+
+  if (titleEl) {
+    titleEl.textContent = isEdit
+      ? t("finance.account.editTitle", "Sửa tài khoản")
+      : t("finance.account.createTitle", "Thêm tài khoản");
+  }
+  if (hintEl) {
+    hintEl.textContent = isEdit
+      ? t(
+          "finance.account.editHint",
+          "Cập nhật tên, loại hoặc trạng thái mặc định. Để sửa số dư, dùng Điều chỉnh."
+        )
+      : t("finance.account.createHint", "Số dư đầu kỳ chỉ nhập một lần khi tạo tài khoản.");
+  }
+  if (saveButton) {
+    saveButton.textContent = isEdit
+      ? t("finance.account.saveChanges", "Lưu thay đổi")
+      : t("finance.account.createAction", "Tạo tài khoản");
+  }
+  if (openingWrap) openingWrap.classList.toggle("d-none", isEdit);
+
+  const idEl = byId("faId");
   const nameEl = byId("faName");
   const typeEl = byId("faType");
   const openingEl = byId("faOpeningBalance");
   const defaultEl = byId("faDefault");
-  if (nameEl) nameEl.value = "";
-  fillSelect(typeEl, ACCOUNT_TYPE_OPTIONS, "bank");
-  if (openingEl) openingEl.value = "0";
-  if (defaultEl) defaultEl.checked = false;
+
+  if (idEl) idEl.value = draft?.id || "";
+  if (nameEl) nameEl.value = draft?.name || "";
+  fillSelect(typeEl, ACCOUNT_TYPE_OPTIONS, draft?.type || "bank");
+  if (!isEdit && openingEl) openingEl.value = draft?.openingBalance ?? "0";
+  if (defaultEl) defaultEl.checked = !!draft?.isDefault;
 }
 
-export function renderFinanceBudgetForm({ draft = {}, expenseScopes = [] } = {}) {
-  const isEdit = !!String(draft?.id || "").trim();
-
-  const titleEl = byId("financeBudgetTitle");
-  const hintEl = byId("financeBudgetHint");
-  const saveButton = byId("btnSaveFinanceBudget");
-
-  if (titleEl) titleEl.textContent = isEdit ? "Sửa ngân sách tháng" : "Đặt ngân sách tháng";
-  if (hintEl) {
-    hintEl.textContent = isEdit
-      ? "Cập nhật hạn mức chi cho phạm vi đang chọn trong tháng này."
-      : "Chọn phạm vi chi và nhập mức chi tối đa cho tháng đang xem.";
-  }
-  if (saveButton) saveButton.textContent = isEdit ? "Lưu thay đổi" : "Lưu ngân sách";
-
-  const scopeOptions = (Array.isArray(expenseScopes) ? expenseScopes : []).map((item) => ({
-    value: item.id,
-    label: item.name,
-  }));
-
-  fillSelect(byId("fbScopeId"), scopeOptions, draft?.scopeId || "");
-
-  const idEl = byId("fbId");
-  const monthEl = byId("fbMonthLabel");
-  const limitEl = byId("fbLimitAmount");
-  if (idEl) idEl.value = draft?.id || "";
-  if (monthEl) monthEl.value = draft?.monthLabel || "";
-  if (limitEl) limitEl.value = draft?.limitAmount ?? "";
+export function resetFinanceAccountForm() {
+  renderFinanceAccountForm({ draft: {}, mode: "create" });
 }
 
 export function renderExpenseScopeForm({ draft = {}, expenseScopes = [] } = {}) {
@@ -609,14 +520,18 @@ export function renderExpenseScopeForm({ draft = {}, expenseScopes = [] } = {}) 
   const hintEl = byId("financeScopeHint");
   const saveButton = byId("btnSaveExpenseScope");
 
-  if (titleEl) titleEl.textContent = isDelete ? "Xóa phạm vi chi" : "Đổi tên phạm vi chi";
+  if (titleEl) {
+    titleEl.textContent = isDelete
+      ? t("finance.scope.deleteTitle", "Xóa nhóm chi")
+      : t("finance.scope.renameTitle", "Đổi tên nhóm chi");
+  }
   if (hintEl) {
     hintEl.textContent = isDelete
-      ? "Chọn phạm vi thay thế nếu cần chuyển giao dịch hoặc ngân sách trước khi xóa."
-      : "Đổi tên phạm vi chi mà không làm mất liên kết với các khoản chi cũ.";
+      ? t("finance.scope.deleteHint", "Chọn nhóm thay thế nếu cần chuyển giao dịch trước khi xóa.")
+      : t("finance.scope.renameHint", "Đổi tên nhóm mà không làm mất liên kết với các khoản chi cũ.");
   }
   if (saveButton) {
-    saveButton.textContent = isDelete ? "Xóa phạm vi" : "Lưu thay đổi";
+    saveButton.textContent = isDelete ? t("finance.scope.deleteAction", "Xóa nhóm") : t("common.save", "Lưu thay đổi");
     saveButton.classList.toggle("btn-danger", isDelete);
     saveButton.classList.toggle("btn-primary", !isDelete);
   }
@@ -638,7 +553,7 @@ export function renderExpenseScopeForm({ draft = {}, expenseScopes = [] } = {}) 
   if (nameEl) nameEl.value = draft?.name || "";
   if (deleteNoticeEl) {
     deleteNoticeEl.textContent = isDelete
-      ? `Phạm vi "${draft?.name || ""}" sẽ bị xóa sau khi chuyển dữ liệu sang phạm vi thay thế.`
+      ? `Nhóm "${draft?.name || ""}" sẽ bị xóa sau khi chuyển dữ liệu sang nhóm thay thế.`
       : "";
   }
 

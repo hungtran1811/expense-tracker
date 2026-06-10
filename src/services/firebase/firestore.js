@@ -356,7 +356,7 @@ function normalizeLedgerTransactionInput(payload = {}) {
   }
 
   if (type === "expense" && !scopeId) {
-    throw new Error("Vui lòng chọn phạm vi chi.");
+    throw new Error("Vui lòng chọn nhóm chi.");
   }
 
   return {
@@ -637,14 +637,14 @@ export async function saveScopeBudget(uid, payload = {}) {
   const monthKey = normalizeMonthKey(payload?.monthKey);
   const limitAmount = Number(payload?.limitAmount || 0);
 
-  if (!scopeId) throw new Error("Thiếu phạm vi chi cho ngân sách.");
+  if (!scopeId) throw new Error("Thiếu nhóm chi cho ngân sách.");
   if (!Number.isFinite(limitAmount) || !(limitAmount > 0)) {
     throw new Error("Ngân sách phải lớn hơn 0.");
   }
 
   const scopeItems = await listExpenseScopes(uid);
   if (!scopeItems.some((item) => item.id === scopeId)) {
-    throw new Error("Không tìm thấy phạm vi chi cho ngân sách.");
+    throw new Error("Không tìm thấy nhóm chi cho ngân sách.");
   }
 
   const currentItems = await listScopeBudgets(uid, monthKey);
@@ -677,12 +677,12 @@ export async function deleteScopeBudget(uid, budgetId = "") {
 
 export async function createExpenseScope(uid, payload = {}) {
   const name = normalizeExpenseScopeName(payload?.name);
-  if (!name) throw new Error("Vui lòng nhập tên phạm vi chi.");
+  if (!name) throw new Error("Vui lòng nhập tên nhóm chi.");
 
   const currentItems = await listExpenseScopes(uid);
   const nextNameLower = name.toLowerCase();
   if (currentItems.some((item) => item.nameLower === nextNameLower)) {
-    throw new Error("Phạm vi chi này đã tồn tại.");
+    throw new Error("Nhóm chi này đã tồn tại.");
   }
 
   const maxSortOrder = currentItems.reduce((acc, item) => Math.max(acc, Number(item?.sortOrder || 0)), 0);
@@ -698,15 +698,15 @@ export async function createExpenseScope(uid, payload = {}) {
 
 export async function updateExpenseScope(uid, scopeId, payload = {}) {
   const id = String(scopeId || "").trim();
-  if (!id) throw new Error("Thiếu phạm vi chi cần cập nhật.");
+  if (!id) throw new Error("Thiếu nhóm chi cần cập nhật.");
 
   const name = normalizeExpenseScopeName(payload?.name);
-  if (!name) throw new Error("Vui lòng nhập tên phạm vi chi.");
+  if (!name) throw new Error("Vui lòng nhập tên nhóm chi.");
 
   const currentItems = await listExpenseScopes(uid);
   const nextNameLower = name.toLowerCase();
   if (currentItems.some((item) => item.id !== id && item.nameLower === nextNameLower)) {
-    throw new Error("Phạm vi chi này đã tồn tại.");
+    throw new Error("Nhóm chi này đã tồn tại.");
   }
 
   await updateDoc(doc(db, `users/${uid}/expenseScopes/${id}`), {
@@ -823,13 +823,13 @@ async function reassignScopeBudgets(uid, fromScopeId = "", toScopeId = "") {
 
 export async function deleteExpenseScope(uid, scopeId, options = {}) {
   const id = String(scopeId || "").trim();
-  if (!id) throw new Error("Thiếu phạm vi chi cần xóa.");
+  if (!id) throw new Error("Thiếu nhóm chi cần xóa.");
 
   const currentItems = await listExpenseScopes(uid);
   const currentScope = currentItems.find((item) => item.id === id);
-  if (!currentScope) throw new Error("Không tìm thấy phạm vi chi cần xóa.");
+  if (!currentScope) throw new Error("Không tìm thấy nhóm chi cần xóa.");
   if (currentItems.length <= 1) {
-    throw new Error("Cần giữ lại ít nhất 1 phạm vi chi.");
+    throw new Error("Cần giữ lại ít nhất 1 nhóm chi.");
   }
 
   const replacementScopeId = String(options?.replacementScopeId || "").trim();
@@ -838,20 +838,20 @@ export async function deleteExpenseScope(uid, scopeId, options = {}) {
 
   if (hasUsage) {
     if (!replacementScopeId || replacementScopeId === id) {
-      throw new Error("Phạm vi chi này đang có giao dịch. Vui lòng chọn phạm vi khác để chuyển dữ liệu.");
+      throw new Error("Nhóm chi này đang có giao dịch. Vui lòng chọn nhóm khác để chuyển dữ liệu.");
     }
     if (!currentItems.some((item) => item.id === replacementScopeId)) {
-      throw new Error("Phạm vi chi thay thế không hợp lệ.");
+      throw new Error("Nhóm chi thay thế không hợp lệ.");
     }
     await reassignTransactionsToExpenseScope(uid, id, replacementScopeId);
   }
 
   if (hasBudgets) {
     if (!replacementScopeId || replacementScopeId === id) {
-      throw new Error("Phạm vi chi này đang có ngân sách tháng. Vui lòng chọn phạm vi khác để chuyển dữ liệu.");
+      throw new Error("Nhóm chi này đang có ngân sách tháng. Vui lòng chọn nhóm khác để chuyển dữ liệu.");
     }
     if (!currentItems.some((item) => item.id === replacementScopeId)) {
-      throw new Error("Phạm vi chi thay thế không hợp lệ.");
+      throw new Error("Nhóm chi thay thế không hợp lệ.");
     }
     await reassignScopeBudgets(uid, id, replacementScopeId);
   }
@@ -891,6 +891,54 @@ export async function createAccount(uid, payload = {}) {
   }
 
   return { id: ref.id };
+}
+
+export async function updateLedgerAccount(uid, accountId = "", payload = {}) {
+  const id = String(accountId || "").trim();
+  if (!id) throw new Error("Thiếu tài khoản cần cập nhật.");
+
+  const accountRef = docAccount(uid, id);
+  const snap = await getDoc(accountRef);
+  if (!snap.exists()) throw new Error("Không tìm thấy tài khoản.");
+
+  const data = snap.data() || {};
+  if (Number(data?.schemaVersion || 0) !== LEDGER_SCHEMA_VERSION) {
+    throw new Error("Tài khoản không thuộc workspace tài chính mới.");
+  }
+  if (String(data?.status || "active") === "archived") {
+    throw new Error("Không thể sửa tài khoản đã lưu trữ.");
+  }
+
+  const name = String(payload?.name ?? data?.name ?? "").trim();
+  const type = normalizeLedgerAccountType(payload?.type ?? data?.type);
+  const isDefault = typeof payload?.isDefault === "boolean" ? payload.isDefault : !!data?.isDefault;
+
+  if (!name) throw new Error("Vui lòng nhập tên tài khoản.");
+
+  const currentAccounts = await listAccountsWithBalances(uid);
+  if (
+    currentAccounts.some(
+      (item) =>
+        item.id !== id && String(item?.name || "").trim().toLowerCase() === name.toLowerCase()
+    )
+  ) {
+    throw new Error("Tên tài khoản đã tồn tại.");
+  }
+
+  await updateDoc(accountRef, {
+    name,
+    type,
+    isDefault,
+    updatedAt: Timestamp.now(),
+  });
+
+  if (isDefault) {
+    await clearDefaultFlagForOtherAccounts(uid, id);
+  } else if (data?.isDefault && !isDefault) {
+    await ensureActiveDefaultAccount(uid);
+  }
+
+  return { id };
 }
 
 async function applyLedgerDiffTransaction(txContext, uid, diff = new Map()) {
