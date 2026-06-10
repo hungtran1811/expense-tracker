@@ -1342,6 +1342,39 @@ textarea,
   margin-top: 14px;
 }
 
+.reports-load-prompt {
+  margin-top: 14px;
+}
+
+.reports-shell[data-reports-loaded="false"] .reports-insights-section,
+.reports-shell[data-reports-loaded="false"] .reports-attention-section,
+.reports-shell[data-reports-loaded="false"] .reports-drivers-section,
+.reports-shell[data-reports-loaded="false"] #reportsSummary,
+.reports-shell[data-reports-loaded="false"] #reportsSummaryMeta {
+  display: none;
+}
+
+.workspace-load-prompt {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px dashed rgba(36, 92, 255, 0.22);
+}
+
+.workspace-load-prompt p {
+  margin: 0;
+  color: var(--text-muted, #64748b);
+  font-size: 0.92rem;
+}
+
+.workspace-load-prompt-inline {
+  padding: 12px 0 4px;
+  border: 0;
+  background: transparent;
+}
+
 .reports-main-grid {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;

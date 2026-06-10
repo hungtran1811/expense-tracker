@@ -47,9 +47,14 @@ export function bindFinanceEvents(handlers = {}) {
   });
 
   document.addEventListener("click", (event) => {
+    if (event.target.closest("#btnLoadFinanceMonth")) {
+      handlers.onLoadFinanceMonth?.();
+      return;
+    }
+
     const presetButton = event.target.closest("[data-finance-preset]");
     if (presetButton) {
-      handlers.onChangePreset?.(presetButton.getAttribute("data-finance-preset") || "month");
+      handlers.onChangePreset?.(presetButton.getAttribute("data-finance-preset") || "today");
       return;
     }
 

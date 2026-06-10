@@ -489,7 +489,31 @@ function withReportEmptyCopy(block = {}, titleKey = "") {
   };
 }
 
+function renderReportsLoadPrompt(container, loaded = true) {
+  if (!container) return;
+  container.classList.toggle("d-none", loaded);
+  if (loaded) {
+    container.innerHTML = "";
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="workspace-load-prompt">
+      <strong>${escapeHtml(t("reports.loadTitle", "Báo cáo chi tiết"))}</strong>
+      <p>${escapeHtml(t("reports.loadBody", "Chọn kỳ rồi bấm Tải báo cáo hoặc Áp dụng — không tải tự động khi mở tab."))}</p>
+      <button type="button" class="btn btn-sm btn-primary" id="btnLoadReports">
+        ${escapeHtml(t("reports.loadAction", "Tải báo cáo"))}
+      </button>
+    </div>
+  `;
+}
+
 export function renderReportsRoute(vm = {}, options = {}) {
+  const reportsDataLoaded = options?.reportsDataLoaded !== false;
+  const shellEl = document.querySelector("#reports .reports-shell");
+  if (shellEl) shellEl.dataset.reportsLoaded = reportsDataLoaded ? "true" : "false";
+
+  renderReportsLoadPrompt(byId("reportsLoadPrompt"), reportsDataLoaded);
   syncReportsChrome(options);
   const draftFilters = options?.draftFilters || vm?.filters || buildDefaultReportFilters();
   fillSelect(
@@ -533,6 +557,11 @@ export function renderReportsRoute(vm = {}, options = {}) {
 
   const scopeMetaEl = byId("reportScopeBreakdownMeta");
   if (scopeMetaEl) scopeMetaEl.textContent = t("reports.scopeSubtitle", "Nhóm nào đang chi nhiều hơn.");
+
+  if (!reportsDataLoaded) {
+    renderSummary(byId("reportsSummary"), {});
+    return;
+  }
 
   renderSummary(byId("reportsSummary"), vm?.summary || {});
   renderCashSnapshot(byId("reportCashSnapshot"), vm?.cashSnapshot || {});
