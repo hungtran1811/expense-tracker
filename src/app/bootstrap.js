@@ -119,6 +119,7 @@ const state = {
   month: getCurrentYm(),
   accounts: [],
   transactions: [],
+  monthTransactions: [],
   transactionsByMonth: {},
   expenseScopes: [],
   loanParties: [],
@@ -336,12 +337,6 @@ function renderFinanceView() {
     expenseScopes: state.expenseScopes,
   });
 
-  updateNavbarStats({
-    expenseTotal: state.financeVm.summary.expenseTotal,
-    incomeTotal: state.financeVm.summary.incomeTotal,
-    balanceTotal: state.financeVm.summary.totalBalance,
-  });
-
   const infoEl = byId("financeWorkspaceInfo");
   if (infoEl) {
     const range = state.financeVm?.range || {};
@@ -376,10 +371,43 @@ function renderLoansView() {
   renderLoanEntryView();
 }
 
+function getHomeMonthTransactions() {
+  return (
+    state.monthTransactions ||
+    state.transactionsByMonth[String(state.month || "").trim()] ||
+    []
+  );
+}
+
+function syncTopbarStatsForActiveRoute() {
+  const route = resolveWorkspaceRoute(getCurrentHashRoute() || state.pendingRoute || "home");
+
+  if (route === "expenses" && state.financeVm?.summary) {
+    updateNavbarStats({
+      expenseTotal: state.financeVm.summary.expenseTotal,
+      incomeTotal: state.financeVm.summary.incomeTotal,
+      balanceTotal: state.financeVm.summary.totalBalance,
+    });
+    return;
+  }
+
+  if (state.homeVm?.navbar) {
+    updateNavbarStats(state.homeVm.navbar);
+    return;
+  }
+
+  if (state.financeVm?.summary) {
+    updateNavbarStats({
+      expenseTotal: state.financeVm.summary.expenseTotal,
+      incomeTotal: state.financeVm.summary.incomeTotal,
+      balanceTotal: state.financeVm.summary.totalBalance,
+    });
+  }
+}
+
 function renderHomeView() {
   if (!state.homeVm) return;
   renderHomeRoute(state.homeVm);
-  updateNavbarStats(state.homeVm.navbar || {});
 }
 
 function rebuildHomeVm() {
@@ -388,13 +416,14 @@ function rebuildHomeVm() {
     monthKey: state.month,
     accounts: state.accounts,
     expenseScopes: state.expenseScopes,
-    currentMonthTransactions: state.transactions,
+    currentMonthTransactions: getHomeMonthTransactions(),
     previousMonthTransactions: state.homePreviousMonthTransactions,
     loanParties: state.loanParties,
     loanTransactions: state.loanTransactions,
     accountId: state.homeAccountFilter,
   });
   renderHomeView();
+  syncTopbarStatsForActiveRoute();
 }
 
 function renderReportsView() {
@@ -420,6 +449,7 @@ function renderApp() {
   renderFinanceView();
   renderLoansView();
   renderReportsView();
+  syncTopbarStatsForActiveRoute();
 }
 
 function renderComposerView() {
@@ -477,6 +507,7 @@ function resetRuntimeState() {
   const defaultReportState = createDefaultReportState();
   state.accounts = [];
   state.transactions = [];
+  state.monthTransactions = [];
   state.transactionsByMonth = {};
   state.expenseScopes = [];
   state.loanParties = [];
@@ -507,31 +538,7 @@ function resetRuntimeState() {
   renderApp();
 }
 
-async function refreshFinance(uid, { month = state.month } = {}) {
-  state.filters = {
-    ...createDefaultFilters(),
-    ...state.filters,
-  };
-  const range = getFinanceRange(state.filters);
-  const budgetMonth = getYmFromDateInput(state.filters.date) || month || getCurrentYm();
-  ensureMonthValue(budgetMonth);
-  normalizeDateFilterForMonth(state.month);
-
-  const [accounts, transactions, budgetTransactions, expenseScopes] = await Promise.all([
-    listAccountsWithBalances(uid),
-    listTransactions(uid, {
-      fromDate: range.fromDate,
-      toDate: range.toDate,
-    }),
-    listTransactions(uid, { month: state.month }),
-    listExpenseScopes(uid),
-  ]);
-
-  state.accounts = accounts;
-  state.transactions = transactions;
-  state.transactionsByMonth[state.month] = budgetTransactions;
-  state.expenseScopes = expenseScopes;
-
+function normalizeWorkspaceAfterFetch() {
   if (
     state.filters.accountId !== "all" &&
     !state.accounts.some((item) => String(item?.id || "").trim() === state.filters.accountId)
@@ -571,48 +578,62 @@ async function refreshFinance(uid, { month = state.month } = {}) {
     };
   }
 
-  if (state.reportVm) {
-    state.reportVm = buildFinanceReportVm({
-      filters: state.reportAppliedFilters,
-      accounts: state.accounts,
-      transactions: state.reportTransactions,
-      expenseScopes: state.expenseScopes,
-    });
-  }
-
-  renderApp();
+  state.homeAccountFilter = normalizeHomeAccountFilter(state.homeAccountFilter, state.accounts);
 }
 
-async function refreshLoans(uid) {
-  const [accounts, parties, transactions] = await Promise.all([
-    listAccountsWithBalances(uid),
-    listLoanParties(uid),
-    listTransactions(uid),
-  ]);
+function rebuildAllViewModels() {
+  state.homeVm = buildHomeVm({
+    monthKey: state.month,
+    accounts: state.accounts,
+    expenseScopes: state.expenseScopes,
+    currentMonthTransactions: getHomeMonthTransactions(),
+    previousMonthTransactions: state.homePreviousMonthTransactions,
+    loanParties: state.loanParties,
+    loanTransactions: state.loanTransactions,
+    accountId: state.homeAccountFilter,
+  });
+  state.homeLoadedKey = getHomeLoadKey(state.month);
 
-  state.accounts = accounts;
-  state.loanParties = parties;
-  state.loanTransactions = transactions;
-  state.loansLoaded = true;
+  state.financeVm = buildRenderedFinanceVm();
   state.loansVm = buildRenderedLoansVm();
+  state.loansLoaded = true;
   state.loanSelectedPartyId = state.loansVm?.selectedPartyId || "";
   state.loanEntryContext = buildLoanEntryContext({
     draft: state.loanEntryDraft,
     parties: state.loanParties,
     transactions: state.loanTransactions,
   });
-  renderApp();
+
+  state.reportVm = buildFinanceReportVm({
+    filters: state.reportAppliedFilters,
+    accounts: state.accounts,
+    transactions: state.reportTransactions,
+    expenseScopes: state.expenseScopes,
+  });
+  state.reportLoadedKey = getReportLoadKey(state.reportAppliedFilters);
 }
 
-async function refreshHome(uid, monthKey = getCurrentYm()) {
-  const normalizedMonth = String(monthKey || getCurrentYm()).trim() || getCurrentYm();
+async function refreshWorkspaceData(uid) {
+  state.filters = {
+    ...createDefaultFilters(),
+    ...state.filters,
+  };
+
+  const normalizedMonth = String(state.month || getCurrentYm()).trim() || getCurrentYm();
+  ensureMonthValue(normalizedMonth);
+  normalizeDateFilterForMonth(normalizedMonth);
+
+  const financeRange = getFinanceRange(state.filters);
+  const reportFilters = normalizeReportFilters(state.reportAppliedFilters);
   const prevMonthKey = prevYm(normalizedMonth);
 
   const [
     accounts,
     expenseScopes,
-    currentMonthTransactions,
+    monthTransactions,
     previousMonthTransactions,
+    financeLedgerTransactions,
+    reportTransactions,
     loanParties,
     allTransactions,
   ] = await Promise.all([
@@ -620,6 +641,14 @@ async function refreshHome(uid, monthKey = getCurrentYm()) {
     listExpenseScopes(uid),
     listTransactions(uid, { month: normalizedMonth }),
     listTransactions(uid, { month: prevMonthKey }),
+    listTransactions(uid, {
+      fromDate: financeRange.fromDate,
+      toDate: financeRange.toDate,
+    }),
+    listTransactions(uid, {
+      fromDate: reportFilters.fromDate,
+      toDate: reportFilters.toDate,
+    }),
     listLoanParties(uid),
     listTransactions(uid),
   ]);
@@ -630,51 +659,39 @@ async function refreshHome(uid, monthKey = getCurrentYm()) {
 
   state.accounts = accounts;
   state.expenseScopes = expenseScopes;
+  state.monthTransactions = monthTransactions;
+  state.homePreviousMonthTransactions = previousMonthTransactions;
+  state.transactions = financeLedgerTransactions;
+  state.transactionsByMonth[normalizedMonth] = monthTransactions;
   state.loanParties = loanParties;
   state.loanTransactions = loanTransactions;
-  state.month = normalizedMonth;
-  state.transactions = currentMonthTransactions;
-  state.transactionsByMonth[normalizedMonth] = currentMonthTransactions;
-  state.homePreviousMonthTransactions = previousMonthTransactions;
-  state.homeAccountFilter = normalizeHomeAccountFilter(state.homeAccountFilter, accounts);
+  state.reportAppliedFilters = reportFilters;
+  state.reportTransactions = reportTransactions;
 
-  state.homeVm = buildHomeVm({
-    monthKey: normalizedMonth,
-    accounts,
-    expenseScopes,
-    currentMonthTransactions,
-    previousMonthTransactions,
-    loanParties,
-    loanTransactions,
-    accountId: state.homeAccountFilter,
-  });
-  state.homeLoadedKey = getHomeLoadKey(normalizedMonth);
+  normalizeWorkspaceAfterFetch();
+  rebuildAllViewModels();
   renderApp();
 }
 
-async function refreshReports(uid, filters = state.reportAppliedFilters) {
-  const normalized = normalizeReportFilters(filters);
-  const [accounts, transactions, expenseScopes] = await Promise.all([
-    listAccountsWithBalances(uid),
-    listTransactions(uid, {
-      fromDate: normalized.fromDate,
-      toDate: normalized.toDate,
-    }),
-    listExpenseScopes(uid),
-  ]);
+async function refreshFinance(uid, { month = state.month } = {}) {
+  const budgetMonth = getYmFromDateInput(state.filters.date) || month || getCurrentYm();
+  ensureMonthValue(budgetMonth);
+  await refreshWorkspaceData(uid);
+}
 
-  state.accounts = accounts;
-  state.expenseScopes = expenseScopes;
-  state.reportAppliedFilters = normalized;
-  state.reportTransactions = transactions;
-  state.reportVm = buildFinanceReportVm({
-    filters: normalized,
-    accounts,
-    transactions,
-    expenseScopes: state.expenseScopes,
-  });
-  state.reportLoadedKey = getReportLoadKey(normalized);
-  renderApp();
+async function refreshLoans(uid) {
+  await refreshWorkspaceData(uid);
+}
+
+async function refreshHome(uid, monthKey = getCurrentYm()) {
+  const normalizedMonth = String(monthKey || getCurrentYm()).trim() || getCurrentYm();
+  ensureMonthValue(normalizedMonth);
+  await refreshWorkspaceData(uid);
+}
+
+async function refreshReports(uid, filters = state.reportAppliedFilters) {
+  state.reportAppliedFilters = normalizeReportFilters(filters);
+  await refreshWorkspaceData(uid);
 }
 
 function findTransactionById(transactionId = "") {
@@ -841,7 +858,9 @@ bindFinanceEvents({
       return;
     }
 
+    state.financeVm = buildRenderedFinanceVm();
     renderFinanceView();
+    syncTopbarStatsForActiveRoute();
   },
   onChangePreset: async (preset) => {
     const uid = ensureUser();
@@ -879,9 +898,7 @@ bindFinanceEvents({
     setGlobalLoading(true);
     try {
       await deleteTransaction(uid, transactionId);
-      invalidateFinanceMonthCache();
-      invalidateReportsCache();
-      await refreshFinance(uid);
+      await refreshWorkspaceData(uid);
       showToast(t("toast.transactionDeleted", "Đã xóa giao dịch."), "success");
     } catch (err) {
       console.error("deleteTransaction error", err);
@@ -908,10 +925,8 @@ bindFinanceEvents({
       } else {
         await createTransaction(uid, payload);
       }
-      invalidateFinanceMonthCache();
-      invalidateReportsCache();
       closeModal("financeComposerPanel");
-      await refreshFinance(uid);
+      await refreshWorkspaceData(uid);
       state.composerDraft = buildTransactionDraft({
         accounts: state.accounts,
         type: payload.type,
@@ -959,20 +974,18 @@ bindFinanceEvents({
       if (accountId) {
         const payload = sanitizeAccountEditDraft(rawAccount);
         await updateLedgerAccount(uid, payload.id, payload);
-        invalidateReportsCache();
         closeModal("financeAccountPanel");
         resetFinanceAccountForm();
-        await refreshFinance(uid);
+        await refreshWorkspaceData(uid);
         showToast(t("toast.accountUpdated", "Đã cập nhật tài khoản."), "success");
         return;
       }
 
       const payload = sanitizeAccountDraft(rawAccount);
       await createAccount(uid, payload);
-      invalidateReportsCache();
       closeModal("financeAccountPanel");
       resetFinanceAccountForm();
-      await refreshFinance(uid);
+      await refreshWorkspaceData(uid);
       showToast(t("toast.accountCreated", "Đã tạo tài khoản mới."), "success");
     } catch (err) {
       console.error("saveAccount error", err);
@@ -1003,8 +1016,7 @@ bindFinanceEvents({
     setGlobalLoading(true);
     try {
       await archiveAccount(uid, accountId);
-      invalidateReportsCache();
-      await refreshFinance(uid);
+      await refreshWorkspaceData(uid);
       showToast(t("toast.accountRemoved", "Đã cập nhật trạng thái tài khoản."), "success");
     } catch (err) {
       console.error("archiveAccount error", err);
@@ -1021,7 +1033,7 @@ bindFinanceEvents({
     try {
       await createExpenseScope(uid, rawScope);
       clearExpenseScopeInput();
-      await refreshFinance(uid);
+      await refreshWorkspaceData(uid);
       showToast(t("toast.scopeCreated", "Đã thêm nhóm chi mới."), "success");
     } catch (err) {
       console.error("createExpenseScope error", err);
@@ -1081,11 +1093,9 @@ bindFinanceEvents({
           replacementScopeId,
         });
 
-        invalidateFinanceMonthCache();
-        invalidateReportsCache();
         closeModal("financeScopePanel");
         state.expenseScopeDraft = buildExpenseScopeDraft();
-        await refreshFinance(uid);
+        await refreshWorkspaceData(uid);
         showToast("\u0110\u00e3 x\u00f3a ph\u1ea1m vi chi.", "success");
         return;
       }
@@ -1093,7 +1103,7 @@ bindFinanceEvents({
       await updateExpenseScope(uid, scopeId, { name: form?.name });
       closeModal("financeScopePanel");
       state.expenseScopeDraft = buildExpenseScopeDraft();
-      await refreshFinance(uid);
+      await refreshWorkspaceData(uid);
       showToast("\u0110\u00e3 c\u1eadp nh\u1eadt ph\u1ea1m vi chi.", "success");
     } catch (err) {
       console.error("submit expense scope form error", err);
@@ -1140,7 +1150,7 @@ bindLoanEvents({
     setGlobalLoading(true);
     try {
       await deleteLoanParty(uid, partyId);
-      await refreshLoans(uid);
+      await refreshWorkspaceData(uid);
       showToast("Đã xóa người mượn.", "success");
     } catch (err) {
       console.error("deleteLoanParty error", err);
@@ -1181,10 +1191,7 @@ bindLoanEvents({
     setGlobalLoading(true);
     try {
       await deleteTransaction(uid, entryId);
-      invalidateFinanceMonthCache();
-      invalidateReportsCache();
-      await refreshFinance(uid);
-      await refreshLoans(uid);
+      await refreshWorkspaceData(uid);
       showToast("Đã xóa giao dịch công nợ.", "success");
     } catch (err) {
       console.error("delete loan entry error", err);
@@ -1207,7 +1214,7 @@ bindLoanEvents({
       }
       closeModal("loanPartyPanel");
       state.loanPartyDraft = createDefaultLoanPartyDraft();
-      await refreshLoans(uid);
+      await refreshWorkspaceData(uid);
       showToast("Đã lưu người mượn.", "success");
     } catch (err) {
       console.error("save loan party error", err);
@@ -1240,13 +1247,10 @@ bindLoanEvents({
       } else {
         await createTransaction(uid, payload);
       }
-      invalidateFinanceMonthCache();
-      invalidateReportsCache();
       closeModal("loanEntryPanel");
       state.loanEntryDraft = createDefaultLoanEntryDraft();
       state.loanEntryContext = { visible: false };
-      await refreshFinance(uid);
-      await refreshLoans(uid);
+      await refreshWorkspaceData(uid);
       showToast("Đã lưu giao dịch công nợ.", "success");
     } catch (err) {
       console.error("save loan entry error", err);
@@ -1378,6 +1382,7 @@ window.addEventListener("nexus:route-changed", async (event) => {
     state.expensesView = event?.detail?.expensesView === "manage" ? "manage" : "ledger";
     if (state.financeVm) {
       renderFinanceView();
+      syncTopbarStatsForActiveRoute();
     }
   }
 
@@ -1402,6 +1407,7 @@ window.addEventListener("nexus:route-changed", async (event) => {
     const nextLoadKey = getHomeLoadKey(getCurrentYm());
     if (state.homeVm && state.homeLoadedKey === nextLoadKey) {
       renderHomeView();
+      syncTopbarStatsForActiveRoute();
       return;
     }
 
@@ -1420,6 +1426,7 @@ window.addEventListener("nexus:route-changed", async (event) => {
   if (routeId === "loans") {
     if (state.loansLoaded) {
       renderLoansView();
+      syncTopbarStatsForActiveRoute();
       return;
     }
 
@@ -1440,6 +1447,7 @@ window.addEventListener("nexus:route-changed", async (event) => {
   const nextLoadKey = getReportLoadKey(state.reportAppliedFilters);
   if (state.reportVm && state.reportLoadedKey === nextLoadKey) {
     renderReportsView();
+    syncTopbarStatsForActiveRoute();
     return;
   }
 
