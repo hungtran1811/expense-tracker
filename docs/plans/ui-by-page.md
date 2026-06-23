@@ -12,15 +12,10 @@ Chiến lược: một trang một lần, chốt từng block trước khi code.
 | D | Thu/chi hôm nay (danh sách + bấm sửa) | Done |
 | E | Số VND làm tròn số nguyên (bỏ `,04`) | Done |
 | F | Tiền cho mượn trên thanh tháng (link `#loans`) | Done |
-| G | Dòng tiền theo ngày (tháng hiện tại, panel mở/đóng) | Done |
-
-### Backlog Tổng quan (chưa code)
-
-| Block | Nội dung | VM sẵn có |
-|-------|----------|-----------|
-| H | So với tháng trước | `momComparison` |
-| I | Top danh mục chi | `categoryBreakdown` |
-| J | Giao dịch 7 ngày | `recentTransactions` |
+| G | Dòng tiền theo ngày (lazy load) | Done |
+| H | So với tháng trước (lazy) | Done |
+| I | Top danh mục chi | Done |
+| J | Giao dịch 7 ngày | Done |
 
 ---
 
@@ -39,7 +34,6 @@ Chiến lược: một trang một lần, chốt từng block trước khi code.
 ### Backlog Chi tiêu (chưa code)
 
 - Polish animation sub-tab
-- Empty state Quản lý khi chưa có tài khoản
 
 ---
 
@@ -53,12 +47,7 @@ Chiến lược: một trang một lần, chốt từng block trước khi code.
 | L-D | Timeline ledger pattern + empty states | Done |
 | L-E | `loanEntryShortcuts` display-only | Done |
 | L-H | Layout V3: spotlight + party chips ngang + một cột (cùng hệ font Home) | Done |
-
-### Backlog Cho mượn (chưa code)
-
-| Block | Nội dung |
-|-------|----------|
-| L-F | Phím `M` Cho mượn / `N` Nhận trả trên tab `#loans` |
+| L-F | Phím `M` Cho mượn / `N` Nhận trả trên tab `#loans` | Done |
 
 ---
 
@@ -73,13 +62,13 @@ Chiến lược: một trang một lần, chốt từng block trước khi code.
 | R-C | Preset Tháng này / Tháng trước (auto-apply) + load `expenseScopes` | Done |
 | R-D | Layout một cột mobile, insights/drivers 2 cột desktop | Done |
 | R-E | QA smoke + checklist | Done |
+| R-F | So sánh kỳ trước (MoM, lazy) | Done |
+| R-G | Drill-down DM/nhóm / ví → `#expenses` | Done |
 
 ### Backlog Báo cáo (chưa code)
 
 | Block | Nội dung |
 |-------|----------|
-| R-F | So sánh kỳ trước (MoM) |
-| R-G | Drill-down DM/nhóm → `#expenses` |
 | R-H | AI tóm tắt (`ai-report-insights`) |
 | R-I | Xuất báo cáo CSV/PDF |
 

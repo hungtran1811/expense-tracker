@@ -9,6 +9,7 @@ import {
   formatMonthLabel,
   getCurrentYm,
   getTodayInputValue,
+  getYmFromDateInput,
   toDateInputValue,
 } from "../finance/finance.controller.js";
 
@@ -155,7 +156,7 @@ function buildReportSummary(transactions = [], fromDate = "", toDate = "") {
   };
 }
 
-function buildCategoryBreakdown(transactions = [], totalExpense = 0) {
+export function buildCategoryBreakdown(transactions = [], totalExpense = 0) {
   const bucket = new Map();
   transactions.forEach((transaction) => {
     if (String(transaction?.type || "").trim() !== "expense") return;
@@ -513,6 +514,88 @@ export function buildReportFiltersForPreset(preset = "current-month") {
       ? prevYm(getCurrentYm())
       : getCurrentYm();
   return buildDefaultReportFilters(monthKey);
+}
+
+function summarizeReportTransactions(transactions = []) {
+  const items = (Array.isArray(transactions) ? transactions : []).filter((transaction) =>
+    isReportTransactionType(transaction?.type)
+  );
+
+  const incomeTotal = items
+    .filter((item) => String(item?.type || "") === "income")
+    .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
+  const expenseTotal = items
+    .filter((item) => String(item?.type || "") === "expense")
+    .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
+  const adjustmentTotal = items
+    .filter((item) => String(item?.type || "") === "adjustment")
+    .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
+
+  return {
+    incomeTotal,
+    expenseTotal,
+    netTotal: incomeTotal - expenseTotal + adjustmentTotal,
+  };
+}
+
+function buildReportDeltaMetric(current = 0, previous = 0) {
+  const cur = Number(current || 0);
+  const prev = Number(previous || 0);
+  const deltaAbs = cur - prev;
+
+  if (prev === 0) {
+    return {
+      deltaText: cur === 0 ? "0%" : "Mới",
+      deltaTone: cur >= 0 ? "up" : "down",
+      deltaAbsText: formatCurrency(Math.abs(deltaAbs)),
+    };
+  }
+
+  const pct = (deltaAbs / prev) * 100;
+  return {
+    deltaText: `${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%`,
+    deltaTone: pct >= 0 ? "up" : "down",
+    deltaAbsText: formatCurrency(Math.abs(deltaAbs)),
+  };
+}
+
+export function buildPreviousReportFilters(filters = {}) {
+  const normalized = normalizeReportFilters(filters);
+  const monthKey = normalized.month || getYmFromDateInput(normalized.fromDate) || getCurrentYm();
+  return buildDefaultReportFilters(prevYm(monthKey));
+}
+
+export function buildReportMomComparison(currentTransactions = [], previousTransactions = []) {
+  const currentSummary = summarizeReportTransactions(currentTransactions);
+  const previousSummary = summarizeReportTransactions(previousTransactions);
+
+  return {
+    loadPending: false,
+    prevRangeLabel: "",
+    items: [
+      {
+        key: "expense",
+        label: "Chi tiêu",
+        currentText: formatCurrency(currentSummary.expenseTotal || 0),
+        previousText: formatCurrency(previousSummary.expenseTotal || 0),
+        ...buildReportDeltaMetric(currentSummary.expenseTotal, previousSummary.expenseTotal),
+      },
+      {
+        key: "income",
+        label: "Thu nhập",
+        currentText: formatCurrency(currentSummary.incomeTotal || 0),
+        previousText: formatCurrency(previousSummary.incomeTotal || 0),
+        ...buildReportDeltaMetric(currentSummary.incomeTotal, previousSummary.incomeTotal),
+      },
+      {
+        key: "net",
+        label: "Còn lại",
+        currentText: formatCurrency(currentSummary.netTotal || 0),
+        previousText: formatCurrency(previousSummary.netTotal || 0),
+        ...buildReportDeltaMetric(currentSummary.netTotal, previousSummary.netTotal),
+      },
+    ],
+  };
 }
 
 export function resolveReportPreset(filters = {}) {

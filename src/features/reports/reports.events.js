@@ -11,6 +11,30 @@ function readReportFilters() {
 }
 
 export function bindReportEvents(handlers = {}) {
+  document.addEventListener("click", (event) => {
+    const drillEl = event.target.closest("[data-report-drill]");
+    if (drillEl) {
+      const kind = String(drillEl.getAttribute("data-report-drill") || "").trim();
+      const key = String(drillEl.getAttribute("data-drill-key") || "").trim();
+      if (kind && key) handlers.onDrillDown?.(kind, key);
+      return;
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const drillEl = event.target.closest("[data-report-drill]");
+    if (!drillEl) return;
+    event.preventDefault();
+    const kind = String(drillEl.getAttribute("data-report-drill") || "").trim();
+    const key = String(drillEl.getAttribute("data-drill-key") || "").trim();
+    if (kind && key) handlers.onDrillDown?.(kind, key);
+  });
+
+  byId("btnLoadReportsMom")?.addEventListener("click", () => {
+    handlers.onLoadReportsMom?.();
+  });
+
   byId("reportFromDate")?.addEventListener("change", () => {
     handlers.onChangeDraftFilters?.(readReportFilters());
   });

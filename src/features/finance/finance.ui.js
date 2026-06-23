@@ -371,7 +371,29 @@ export function renderExpensesLedgerView(vm = {}, options = {}) {
   syncFilterControlLabels();
 }
 
-export function renderExpensesManageView(vm = {}) {
+export function renderExpensesManageView(vm = {}, options = {}) {
+  if (!vm?.accountsPanel?.hasActiveAccounts) {
+    const manageAccountsEl = byId("financeAccountsList");
+    if (manageAccountsEl) {
+      manageAccountsEl.innerHTML = `
+        <div class="finance-empty workspace-load-prompt">
+          <strong>${escapeHtml(t("finance.manageEmptyTitle", "Chưa có tài khoản"))}</strong>
+          <p>${escapeHtml(t("finance.manageEmptyBody", "Tạo tài khoản đầu tiên để ghi thu chi và theo dõi số dư."))}</p>
+          <button type="button" class="btn btn-sm btn-primary" id="btnManageCreateAccount">
+            ${escapeHtml(t("finance.manageEmptyAction", "Thêm tài khoản đầu tiên"))}
+          </button>
+        </div>
+      `;
+    }
+
+    renderExpenseScopes(byId("expenseScopesList"), vm?.scopePanel || {});
+    const scopeHintEl = byId("expenseScopesHint");
+    if (scopeHintEl) scopeHintEl.textContent = t("finance.scopeHint", "Tách khoản chi theo người hoặc mục đích.");
+    const scopeSummaryEl = byId("expenseScopesSummary");
+    if (scopeSummaryEl) scopeSummaryEl.textContent = String(vm?.scopePanel?.summaryText || "0 nhóm");
+    return;
+  }
+
   renderAccounts(byId("financeAccountsList"), vm?.accountsPanel || {});
 
   const syncNoteEl = byId("financeAccountsSyncNote");

@@ -12,20 +12,40 @@ function isQuickActionRoute() {
   return route === "home" || route === "expenses";
 }
 
+function isLoanActionRoute() {
+  return String(document.body?.dataset?.route || "").trim() === "loans";
+}
+
 export function bindKeyboardShortcuts(handlers = {}) {
   document.addEventListener("keydown", (event) => {
     if (shouldIgnoreShortcut(event)) return;
 
     const key = String(event.key || "").toLowerCase();
+    const route = String(document.body?.dataset?.route || "").trim();
 
     if (key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      if (String(document.body?.dataset?.route || "").trim() !== "expenses") return;
+      if (route !== "expenses") return;
       event.preventDefault();
       handlers.onFocusSearch?.();
       return;
     }
 
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+    if (isLoanActionRoute()) {
+      if (key === "m") {
+        event.preventDefault();
+        handlers.onOpenLoanLend?.();
+        return;
+      }
+      if (key === "n") {
+        event.preventDefault();
+        handlers.onOpenLoanRepay?.();
+        return;
+      }
+      return;
+    }
+
     if (!isQuickActionRoute()) return;
 
     if (key === "c") {

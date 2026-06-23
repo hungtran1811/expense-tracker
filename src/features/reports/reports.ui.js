@@ -333,7 +333,10 @@ function renderBreakdownChart(container, breakdown = {}) {
         ${coloredItems
         .map(
           (item, index) => `
-            <article class="report-chart-item">
+            <article
+              class="report-chart-item${breakdown?.drillKind && item.key !== "unknown" ? " report-chart-item-drill" : ""}"
+              ${breakdown?.drillKind && item.key !== "unknown" ? `data-report-drill="${escapeHtml(breakdown.drillKind)}" data-drill-key="${escapeHtml(item.key)}" role="button" tabindex="0"` : ""}
+            >
               <div class="report-chart-head">
                 <div class="report-chart-title-wrap">
                   <span class="report-chart-rank" style="background:${escapeHtml(item.chartColor)}1a;color:${escapeHtml(
@@ -381,7 +384,7 @@ function renderAccountBreakdown(container, breakdown = {}) {
           const netWidth = clampPercent((Math.abs(Number(item?.net || 0)) / maxFlow) * 100, 6);
           const balanceWidth = clampPercent((Math.abs(Number(item?.currentBalance || 0)) / maxBalance) * 100, 10);
           return `
-            <article class="report-account-card-v2">
+            <article class="report-account-card-v2 report-account-card-drill" data-report-drill="account" data-drill-key="${escapeHtml(item.accountId)}" role="button" tabindex="0">
               <div class="report-account-head-v2">
                 <div>
                   <div class="report-account-name">${escapeHtml(item.name)}</div>
@@ -508,6 +511,57 @@ function renderReportsLoadPrompt(container, loaded = true) {
   `;
 }
 
+function renderReportsMomSection(block = {}, options = {}) {
+  const container = byId("reportsMomSection");
+  if (!container) return;
+
+  if (options?.reportsDataLoaded === false) {
+    container.innerHTML = "";
+    container.classList.add("d-none");
+    return;
+  }
+
+  container.classList.remove("d-none");
+
+  if (block?.loadPending) {
+    container.innerHTML = `
+      <div class="workspace-load-prompt workspace-load-prompt-inline reports-mom-prompt">
+        <strong>${escapeHtml(t("reports.momLoadTitle", "So với kỳ trước"))}</strong>
+        <p>${escapeHtml(t("reports.momLoadBody", "Bấm để so sánh chi, thu và còn lại với kỳ liền trước."))}</p>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoadReportsMom">
+          ${escapeHtml(t("reports.momLoadAction", "So với kỳ trước"))}
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  const items = Array.isArray(block?.items) ? block.items : [];
+  if (!items.length) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const note = String(block?.prevRangeLabel || "").trim();
+  container.innerHTML = `
+    <div class="reports-mom-grid" aria-label="${escapeHtml(t("reports.momLoadTitle", "So với kỳ trước"))}">
+      ${note ? `<p class="reports-mom-note small text-muted">${escapeHtml(note)}</p>` : ""}
+      ${items
+        .map(
+          (item) => `
+            <article class="reports-mom-card tone-${escapeHtml(item.key || "net")}">
+              <span class="reports-mom-label">${escapeHtml(item.label)}</span>
+              <strong class="reports-mom-current u-money">${escapeHtml(item.currentText || "0đ")}</strong>
+              <span class="reports-mom-previous">Kỳ trước ${escapeHtml(item.previousText || "0đ")}</span>
+              <span class="reports-mom-delta tone-${escapeHtml(item.deltaTone || "up")}">${escapeHtml(item.deltaText || "0%")}</span>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 export function renderReportsRoute(vm = {}, options = {}) {
   const reportsDataLoaded = options?.reportsDataLoaded !== false;
   const shellEl = document.querySelector("#reports .reports-shell");
@@ -567,9 +621,16 @@ export function renderReportsRoute(vm = {}, options = {}) {
   renderCashSnapshot(byId("reportCashSnapshot"), vm?.cashSnapshot || {});
   renderQuickSignals(byId("reportQuickSignals"), withReportEmptyCopy(vm?.quickSignals, "reports.emptySignals"));
   renderAttentionItems(byId("reportAttentionItems"), withReportEmptyCopy(vm?.attentionItems, "reports.emptyAttention"));
-  renderBreakdownChart(byId("reportCategoryBreakdown"), withReportEmptyCopy(vm?.categoryBreakdown, "reports.emptyCategory"));
-  renderBreakdownChart(byId("reportScopeBreakdown"), withReportEmptyCopy(vm?.scopeBreakdown, "reports.emptyScope"));
+  renderBreakdownChart(
+    byId("reportCategoryBreakdown"),
+    withReportEmptyCopy({ ...vm?.categoryBreakdown, drillKind: "category" }, "reports.emptyCategory")
+  );
+  renderBreakdownChart(
+    byId("reportScopeBreakdown"),
+    withReportEmptyCopy({ ...vm?.scopeBreakdown, drillKind: "scope" }, "reports.emptyScope")
+  );
   renderAccountBreakdown(byId("reportAccountBreakdown"), withReportEmptyCopy(vm?.accountBreakdown, "reports.emptyAccount"));
+  renderReportsMomSection(vm?.momComparison || {}, options);
 
   const emptyEl = byId("reportsEmptyState");
   if (emptyEl) {

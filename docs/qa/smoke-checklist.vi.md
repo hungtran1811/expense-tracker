@@ -37,8 +37,9 @@ npm run check:baseline
 - Section «Hôm nay»: tổng thu/chi ngày + danh sách chỉ giao dịch thu và chi trong ngày; bấm dòng mở sửa.
 - Thanh tháng: thu, chi, còn lại, tiền cho mượn — ô cho mượn số đầy đủ, bấm chuyển `#loans`; 3 ô kia compact + `title` đầy đủ.
 - Nút Chi / Thu / Chuyển và phím `C` / `I` / `T` hoạt động trên tab này.
-- Panel **Dòng tiền theo ngày** (tháng hiện tại): mở/đóng được, ngày có giao dịch mới nhất lên trên.
-- Chưa có panel MoM / top danh mục — sẽ thêm theo block nếu cần.
+- Panel **Dòng tiền theo ngày**: bấm «Xem dòng tiền» để tải (không auto).
+- **So với tháng trước**: bấm «Xem so với tháng trước» trong panel (lazy, 1 query).
+- **Top danh mục chi** (3 hàng) và **Giao dịch 7 ngày** hiển thị từ cache tháng.
 
 ## 4) Chi tiêu (`#expenses`)
 
@@ -50,7 +51,7 @@ npm run check:baseline
 
 ### 4.2 Giao dịch (sub-tab Giao dịch)
 
-- Preset **Hôm nay** và **Tháng này** + date picker hoạt động (không còn preset 7 ngày).
+- Preset **Hôm nay** mặc định; **Tháng này** cần bấm «Tải giao dịch tháng».
 - Thêm / sửa / xóa khoản chi, thu, chuyển, sửa số dư.
 - Form Chi / Thu hiển thị gợi ý phím tắt (`C`, `I`, `/`); form Chuyển / Sửa số dư không hiện dòng gợi ý.
 - Số tiền timeline hiển thị đầy đủ VND, không tràn (`u-money`).
@@ -60,6 +61,7 @@ npm run check:baseline
 
 ### 4.3 Quản lý (sub-tab Quản lý)
 
+- Khi chưa có tài khoản: empty state + nút «Thêm tài khoản đầu tiên».
 - Tạo / sửa / lưu trữ tài khoản; số dư `formatCurrency` đầy đủ.
 - Sửa số dư qua bút toán điều chỉnh.
 - Thêm / đổi tên / xóa nhóm chi (có chuyển dữ liệu nếu cần).
@@ -74,6 +76,7 @@ npm run check:baseline
 - Ghi nhận cho mượn — số dư tài khoản giảm đúng.
 - Ghi nhận nhận trả — số dư tăng, nợ giảm đúng.
 - Form Cho mượn / Nhận trả hiển thị gợi ý chip trên tab (display-only).
+- Phím `M` (cho mượn) / `N` (nhận trả) trên tab `#loans`.
 - Chọn người mượn xem lịch sử công nợ; số tiền timeline `u-money`.
 - Sửa / xóa giao dịch công nợ.
 
@@ -84,8 +87,9 @@ npm run check:baseline
 - Spotlight 4 KPI tách khỏi filter; số tiền `u-money` đầy đủ VND, không tràn mobile 375px.
 - Áp dụng bộ lọc từ ngày / đến ngày / tài khoản.
 - Summary, số dư các ví, tóm tắt kỳ, điểm đáng lưu ý render đúng.
-- Breakdown danh mục, nhóm chi, tài khoản.
-- **Không còn** panel ngân sách hoặc dòng tiền theo ngày trên Báo cáo.
+- Breakdown danh mục, nhóm chi, tài khoản — **bấm một hàng** mở `#expenses` đã lọc.
+- Bấm «So với kỳ trước» để tải MoM (lazy).
+- Báo cáo **không tự tải** khi mở tab — cần «Tải báo cáo» hoặc «Áp dụng».
 - Đặt lại bộ lọc về mặc định (Tháng này).
 - Subtitle «X ví đang dùng» khớp số tài khoản thực tế.
 

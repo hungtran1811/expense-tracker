@@ -329,6 +329,147 @@ function renderHomeDailyFlow(container, block = {}) {
   `;
 }
 
+function renderMomComparison(container, block = {}) {
+  if (!container) return;
+
+  if (block?.loadPending) {
+    container.innerHTML = `
+      <div class="workspace-load-prompt workspace-load-prompt-inline">
+        <strong>${escapeHtml(block?.emptyTitle || t("home.momLoadTitle", "So với tháng trước"))}</strong>
+        <p>${escapeHtml(block?.emptyBody || t("home.momLoadBody", "Bấm để so sánh chi, thu và còn lại với tháng liền trước."))}</p>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoadHomeMom">
+          ${escapeHtml(t("home.momLoadAction", "Xem so với tháng trước"))}
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  const items = Array.isArray(block?.items) ? block.items : [];
+  if (!items.length) {
+    container.innerHTML = `
+      <div class="home-empty-inline">
+        <strong>${escapeHtml(t("home.noMonthSummary", "Chưa có tóm tắt tháng."))}</strong>
+      </div>
+    `;
+    return;
+  }
+
+  const note = String(block?.prevMonthLabel || "").trim();
+  container.innerHTML = `
+    ${note ? `<p class="home-mom-note small text-muted">${escapeHtml(formatTemplate(t("home.momCompareNote", "So với {{month}}"), { month: note }))}</p>` : ""}
+    <div class="home-mom-grid">
+      ${items
+        .map(
+          (item) => `
+            <article class="home-mom-card tone-${escapeHtml(item.key || "net")}">
+              <span class="home-mom-label">${escapeHtml(item.label)}</span>
+              <strong class="home-mom-current u-money"${titleAttr(item.currentTitle)}>${escapeHtml(item.currentText)}</strong>
+              <span class="home-mom-previous">Tháng trước <span class="u-money"${titleAttr(item.previousTitle)}>${escapeHtml(item.previousText)}</span></span>
+              <span class="home-mom-delta tone-${escapeHtml(item.deltaTone || "up")}">${escapeHtml(item.deltaText || "0%")}</span>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderMomSection(block = {}) {
+  const titleEl = byId("homeMomTitle");
+  const metaEl = byId("homeMomMeta");
+  if (titleEl) titleEl.textContent = t("home.momTitle", "So với tháng trước");
+  if (metaEl) {
+    metaEl.textContent = block?.loadPending
+      ? t("home.momLoadMeta", "Tải khi cần — không quét tháng trước tự động.")
+      : t("home.momMeta", "Chi, thu và còn lại so với tháng liền trước.");
+  }
+  renderMomComparison(byId("homeMomComparison"), block);
+}
+
+function renderTopCategoriesSection(block = {}) {
+  const sectionEl = byId("homeTopCategoriesSection");
+  if (!sectionEl) return;
+
+  const items = Array.isArray(block?.items) ? block.items : [];
+  const headHtml = `
+    <div class="home-section-head home-section-head-split">
+      <div class="home-section-head-copy">
+        <h2 class="home-section-title">${escapeHtml(t("glossary.topCategories", "Top danh mục chi"))}</h2>
+        <p class="home-section-subtitle">${escapeHtml(t("home.topCategoriesMeta", "Tháng này — từ cache hiện tại."))}</p>
+      </div>
+      <a class="btn btn-sm btn-outline-secondary home-section-head-action" data-route-link href="#reports">${escapeHtml(t("glossary.fullReport", "Báo cáo"))}</a>
+    </div>
+  `;
+
+  if (!items.length) {
+    sectionEl.innerHTML = `
+      ${headHtml}
+      <div class="home-empty-inline">
+        <strong>${escapeHtml(block?.emptyTitle || "")}</strong>
+        <div>${escapeHtml(block?.emptyBody || "")}</div>
+      </div>
+    `;
+    return;
+  }
+
+  sectionEl.innerHTML = `
+    ${headHtml}
+    <div class="home-category-list">
+      ${items
+        .map(
+          (item, index) => `
+            <article class="home-category-row">
+              <span class="home-category-rank">${index + 1}</span>
+              <div class="home-category-main">
+                <div class="home-category-title u-ellipsis">${escapeHtml(item.label)}</div>
+                <div class="home-category-meta u-ellipsis">${escapeHtml(item.shareText || "")} · ${escapeHtml(String(item.count || 0))} giao dịch</div>
+              </div>
+              <strong class="home-category-value u-money"${titleAttr(item.totalText || "0đ")}>${escapeHtml(item.totalText || "0đ")}</strong>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderRecentSection(block = {}) {
+  const sectionEl = byId("homeRecentSection");
+  if (!sectionEl) return;
+
+  const items = Array.isArray(block?.items) ? block.items : [];
+  sectionEl.innerHTML = `
+    <div class="home-section-head home-section-head-split">
+      <div class="home-section-head-copy">
+        <h2 class="home-section-title">${escapeHtml(t("glossary.recentTransactions", "Giao dịch gần đây"))}</h2>
+        <p class="home-section-subtitle">${escapeHtml(t("home.recentMeta", "7 ngày gần nhất trong tháng này."))}</p>
+      </div>
+      <a class="btn btn-sm btn-outline-secondary home-section-head-action" data-route-link href="#expenses">${escapeHtml(t("glossary.openLedger", "Mở chi tiêu"))}</a>
+    </div>
+    ${
+      items.length
+        ? `<div class="home-recent-list">${items
+            .map(
+              (row) => `
+                <article class="home-today-row" data-home-recent-id="${escapeHtml(row.id)}">
+                  <div class="home-today-main">
+                    <div class="home-today-title u-ellipsis">${escapeHtml(row.title)}</div>
+                    <div class="home-today-meta u-ellipsis">${escapeHtml([row.dateLabel, row.categoryLabel, row.accountLabel].filter(Boolean).join(" · "))}</div>
+                  </div>
+                  <strong class="home-today-amount u-money ${escapeHtml(row.amountClass)}"${titleAttr(row.amountText)}>${escapeHtml(row.amountText)}</strong>
+                </article>
+              `
+            )
+            .join("")}</div>`
+        : `<div class="home-empty-inline">
+            <strong>${escapeHtml(block?.emptyTitle || "")}</strong>
+            <div>${escapeHtml(block?.emptyBody || "")}</div>
+          </div>`
+    }
+  `;
+}
+
 function renderDailyFlowSection(block = {}, accountFilter = {}) {
   const titleEl = byId("homeDailyFlowTitle");
   const metaEl = byId("homeDailyFlowMeta");
@@ -362,5 +503,8 @@ export function renderHomeRoute(vm = {}) {
   renderTodayHeadings(vm?.todayLedger || {});
   renderTodaySection(vm?.todayLedger || {});
   renderMonthBar(byId("homeMonthBar"), vm?.monthBar || []);
+  renderTopCategoriesSection(vm?.categoryBreakdown || {});
+  renderRecentSection(vm?.recentTransactions || {});
+  renderMomSection(vm?.momComparison || {});
   renderDailyFlowSection(vm?.dailyFlow || {}, vm?.accountFilter || {});
 }

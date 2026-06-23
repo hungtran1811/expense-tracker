@@ -1375,6 +1375,144 @@ textarea,
   background: transparent;
 }
 
+.home-insights-section {
+  padding: 18px 20px !important;
+  border: 1px solid var(--line) !important;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.home-category-list,
+.home-recent-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.home-category-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 6.75rem);
+  gap: 10px 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+}
+
+.home-category-main {
+  min-width: 0;
+}
+
+.home-category-rank {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--brand-strong);
+}
+
+.home-category-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.home-category-meta {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.home-category-value {
+  justify-self: end;
+  text-align: right;
+  font-weight: 800;
+  font-size: clamp(0.78rem, 2.8vw, 0.92rem);
+}
+
+.home-mom-grid,
+.reports-mom-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.home-mom-card,
+.reports-mom-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.home-mom-label,
+.reports-mom-label {
+  font-size: 0.82rem;
+  color: var(--text-muted, #64748b);
+}
+
+.home-mom-current,
+.reports-mom-current {
+  font-size: 1rem;
+}
+
+.home-mom-previous,
+.reports-mom-previous {
+  font-size: 0.82rem;
+  color: var(--text-muted, #64748b);
+}
+
+.home-mom-delta,
+.reports-mom-delta {
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.home-mom-delta.tone-up,
+.reports-mom-delta.tone-up {
+  color: #d64545;
+}
+
+.home-mom-delta.tone-down,
+.reports-mom-delta.tone-down {
+  color: #1f9d63;
+}
+
+.home-mom-section[open] .home-daily-chevron,
+.home-daily-section[open] .home-daily-chevron {
+  transform: rotate(180deg);
+}
+
+.reports-mom-section {
+  margin-bottom: 14px;
+}
+
+.report-chart-item-drill,
+.report-account-card-drill {
+  cursor: pointer;
+}
+
+.report-chart-item-drill:hover,
+.report-account-card-drill:hover {
+  background: rgba(36, 92, 255, 0.04);
+}
+
+@media (max-width: 767px) {
+  .home-mom-grid,
+  .reports-mom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .reports-main-grid {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
@@ -4387,6 +4525,25 @@ body.app-v2 .report-summary-card {
   margin-bottom: 12px;
 }
 
+.home-section-head-split {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-section-head-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.home-section-head-action {
+  flex-shrink: 0;
+  align-self: flex-start;
+  max-width: 42%;
+  white-space: nowrap;
+}
+
 .home-section-title {
   margin: 0;
   font-size: 1.02rem;
@@ -4509,6 +4666,13 @@ body.app-v2 .report-summary-card {
   margin-top: 12px;
   padding: 0;
   overflow: hidden;
+  border: 1px solid var(--line) !important;
+}
+
+.home-mom-section {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line) !important;
 }
 
 .home-daily-summary {
@@ -4881,9 +5045,10 @@ body.app-v2 .report-summary-card {
 
 .home-today-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 6.75rem);
   gap: 8px 12px;
   align-items: center;
+  min-width: 0;
   padding: 12px 14px;
   border-radius: 14px;
   border: 1px solid var(--line);
@@ -4913,8 +5078,9 @@ body.app-v2 .report-summary-card {
 }
 
 .home-today-amount {
+  justify-self: end;
   font-weight: 800;
-  font-size: 0.95rem;
+  font-size: clamp(0.78rem, 2.8vw, 0.95rem);
   text-align: right;
 }
 
@@ -5064,6 +5230,26 @@ body.app-v2 .report-summary-card {
   .home-accounts-grid,
   .home-month-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-insights-section {
+    padding: 16px !important;
+  }
+
+  .home-section-head-split {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .home-section-head-action {
+    max-width: 100%;
+  }
+
+  .home-category-row,
+  .home-today-row {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 5.5rem);
+    padding: 11px 12px;
+    gap: 8px 10px;
   }
 
   .home-category-layout {

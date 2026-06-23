@@ -15,6 +15,7 @@ import { buildLoansVm } from "../loans/loans.controller.js";
 import {
   buildDailyFlow,
   buildDefaultReportFilters,
+  buildCategoryBreakdown,
 } from "../reports/reports.controller.js";
 
 const WEEKDAY_LABELS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
@@ -156,6 +157,7 @@ export function buildHomeVm({
   loanTransactions = [],
   loansDataLoaded = true,
   includeDailyFlow = true,
+  includeMomComparison = false,
   accountId = "all",
 } = {}) {
   const normalizedMonth = String(monthKey || getCurrentYm()).trim() || getCurrentYm();
@@ -299,6 +301,33 @@ export function buildHomeVm({
     },
   ];
 
+  const expenseTotal = Number(currentSummary.expenseTotal || 0);
+  const categoryItems = buildCategoryBreakdown(filteredMonthTransactions, expenseTotal).slice(0, 3);
+
+  const recentCutoffDate = (() => {
+    const anchor = new Date(`${todayKey}T12:00:00`);
+    anchor.setDate(anchor.getDate() - 6);
+    return toDateInputValue(anchor);
+  })();
+  const recentFinanceVm = buildFinanceVm({
+    month: normalizedMonth,
+    accounts,
+    transactions: filteredMonthTransactions.filter((transaction) => {
+      const dateKey = toDateInputValue(transaction?.occurredAt);
+      return dateKey && dateKey >= recentCutoffDate && dateKey <= todayKey;
+    }),
+    expenseScopes,
+    filters: {
+      preset: "month",
+      accountId: accountFilterId,
+      type: "all",
+      categoryKey: "all",
+      scopeId: "all",
+      date: todayKey,
+      search: "",
+    },
+  });
+
   return {
     hero: buildHeroContext(normalizedMonth),
     monthKey: normalizedMonth,
@@ -308,7 +337,27 @@ export function buildHomeVm({
     accountHighlights,
     todayLedger,
     monthBar,
-    momComparison: buildMomComparison(currentSummary, previousSummary),
+    categoryBreakdown: {
+      items: categoryItems,
+      emptyTitle: t("home.noCategory", "Chưa có danh mục chi"),
+      emptyBody: t("home.noCategoryBody", "Danh mục chi sẽ hiện khi bạn ghi khoản chi trong tháng."),
+    },
+    recentTransactions: {
+      items: (recentFinanceVm?.ledger?.rows || []).slice(0, 8),
+      emptyTitle: t("home.noRecent", "Chưa có giao dịch gần đây"),
+      emptyBody: t("home.noRecentBody", "Thêm khoản chi hoặc thu để bắt đầu theo dõi."),
+    },
+    momComparison: includeMomComparison
+      ? {
+          loadPending: false,
+          prevMonthLabel: formatMonthLabel(prevMonthKey),
+          items: buildMomComparison(currentSummary, previousSummary),
+        }
+      : {
+          loadPending: true,
+          emptyTitle: t("home.momLoadTitle", "So với tháng trước"),
+          emptyBody: t("home.momLoadBody", "Bấm để so sánh chi, thu và còn lại với tháng liền trước."),
+        },
     dailyFlow: includeDailyFlow
       ? {
           ...dailyFlowRaw,

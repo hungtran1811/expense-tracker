@@ -52,6 +52,11 @@ export function bindFinanceEvents(handlers = {}) {
       return;
     }
 
+    if (event.target.closest("#btnManageCreateAccount")) {
+      handlers.onOpenAccountPanel?.();
+      return;
+    }
+
     const presetButton = event.target.closest("[data-finance-preset]");
     if (presetButton) {
       handlers.onChangePreset?.(presetButton.getAttribute("data-finance-preset") || "today");

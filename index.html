@@ -175,6 +175,23 @@
 
               <section class="home-month-bar" id="homeMonthBar" aria-label="Tóm tắt tháng"></section>
 
+              <section class="card home-insights-section" id="homeTopCategoriesSection" aria-label="Top danh mục chi"></section>
+
+              <section class="card home-insights-section" id="homeRecentSection" aria-label="Giao dịch gần đây"></section>
+
+              <details class="card home-mom-section">
+                <summary class="home-daily-summary">
+                  <div class="home-daily-summary-copy">
+                    <h2 class="home-section-title mb-1" id="homeMomTitle">So với tháng trước</h2>
+                    <p class="home-section-subtitle" id="homeMomMeta">Chi, thu và còn lại so với tháng liền trước.</p>
+                  </div>
+                  <span class="home-daily-chevron" aria-hidden="true"><i class="bi bi-chevron-down"></i></span>
+                </summary>
+                <div class="home-daily-body">
+                  <div id="homeMomComparison"></div>
+                </div>
+              </details>
+
               <details class="card home-daily-section">
                 <summary class="home-daily-summary">
                   <div class="home-daily-summary-copy">
@@ -491,6 +508,7 @@
 
               <section class="reports-spotlight finance-overview-strip" id="reportsSummary" aria-label="Tóm tắt kỳ"></section>
               <div class="reports-spotlight-meta small text-muted" id="reportsSummaryMeta"></div>
+              <div id="reportsMomSection" class="reports-mom-section"></div>
 
               <section class="card reports-filter-section">
                 <div class="reports-filter-grid">

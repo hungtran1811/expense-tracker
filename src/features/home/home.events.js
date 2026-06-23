@@ -5,6 +5,17 @@ export function bindHomeEvents(handlers = {}) {
       return;
     }
 
+    if (event.target.closest("#btnLoadHomeMom")) {
+      handlers.onLoadMom?.();
+      return;
+    }
+
+    const recentRow = event.target.closest("[data-home-recent-id]");
+    if (recentRow) {
+      handlers.onEditTransaction?.(recentRow.getAttribute("data-home-recent-id") || "");
+      return;
+    }
+
     const filterChip = event.target.closest("[data-home-account-filter]");
     if (filterChip) {
       handlers.onChangeAccountFilter?.(filterChip.getAttribute("data-home-account-filter") || "all");
