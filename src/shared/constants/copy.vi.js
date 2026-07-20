@@ -44,7 +44,7 @@ export const copyVi = {
     expenseTab: "Chi tiêu",
     scopeGroup: "Nhóm chi",
     scopeGroupManage: "Thêm / sửa nhóm",
-    adjustment: "Sửa số dư",
+    adjustment: "Điều chỉnh",
     pickDate: "Chọn ngày",
     ledger: "Giao dịch",
     netBalance: "Còn lại",
@@ -180,15 +180,12 @@ export const copyVi = {
       createExpense: "Thêm khoản chi",
       createIncome: "Thêm khoản thu",
       createTransfer: "Thêm chuyển khoản",
-      createAdjustment: "Sửa số dư",
       editExpense: "Sửa khoản chi",
       editIncome: "Sửa khoản thu",
       editTransfer: "Sửa chuyển khoản",
-      editAdjustment: "Sửa số dư",
       expenseHint: "Khoản chi sẽ trừ trực tiếp vào số dư của tài khoản đã chọn.",
       incomeHint: "Khoản thu sẽ cộng trực tiếp vào số dư của tài khoản đã chọn.",
       transferHint: "Chuyển khoản chỉ đổi chỗ tiền giữa hai tài khoản, không tính vào thu hoặc chi.",
-      adjustmentHint: "Dùng khi cần chỉnh số dư cho khớp thực tế. Có thể nhập số dương hoặc âm.",
       shortcuts: {
         expense:
           "Phím tắt: C mở form chi nhanh (tab Tổng quan hoặc Chi tiêu) · / tìm trong sổ (tab Chi tiêu)",
@@ -203,7 +200,7 @@ export const copyVi = {
       createTitle: "Thêm tài khoản",
       editTitle: "Sửa tài khoản",
       createHint: "Số dư đầu kỳ chỉ nhập một lần khi tạo tài khoản.",
-      editHint: "Cập nhật tên, loại hoặc trạng thái mặc định. Để sửa số dư, dùng Sửa số dư.",
+      editHint: "Cập nhật tên, loại hoặc trạng thái mặc định.",
       createAction: "Tạo tài khoản",
       saveChanges: "Lưu thay đổi",
     },
@@ -211,7 +208,7 @@ export const copyVi = {
       expense: "Khoản chi",
       income: "Khoản thu",
       transfer: "Chuyển khoản",
-      adjustment: "Sửa số dư",
+      adjustment: "Điều chỉnh",
     },
     summary: {
       totalBalance: "Tổng số dư",
@@ -358,6 +355,8 @@ export const copyVi = {
     scopeCreateFail: "Không thể thêm nhóm chi.",
     scopeNotFound: "Không tìm thấy nhóm chi cần xóa.",
     scopePickRequired: "Vui lòng chọn nhóm chi.",
+    adjustmentRemoved:
+      "Tính năng sửa số dư đã được gỡ. Bạn có thể xóa giao dịch này nếu không cần.",
   },
 };
 

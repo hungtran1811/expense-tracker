@@ -174,7 +174,6 @@ const LEDGER_TRANSACTION_TYPES = new Set([
   "loan_repay",
 ]);
 const LEDGER_ACCOUNT_TYPES = new Set(["bank", "wallet", "cash", "savings", "other"]);
-const DEFAULT_EXPENSE_SCOPES = Object.freeze(["Tôi", "P102", "Mẹ", "Bo", "Nấm"]);
 
 function normalizeLedgerAccountType(value = "") {
   const text = String(value || "").trim();
@@ -521,39 +520,8 @@ function sortScopeBudgets(items = []) {
   });
 }
 
-async function ensureDefaultExpenseScopes(uid) {
-  const snap = await getDocs(colExpenseScopes(uid));
-  if (!snap.empty) {
-    return sortExpenseScopes(snap.docs.map((item) => mapExpenseScopeDoc({ id: item.id, ...item.data() })));
-  }
-
-  const batch = writeBatch(db);
-  DEFAULT_EXPENSE_SCOPES.forEach((name, index) => {
-    const ref = doc(colExpenseScopes(uid));
-    batch.set(ref, {
-      name,
-      nameLower: name.toLowerCase(),
-      sortOrder: index + 1,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
-  });
-  await batch.commit();
-
-  return DEFAULT_EXPENSE_SCOPES.map((name, index) => ({
-    id: `${index + 1}`,
-    name,
-    nameLower: name.toLowerCase(),
-    sortOrder: index + 1,
-    createdAt: Timestamp.now(),
-    updatedAt: Timestamp.now(),
-  }));
-}
-
 export async function listExpenseScopes(uid) {
-  const seeded = await ensureDefaultExpenseScopes(uid);
   const snap = await getDocs(colExpenseScopes(uid));
-  if (snap.empty) return seeded;
   return sortExpenseScopes(snap.docs.map((item) => mapExpenseScopeDoc({ id: item.id, ...item.data() })));
 }
 

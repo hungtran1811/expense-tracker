@@ -84,7 +84,7 @@ function getTransactionTitle(transaction) {
   if (type === "expense") return getFinanceCategoryLabel(transaction?.categoryKey);
   if (type === "income") return "Khoản thu";
   if (type === "transfer") return "Chuyển khoản nội bộ";
-  if (type === "adjustment") return "Sửa số dư";
+  if (type === "adjustment") return "Điều chỉnh";
   return "Giao dịch";
 }
 
@@ -414,10 +414,6 @@ export function sanitizeTransactionDraft(payload = {}) {
     if (!toAccountId) throw new Error("Vui lòng chọn tài khoản nhận.");
     if (toAccountId === accountId) throw new Error("Tài khoản chuyển và nhận phải khác nhau.");
     if (!(amount > 0)) throw new Error("Số tiền chuyển phải lớn hơn 0.");
-  } else if (type === "adjustment") {
-    if (!Number.isFinite(amount) || amount === 0) {
-      throw new Error("Sửa số dư cần số tiền khác 0.");
-    }
   } else if (!(amount > 0)) {
     throw new Error("Số tiền phải lớn hơn 0.");
   }

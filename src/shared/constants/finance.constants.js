@@ -30,7 +30,7 @@ export const TRANSACTION_TYPE_OPTIONS = Object.freeze([
 
 export const FINANCE_TRANSACTION_TYPE_OPTIONS = Object.freeze(
   TRANSACTION_TYPE_OPTIONS.filter((item) =>
-    ["expense", "income", "transfer", "adjustment"].includes(item.key)
+    ["expense", "income", "transfer"].includes(item.key)
   )
 );
 

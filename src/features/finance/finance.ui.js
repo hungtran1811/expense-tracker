@@ -191,7 +191,6 @@ function renderAccounts(container, accountsPanel = {}) {
                   ? ""
                   : `
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-account-action="edit" data-account-id="${escapeHtml(account.id)}">Sửa</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" data-account-action="adjustment" data-account-id="${escapeHtml(account.id)}">Sửa số dư</button>
                   `
               }
               <button type="button" class="btn btn-sm btn-outline-danger" data-account-action="remove" data-account-id="${escapeHtml(account.id)}">
@@ -453,13 +452,11 @@ export function renderFinanceComposer({
     expense: isEdit ? "finance.composer.editExpense" : "finance.composer.createExpense",
     income: isEdit ? "finance.composer.editIncome" : "finance.composer.createIncome",
     transfer: isEdit ? "finance.composer.editTransfer" : "finance.composer.createTransfer",
-    adjustment: isEdit ? "finance.composer.editAdjustment" : "finance.composer.createAdjustment",
   };
   const hintKeyMap = {
     expense: "finance.composer.expenseHint",
     income: "finance.composer.incomeHint",
     transfer: "finance.composer.transferHint",
-    adjustment: "finance.composer.adjustmentHint",
   };
 
   const titleEl = byId("financeComposerTitle");
@@ -534,10 +531,7 @@ export function renderFinanceAccountForm({ draft = {}, mode = "create" } = {}) {
   }
   if (hintEl) {
     hintEl.textContent = isEdit
-      ? t(
-          "finance.account.editHint",
-          "Cập nhật tên, loại hoặc trạng thái mặc định. Để sửa số dư, dùng Điều chỉnh."
-        )
+      ? t("finance.account.editHint", "Cập nhật tên, loại hoặc trạng thái mặc định.")
       : t("finance.account.createHint", "Số dư đầu kỳ chỉ nhập một lần khi tạo tài khoản.");
   }
   if (saveButton) {

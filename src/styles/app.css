@@ -110,9 +110,7 @@ h6,
 .ledger-entry-amount,
 .account-balance,
 .auth-title,
-.modal-title,
-body.app-v2 .finance-modal .form-control-lg,
-body.app-v2 #ftAmount {
+.modal-title {
   font-variant-numeric: tabular-nums;
 }
 
@@ -4333,15 +4331,7 @@ body.app-v2 .fab-quick-expense {
   box-shadow: 0 12px 28px rgba(79, 70, 229, 0.35);
 }
 
-body.app-v2 .finance-modal .form-control-lg,
-body.app-v2 #ftAmount {
-  font-size: 1.85rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
-body.app-v2 .finance-modal .form-control:focus,
-body.app-v2 #ftAmount:focus {
+body.app-v2 .finance-modal .form-control:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.14);
 }

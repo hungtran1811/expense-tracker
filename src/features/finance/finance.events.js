@@ -94,7 +94,6 @@ export function bindFinanceEvents(handlers = {}) {
       const action = accountAction.getAttribute("data-account-action") || "";
       const accountId = accountAction.getAttribute("data-account-id") || "";
       if (action === "edit") handlers.onEditAccount?.(accountId);
-      if (action === "adjustment") handlers.onOpenAdjustment?.(accountId);
       if (action === "remove") handlers.onRemoveAccount?.(accountId);
       return;
     }

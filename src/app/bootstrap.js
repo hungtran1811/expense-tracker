@@ -1263,12 +1263,24 @@ bindFinanceEvents({
   },
   onOpenComposer: (type) => {
     if (!ensureUser()) return;
-    openComposer(type);
+    const normalized = String(type || "expense").trim();
+    if (normalized === "adjustment") return;
+    openComposer(normalized);
   },
   onEditTransaction: (transactionId) => {
     if (!ensureUser()) return;
     const current = findTransactionById(transactionId);
     if (!current) return;
+    if (String(current.type || "").trim() === "adjustment") {
+      showToast(
+        t(
+          "toast.adjustmentRemoved",
+          "Tính năng sửa số dư đã được gỡ. Bạn có thể xóa giao dịch này nếu không cần."
+        ),
+        "info"
+      );
+      return;
+    }
     openComposer(current.type, { transactionId: current.id });
   },
   onDeleteTransaction: async (transactionId) => {
@@ -1382,10 +1394,6 @@ bindFinanceEvents({
     } finally {
       setGlobalLoading(false);
     }
-  },
-  onOpenAdjustment: (accountId) => {
-    if (!ensureUser()) return;
-    openComposer("adjustment", { presetAccountId: accountId });
   },
   onRemoveAccount: async (accountId) => {
     const uid = ensureUser();
