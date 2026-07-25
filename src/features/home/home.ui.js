@@ -1,7 +1,8 @@
-import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
+import { t } from "../../shared/constants/copy.vi.js";
 import { formatCurrency } from "../finance/finance.controller.js";
 
-const MONTH_BAR_KEYS = new Set(["income", "expense", "net", "debt"]);
+const MONTH_BAR_KEYS = new Set(["balance", "income", "expense", "net", "debt"]);
+const CHART_COLORS = ["#4f46e5", "#0d9488", "#7c8cff", "#d97706", "#e11d48"];
 
 function byId(id) {
   return document.getElementById(id);
@@ -30,9 +31,7 @@ function renderTop(vm = {}) {
 
 function renderAccountsHeadings() {
   const titleEl = byId("homeAccountsTitle");
-  const subtitleEl = byId("homeAccountsSubtitle");
-  if (titleEl) titleEl.textContent = t("home.accountsTitle", "Tài khoản");
-  if (subtitleEl) subtitleEl.textContent = t("home.accountsSubtitle", "Số dư từng ví");
+  if (titleEl) titleEl.textContent = t("home.accountsTitle", "Ví");
 }
 
 function renderAccountsGrid(container, accounts = []) {
@@ -43,7 +42,6 @@ function renderAccountsGrid(container, accounts = []) {
     container.innerHTML = `
       <div class="home-empty-inline" style="grid-column: 1 / -1;">
         <strong>${escapeHtml(t("home.noAccounts", "Chưa có tài khoản"))}</strong>
-        <div>${escapeHtml(t("home.noAccountsBody", "Thêm tài khoản ở tab Chi tiêu để theo dõi số dư."))}</div>
       </div>
     `;
     return;
@@ -53,7 +51,6 @@ function renderAccountsGrid(container, accounts = []) {
     .map(
       (card) => `
         <article class="home-account-card${card.isFiltered ? " is-filtered" : ""}">
-          <span class="home-account-type u-ellipsis">${escapeHtml(card.typeLabel || "Tài khoản")}</span>
           <strong class="home-account-balance u-money"${titleAttr(card.balanceTitle)}>${escapeHtml(card.balanceText || "0đ")}</strong>
           <div class="home-account-name-row">
             <span class="home-account-name u-ellipsis">${escapeHtml(card.name || "Không rõ")}</span>
@@ -66,38 +63,19 @@ function renderAccountsGrid(container, accounts = []) {
 }
 
 function renderAccountFilter(block = {}) {
-  const titleEl = byId("homeFilterTitle");
-  const subtitleEl = byId("homeFilterSubtitle");
   const railEl = byId("homeAccountFilter");
   const options = Array.isArray(block?.options) ? block.options : [];
   const selectedId = String(block?.accountId || "all").trim() || "all";
 
-  if (titleEl) titleEl.textContent = t("home.filterTitle", "Xem theo ví");
-  if (subtitleEl) {
-    subtitleEl.textContent =
-      selectedId === "all"
-        ? t("home.filterSubtitle", "Lọc thu chi hôm nay, tháng này và dòng tiền theo ngày.")
-        : formatTemplate(t("home.filterActiveSubtitle", "Đang xem dữ liệu của {{account}}."), {
-            account: String(block?.label || "").trim(),
-          });
-  }
-
   if (!railEl) return;
 
   if (!options.length) {
-    railEl.innerHTML = `
-      <div class="home-empty-inline">
-        <div>${escapeHtml(t("home.filterNoAccounts", "Thêm tài khoản để lọc theo ví."))}</div>
-      </div>
-    `;
+    railEl.innerHTML = "";
     return;
   }
 
   const chips = [
-    {
-      id: "all",
-      label: t("home.filterAll", "Tất cả ví"),
-    },
+    { id: "all", label: t("home.filterAll", "Tất cả") },
     ...options.map((item) => ({
       id: String(item?.id || "").trim(),
       label: String(item?.name || "").trim(),
@@ -122,21 +100,11 @@ function renderAccountFilter(block = {}) {
     .join("");
 }
 
-function renderTodayHeadings(block = {}) {
-  const titleEl = byId("homeTodayTitle");
-  const subtitleEl = byId("homeTodaySubtitle");
-  if (titleEl) titleEl.textContent = t("home.todayTitle", "Hôm nay");
-  if (subtitleEl) {
-    const base = t("home.todaySubtitle", "Các khoản thu và chi trong ngày");
-    const note = String(block?.filterNote || "").trim();
-    subtitleEl.textContent = note ? `${base} · ${note}` : base;
-  }
-}
-
 function renderTodaySection(block = {}) {
   const summaryEl = byId("homeTodaySummary");
   const listEl = byId("homeTodayList");
   const items = Array.isArray(block?.items) ? block.items : [];
+  const moreCount = Number(block?.moreCount || 0);
 
   if (summaryEl) {
     summaryEl.innerHTML = `
@@ -156,28 +124,33 @@ function renderTodaySection(block = {}) {
   if (!items.length) {
     listEl.innerHTML = `
       <div class="home-empty-inline">
-        <strong>${escapeHtml(block?.emptyTitle || "")}</strong>
-        <div>${escapeHtml(block?.emptyBody || "")}</div>
+        <strong>${escapeHtml(block?.emptyTitle || t("home.todayEmpty", "Chưa có thu chi"))}</strong>
       </div>
     `;
     return;
   }
 
-  listEl.innerHTML = items
-    .map((row) => {
-      const metaParts = [row.categoryLabel, row.accountLabel].filter(Boolean);
-      const meta = metaParts.join(" · ");
-      return `
-        <article class="home-today-row" data-home-today-id="${escapeHtml(row.id)}">
-          <div class="home-today-main">
-            <div class="home-today-title u-ellipsis">${escapeHtml(row.title)}</div>
-            <div class="home-today-meta u-ellipsis">${escapeHtml(meta)}</div>
-          </div>
-          <strong class="home-today-amount u-money ${escapeHtml(row.amountClass)}">${escapeHtml(row.amountText)}</strong>
-        </article>
-      `;
-    })
-    .join("");
+  listEl.innerHTML = `
+    ${items
+      .map((row) => {
+        const meta = [row.categoryLabel, row.accountLabel].filter(Boolean).join(" · ");
+        return `
+          <article class="home-today-row" data-home-today-id="${escapeHtml(row.id)}">
+            <div class="home-today-main">
+              <div class="home-today-title u-ellipsis">${escapeHtml(row.title)}</div>
+              <div class="home-today-meta u-ellipsis">${escapeHtml(meta)}</div>
+            </div>
+            <strong class="home-today-amount u-money ${escapeHtml(row.amountClass)}">${escapeHtml(row.amountText)}</strong>
+          </article>
+        `;
+      })
+      .join("")}
+    ${
+      moreCount > 0
+        ? `<a class="home-today-more" data-route-link href="#expenses">+${moreCount} giao dịch</a>`
+        : ""
+    }
+  `;
 }
 
 function renderMonthBar(container, items = []) {
@@ -190,7 +163,6 @@ function renderMonthBar(container, items = []) {
       const body = `
         <span class="home-month-label u-ellipsis">${escapeHtml(item.label)}</span>
         <strong class="home-month-value u-money"${titleAttr(item.valueTitle)}>${escapeHtml(item.valueText)}</strong>
-        ${item.note ? `<span class="home-month-note u-ellipsis">${escapeHtml(item.note)}</span>` : ""}
       `;
       const link = String(item?.link || "").trim();
       if (link) {
@@ -205,122 +177,154 @@ function renderMonthBar(container, items = []) {
     .join("");
 }
 
-const WEEKDAY_SHORT = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+function buildDonutMarkup(items = [], centerValue = "") {
+  const colored = items.slice(0, 5).map((item, index) => ({
+    ...item,
+    chartColor: CHART_COLORS[index % CHART_COLORS.length],
+  }));
+  const circumference = 2 * Math.PI * 54;
+  let offset = 0;
 
-function parseDailyDateParts(dateKey = "") {
-  const parts = String(dateKey || "").trim().split("-").map(Number);
-  if (parts.length !== 3 || parts.some((value) => !Number.isFinite(value))) {
-    return { day: "--", weekday: "" };
-  }
+  const segments = colored
+    .map((item) => {
+      const share = Math.max(0, Number(item?.share || 0));
+      const length = (share / 100) * circumference;
+      const segment = `
+        <circle
+          cx="70" cy="70" r="54" fill="none"
+          stroke="${escapeHtml(item.chartColor)}"
+          stroke-width="16"
+          stroke-linecap="butt"
+          stroke-dasharray="${length} ${circumference - length}"
+          stroke-dashoffset="${-offset}"
+          transform="rotate(-90 70 70)"
+        ></circle>
+      `;
+      offset += length;
+      return segment;
+    })
+    .join("");
 
-  const [year, month, day] = parts;
-  const date = new Date(year, month - 1, day);
-  return {
-    day,
-    weekday: WEEKDAY_SHORT[date.getDay()] || "",
-  };
-}
-
-function hasDailyActivity(item = {}) {
-  return !!(item.income || item.expense || item.net || item.transfer);
-}
-
-function renderHomeDailyFlow(container, block = {}) {
-  if (!container) return;
-
-  if (block?.loadPending) {
-    container.innerHTML = `
-      <div class="workspace-load-prompt workspace-load-prompt-inline">
-        <strong>${escapeHtml(block?.emptyTitle || t("home.dailyFlowLoadTitle", "Dòng tiền theo ngày"))}</strong>
-        <p>${escapeHtml(block?.emptyBody || t("home.dailyFlowLoadBody", "Bấm để xem biến động từng ngày trong tháng — không tải tự động."))}</p>
-        <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoadHomeDailyFlow">
-          ${escapeHtml(t("home.dailyFlowLoadAction", "Xem dòng tiền"))}
-        </button>
+  return `
+    <div class="home-donut-shell">
+      <svg class="home-donut-chart" viewBox="0 0 140 140" aria-hidden="true">
+        <circle cx="70" cy="70" r="54" fill="none" stroke="rgba(79, 70, 229, 0.12)" stroke-width="16"></circle>
+        ${segments}
+      </svg>
+      <div class="home-donut-center">
+        <strong>${escapeHtml(centerValue || "—")}</strong>
       </div>
-    `;
-    return;
-  }
+    </div>
+  `;
+}
 
-  const items = (Array.isArray(block?.items) ? block.items : [])
-    .filter(hasDailyActivity)
-    .slice()
-    .reverse();
+function renderCategoryChart(container, block = {}) {
+  if (!container) return;
+  const items = Array.isArray(block?.items) ? block.items : [];
 
   if (!items.length) {
     container.innerHTML = `
-      <div class="home-empty-inline">
-        <strong>${escapeHtml(block?.emptyTitle || t("home.dailyFlowEmpty", "Chưa có dòng tiền tháng này"))}</strong>
-        <div>${escapeHtml(block?.emptyBody || t("home.dailyFlowEmptyBody", "Ghi thu hoặc chi để theo dõi biến động từng ngày."))}</div>
+      <div class="home-empty-inline home-empty-chart">
+        <strong>${escapeHtml(block?.emptyTitle || t("home.noCategory", "Chưa có chi"))}</strong>
       </div>
     `;
     return;
   }
 
-  const totals = items.reduce(
-    (acc, item) => {
-      acc.income += Number(item.income || 0);
-      acc.expense += Number(item.expense || 0);
-      acc.net += Number(item.net || 0);
-      return acc;
-    },
-    { income: 0, expense: 0, net: 0 }
-  );
-  const netClass = totals.net >= 0 ? "positive" : "negative";
-  const netPrefix = totals.net >= 0 ? "+" : "-";
-  const totalIncomeText = formatCurrency(totals.income);
-  const totalExpenseText = formatCurrency(totals.expense);
-  const totalNetText = `${netPrefix}${formatCurrency(Math.abs(totals.net))}`;
+  const colored = items.map((item, index) => ({
+    ...item,
+    chartColor: CHART_COLORS[index % CHART_COLORS.length],
+  }));
+  const center = colored[0]?.shareText || "—";
 
   container.innerHTML = `
-    <div class="home-daily-overview" aria-label="Tổng các ngày có giao dịch">
-      <article class="home-daily-overview-card tone-income">
-        <span class="home-daily-overview-label">${escapeHtml(t("home.todayIncome", "Thu"))}</span>
-        <strong class="home-daily-overview-value u-money">${escapeHtml(totalIncomeText)}</strong>
-      </article>
-      <article class="home-daily-overview-card tone-expense">
-        <span class="home-daily-overview-label">${escapeHtml(t("home.todayExpense", "Chi"))}</span>
-        <strong class="home-daily-overview-value u-money">${escapeHtml(totalExpenseText)}</strong>
-      </article>
-      <article class="home-daily-overview-card tone-net ${escapeHtml(netClass)}">
-        <span class="home-daily-overview-label">${escapeHtml(t("home.dailyFlowNetLabel", "Ròng"))}</span>
-        <strong class="home-daily-overview-value u-money">${escapeHtml(totalNetText)}</strong>
-      </article>
+    <div class="home-category-chart">
+      ${buildDonutMarkup(colored, center)}
+      <div class="home-category-legend">
+        ${colored
+          .map(
+            (item) => `
+              <div class="home-category-legend-row">
+                <span class="home-category-swatch" style="background:${escapeHtml(item.chartColor)}"></span>
+                <span class="home-category-legend-label u-ellipsis">${escapeHtml(item.label)}</span>
+                <strong class="home-category-legend-value u-money">${escapeHtml(item.totalText || "0đ")}</strong>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
     </div>
-    <div class="home-daily-list">
-      ${items
-        .map((item) => {
-          const dateParts = parseDailyDateParts(item.dateKey);
-          const netTone = escapeHtml(item.netClass || "positive");
-          const incomeChip =
-            Number(item.income || 0) > 0
-              ? `<span class="home-daily-chip income">${escapeHtml(t("home.todayIncome", "Thu"))} <strong class="u-money">${escapeHtml(item.incomeText)}</strong></span>`
-              : "";
-          const expenseChip =
-            Number(item.expense || 0) > 0
-              ? `<span class="home-daily-chip expense">${escapeHtml(t("home.todayExpense", "Chi"))} <strong class="u-money">${escapeHtml(item.expenseText)}</strong></span>`
-              : "";
-          const transferNote =
-            Number(item.transfer || 0) > 0
-              ? `<div class="home-daily-transfer">Chuyển khoản <span class="u-money">${escapeHtml(item.transferText)}</span></div>`
-              : "";
+  `;
+}
 
+function renderSpendChart(container, dailyFlow = {}, metaEl = null) {
+  if (!container) return;
+  const items = Array.isArray(dailyFlow?.items) ? dailyFlow.items : [];
+  const recent = items.slice(-14);
+  const maxExpense = recent.reduce((acc, item) => Math.max(acc, Number(item?.expense || 0)), 0);
+
+  if (metaEl) {
+    metaEl.textContent = maxExpense > 0 ? formatCurrency(maxExpense) : "";
+  }
+
+  if (!recent.length || !(maxExpense > 0)) {
+    container.innerHTML = `
+      <div class="home-empty-inline home-empty-chart">
+        <strong>${escapeHtml(dailyFlow?.emptyTitle || t("home.dailyFlowEmpty", "Chưa có chi"))}</strong>
+      </div>
+    `;
+    return;
+  }
+
+  const safeMax = maxExpense || 1;
+  container.innerHTML = `
+    <div class="home-spend-chart" role="img" aria-label="Chi theo ngày">
+      ${recent
+        .map((item) => {
+          const expense = Number(item?.expense || 0);
+          const height = Math.max(expense > 0 ? 8 : 0, Math.round((expense / safeMax) * 100));
+          const day = String(item?.dateKey || "").slice(-2);
           return `
-            <article class="home-daily-row">
-              <div class="home-daily-date-col" aria-hidden="true">
-                <span class="home-daily-day">${escapeHtml(dateParts.day)}</span>
-                <span class="home-daily-weekday">${escapeHtml(dateParts.weekday)}</span>
+            <div class="home-spend-col" title="${escapeHtml(item.dateLabel || day)}: ${escapeHtml(item.expenseText || "0đ")}">
+              <span class="home-spend-bar" style="height:${height}%"></span>
+              <em class="home-spend-day">${escapeHtml(day)}</em>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderRecentSection(block = {}) {
+  const titleEl = byId("homeRecentTitle");
+  if (titleEl) titleEl.textContent = t("home.recentTitle", "Giao dịch gần đây");
+
+  const listEl = byId("homeRecentList");
+  if (!listEl) return;
+
+  const items = Array.isArray(block?.items) ? block.items : [];
+  if (!items.length) {
+    listEl.innerHTML = `
+      <div class="home-empty-inline">
+        <strong>${escapeHtml(block?.emptyTitle || t("home.noRecent", "Chưa có giao dịch gần đây"))}</strong>
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = `
+    <div class="home-recent-list">
+      ${items
+        .map((row) => {
+          const meta = [row.dateLabel, row.categoryLabel, row.accountLabel].filter(Boolean).join(" · ");
+          return `
+            <article class="home-today-row" data-home-recent-id="${escapeHtml(row.id)}">
+              <div class="home-today-main">
+                <div class="home-today-title u-ellipsis">${escapeHtml(row.title)}</div>
+                <div class="home-today-meta u-ellipsis">${escapeHtml(meta)}</div>
               </div>
-              <div class="home-daily-flow-main">
-                <div class="home-daily-metrics">
-                  ${incomeChip}
-                  ${expenseChip}
-                </div>
-                ${transferNote}
-              </div>
-              <div class="home-daily-net-col ${netTone}">
-                <span class="home-daily-net-label">${escapeHtml(t("home.dailyFlowNetLabel", "Ròng"))}</span>
-                <strong class="home-daily-net-value u-money"${titleAttr(item.netText)}>${escapeHtml(item.netText)}</strong>
-              </div>
+              <strong class="home-today-amount u-money ${escapeHtml(row.amountClass)}">${escapeHtml(row.amountText)}</strong>
             </article>
           `;
         })
@@ -329,182 +333,20 @@ function renderHomeDailyFlow(container, block = {}) {
   `;
 }
 
-function renderMomComparison(container, block = {}) {
-  if (!container) return;
-
-  if (block?.loadPending) {
-    container.innerHTML = `
-      <div class="workspace-load-prompt workspace-load-prompt-inline">
-        <strong>${escapeHtml(block?.emptyTitle || t("home.momLoadTitle", "So với tháng trước"))}</strong>
-        <p>${escapeHtml(block?.emptyBody || t("home.momLoadBody", "Bấm để so sánh chi, thu và còn lại với tháng liền trước."))}</p>
-        <button type="button" class="btn btn-sm btn-outline-primary" id="btnLoadHomeMom">
-          ${escapeHtml(t("home.momLoadAction", "Xem so với tháng trước"))}
-        </button>
-      </div>
-    `;
-    return;
-  }
-
-  const items = Array.isArray(block?.items) ? block.items : [];
-  if (!items.length) {
-    container.innerHTML = `
-      <div class="home-empty-inline">
-        <strong>${escapeHtml(t("home.noMonthSummary", "Chưa có tóm tắt tháng."))}</strong>
-      </div>
-    `;
-    return;
-  }
-
-  const note = String(block?.prevMonthLabel || "").trim();
-  container.innerHTML = `
-    ${note ? `<p class="home-mom-note small text-muted">${escapeHtml(formatTemplate(t("home.momCompareNote", "So với {{month}}"), { month: note }))}</p>` : ""}
-    <div class="home-mom-grid">
-      ${items
-        .map(
-          (item) => `
-            <article class="home-mom-card tone-${escapeHtml(item.key || "net")}">
-              <span class="home-mom-label">${escapeHtml(item.label)}</span>
-              <strong class="home-mom-current u-money"${titleAttr(item.currentTitle)}>${escapeHtml(item.currentText)}</strong>
-              <span class="home-mom-previous">Tháng trước <span class="u-money"${titleAttr(item.previousTitle)}>${escapeHtml(item.previousText)}</span></span>
-              <span class="home-mom-delta tone-${escapeHtml(item.deltaTone || "up")}">${escapeHtml(item.deltaText || "0%")}</span>
-            </article>
-          `
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function renderMomSection(block = {}) {
-  const titleEl = byId("homeMomTitle");
-  const metaEl = byId("homeMomMeta");
-  if (titleEl) titleEl.textContent = t("home.momTitle", "So với tháng trước");
-  if (metaEl) {
-    metaEl.textContent = block?.loadPending
-      ? t("home.momLoadMeta", "Tải khi cần — không quét tháng trước tự động.")
-      : t("home.momMeta", "Chi, thu và còn lại so với tháng liền trước.");
-  }
-  renderMomComparison(byId("homeMomComparison"), block);
-}
-
-function renderTopCategoriesSection(block = {}) {
-  const sectionEl = byId("homeTopCategoriesSection");
-  if (!sectionEl) return;
-
-  const items = Array.isArray(block?.items) ? block.items : [];
-  const headHtml = `
-    <div class="home-section-head home-section-head-split">
-      <div class="home-section-head-copy">
-        <h2 class="home-section-title">${escapeHtml(t("glossary.topCategories", "Top danh mục chi"))}</h2>
-        <p class="home-section-subtitle">${escapeHtml(t("home.topCategoriesMeta", "Tháng này — từ cache hiện tại."))}</p>
-      </div>
-      <a class="btn btn-sm btn-outline-secondary home-section-head-action" data-route-link href="#reports">${escapeHtml(t("glossary.fullReport", "Báo cáo"))}</a>
-    </div>
-  `;
-
-  if (!items.length) {
-    sectionEl.innerHTML = `
-      ${headHtml}
-      <div class="home-empty-inline">
-        <strong>${escapeHtml(block?.emptyTitle || "")}</strong>
-        <div>${escapeHtml(block?.emptyBody || "")}</div>
-      </div>
-    `;
-    return;
-  }
-
-  sectionEl.innerHTML = `
-    ${headHtml}
-    <div class="home-category-list">
-      ${items
-        .map(
-          (item, index) => `
-            <article class="home-category-row">
-              <span class="home-category-rank">${index + 1}</span>
-              <div class="home-category-main">
-                <div class="home-category-title u-ellipsis">${escapeHtml(item.label)}</div>
-                <div class="home-category-meta u-ellipsis">${escapeHtml(item.shareText || "")} · ${escapeHtml(String(item.count || 0))} giao dịch</div>
-              </div>
-              <strong class="home-category-value u-money"${titleAttr(item.totalText || "0đ")}>${escapeHtml(item.totalText || "0đ")}</strong>
-            </article>
-          `
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function renderRecentSection(block = {}) {
-  const sectionEl = byId("homeRecentSection");
-  if (!sectionEl) return;
-
-  const items = Array.isArray(block?.items) ? block.items : [];
-  sectionEl.innerHTML = `
-    <div class="home-section-head home-section-head-split">
-      <div class="home-section-head-copy">
-        <h2 class="home-section-title">${escapeHtml(t("glossary.recentTransactions", "Giao dịch gần đây"))}</h2>
-        <p class="home-section-subtitle">${escapeHtml(t("home.recentMeta", "7 ngày gần nhất trong tháng này."))}</p>
-      </div>
-      <a class="btn btn-sm btn-outline-secondary home-section-head-action" data-route-link href="#expenses">${escapeHtml(t("glossary.openLedger", "Mở chi tiêu"))}</a>
-    </div>
-    ${
-      items.length
-        ? `<div class="home-recent-list">${items
-            .map(
-              (row) => `
-                <article class="home-today-row" data-home-recent-id="${escapeHtml(row.id)}">
-                  <div class="home-today-main">
-                    <div class="home-today-title u-ellipsis">${escapeHtml(row.title)}</div>
-                    <div class="home-today-meta u-ellipsis">${escapeHtml([row.dateLabel, row.categoryLabel, row.accountLabel].filter(Boolean).join(" · "))}</div>
-                  </div>
-                  <strong class="home-today-amount u-money ${escapeHtml(row.amountClass)}"${titleAttr(row.amountText)}>${escapeHtml(row.amountText)}</strong>
-                </article>
-              `
-            )
-            .join("")}</div>`
-        : `<div class="home-empty-inline">
-            <strong>${escapeHtml(block?.emptyTitle || "")}</strong>
-            <div>${escapeHtml(block?.emptyBody || "")}</div>
-          </div>`
-    }
-  `;
-}
-
-function renderDailyFlowSection(block = {}, accountFilter = {}) {
-  const titleEl = byId("homeDailyFlowTitle");
-  const metaEl = byId("homeDailyFlowMeta");
-  const countEl = byId("homeDailyFlowCount");
-  const activeCount = (Array.isArray(block?.items) ? block.items : []).filter(hasDailyActivity).length;
-  const filterId = String(accountFilter?.accountId || "all").trim() || "all";
-  const filterLabel = String(accountFilter?.label || "").trim();
-
-  if (titleEl) titleEl.textContent = t("home.dailyFlowTitle", "Dòng tiền theo ngày");
-  if (metaEl) {
-    const base = t("home.dailyFlowMeta", "Tháng này — ngày có giao dịch, mới nhất lên trên.");
-    metaEl.textContent =
-      filterId !== "all" && filterLabel
-        ? `${base} · ${formatTemplate(t("home.filterActiveNote", "Đang lọc theo {{account}}"), { account: filterLabel })}`
-        : base;
-  }
-  if (countEl) {
-    const countText = formatTemplate(t("home.dailyFlowDayCount", "{{count}} ngày"), { count: activeCount });
-    countEl.textContent = countText;
-    countEl.classList.toggle("d-none", block?.loadPending || activeCount <= 0);
-  }
-
-  renderHomeDailyFlow(byId("homeDailyFlow"), block);
-}
-
 export function renderHomeRoute(vm = {}) {
   renderTop(vm);
+  renderMonthBar(byId("homeMonthBar"), vm?.monthBar || []);
+  renderAccountFilter(vm?.accountFilter || {});
+  renderCategoryChart(byId("homeCategoryChart"), vm?.categoryBreakdown || {});
+  renderSpendChart(byId("homeSpendChart"), vm?.dailyFlow || {}, byId("homeSpendChartMeta"));
+
+  const categoryTitle = byId("homeCategoryChartTitle");
+  if (categoryTitle) categoryTitle.textContent = t("home.categoryChartTitle", "Chi theo danh mục");
+  const spendTitle = byId("homeSpendChartTitle");
+  if (spendTitle) spendTitle.textContent = t("home.spendChartTitle", "Chi theo ngày");
+
   renderAccountsHeadings();
   renderAccountsGrid(byId("homeAccountsGrid"), vm?.accountHighlights || []);
-  renderAccountFilter(vm?.accountFilter || {});
-  renderTodayHeadings(vm?.todayLedger || {});
   renderTodaySection(vm?.todayLedger || {});
-  renderMonthBar(byId("homeMonthBar"), vm?.monthBar || []);
-  renderTopCategoriesSection(vm?.categoryBreakdown || {});
   renderRecentSection(vm?.recentTransactions || {});
-  renderMomSection(vm?.momComparison || {});
-  renderDailyFlowSection(vm?.dailyFlow || {}, vm?.accountFilter || {});
 }

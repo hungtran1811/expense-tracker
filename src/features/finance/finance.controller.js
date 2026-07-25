@@ -1,12 +1,13 @@
 import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
 import {
   ACCOUNT_TYPE_OPTIONS,
-  FINANCE_CATEGORIES,
   FINANCE_TRANSACTION_TYPE_OPTIONS,
   getAccountTypeLabel,
+  getExpenseCategoryOptions,
   getFinanceCategoryLabel,
   getTransactionTypeLabel,
 } from "../../shared/constants/finance.constants.js";
+import { isFinanceTransactionType } from "../../shared/utils/finance.shared.js";
 
 function toDate(value) {
   if (!value) return null;
@@ -45,10 +46,6 @@ function buildScopeMap(expenseScopes = []) {
   return new Map(
     (Array.isArray(expenseScopes) ? expenseScopes : []).map((item) => [String(item?.id || "").trim(), item])
   );
-}
-
-function isFinanceTransactionType(type = "") {
-  return ["expense", "income", "transfer", "adjustment"].includes(String(type || "").trim());
 }
 
 function sortTransactions(items = []) {
@@ -360,7 +357,7 @@ export function getYmFromDateInput(value = "") {
 export function sanitizeAccountDraft(payload = {}) {
   const name = String(payload?.name || "").trim();
   const type = String(payload?.type || "bank").trim();
-  const openingBalance = Number(payload?.openingBalance || 0);
+  const openingBalance = Math.round(Number(payload?.openingBalance || 0));
   const isDefault = !!payload?.isDefault;
 
   if (!name) throw new Error("Vui lòng nhập tên tài khoản.");
@@ -396,7 +393,7 @@ export function sanitizeAccountEditDraft(payload = {}) {
 export function sanitizeTransactionDraft(payload = {}) {
   const id = String(payload?.id || "").trim();
   const type = String(payload?.type || "expense").trim();
-  const amount = Number(payload?.amount || 0);
+  const amount = Math.round(Number(payload?.amount || 0));
   const occurredAt = String(payload?.occurredAt || "").trim();
   const accountId = String(payload?.accountId || "").trim();
   const toAccountId = String(payload?.toAccountId || "").trim();
@@ -481,6 +478,7 @@ export function buildFinanceVm({
   accounts = [],
   transactions = [],
   expenseScopes = [],
+  expenseCategories = [],
   filters = {},
 } = {}) {
   const normalizedFilters = normalizeFinanceFilters(filters);
@@ -488,6 +486,7 @@ export function buildFinanceVm({
   const orderedAccounts = sortAccounts(accounts);
   const accountMap = buildAccountMap(orderedAccounts);
   const scopeMap = buildScopeMap(expenseScopes);
+  const categoryOptions = getExpenseCategoryOptions(expenseCategories);
   const orderedTransactions = sortTransactions(transactions).filter((transaction) =>
     isFinanceTransactionType(transaction?.type)
   );
@@ -557,11 +556,15 @@ export function buildFinanceVm({
   const activeAccounts = orderedAccounts.filter((item) => String(item?.status || "active") !== "archived");
   const archivedAccounts = orderedAccounts.filter((item) => String(item?.status || "active") === "archived");
   const scopeUsageMap = new Map();
+  const categoryUsageMap = new Map();
   filteredTransactions.forEach((transaction) => {
     if (String(transaction?.type || "").trim() !== "expense") return;
     const scopeId = String(transaction?.scopeId || "").trim();
-    if (!scopeId) return;
-    scopeUsageMap.set(scopeId, (scopeUsageMap.get(scopeId) || 0) + 1);
+    if (scopeId) scopeUsageMap.set(scopeId, (scopeUsageMap.get(scopeId) || 0) + 1);
+    const categoryKey = String(transaction?.categoryKey || "").trim();
+    if (categoryKey) {
+      categoryUsageMap.set(categoryKey, (categoryUsageMap.get(categoryKey) || 0) + 1);
+    }
   });
 
   return {
@@ -569,7 +572,7 @@ export function buildFinanceVm({
     monthLabel: formatMonthLabel(month),
     filters: normalizedFilters,
     range: financeRange,
-    categories: FINANCE_CATEGORIES,
+    categories: categoryOptions,
     transactionTypes: FINANCE_TRANSACTION_TYPE_OPTIONS,
     accounts: orderedAccounts,
     activeAccounts,
@@ -595,7 +598,7 @@ export function buildFinanceVm({
     filtersMeta: {
       accountOptions: activeAccounts.map((item) => ({ value: item.id, label: item.name })),
       typeOptions: FINANCE_TRANSACTION_TYPE_OPTIONS,
-      categoryOptions: FINANCE_CATEGORIES,
+      categoryOptions,
       scopeOptions: (Array.isArray(expenseScopes) ? expenseScopes : []).map((item) => ({
         value: item.id,
         label: item.name,
@@ -661,6 +664,27 @@ export function buildFinanceVm({
       emptyTitle: "Chưa có nhóm chi nào",
       emptyBody: "Thêm nhóm chi để tách khoản cá nhân, gia đình hoặc mục đích.",
     },
+    categoryPanel: {
+      count: Array.isArray(expenseCategories) ? expenseCategories.length : 0,
+      summaryText: `${Array.isArray(expenseCategories) ? expenseCategories.length : 0} danh mục`,
+      items: (Array.isArray(expenseCategories) ? expenseCategories : [])
+        .filter((item) => !String(item?.parentId || "").trim())
+        .map((category) => {
+          const key = String(category.key || category.id).trim();
+          return {
+            id: category.id,
+            key,
+            name: category.name,
+            usageCount:
+              Number(categoryUsageMap.get(key) || 0) +
+              Number(categoryUsageMap.get(String(category.id || "").trim()) || 0) +
+              Number(categoryUsageMap.get(String(category.legacyKey || "").trim()) || 0),
+            canDelete: (Array.isArray(expenseCategories) ? expenseCategories.length : 0) > 1,
+          };
+        }),
+      emptyTitle: "Chưa có danh mục nào",
+      emptyBody: "Thêm danh mục để phân loại khoản chi chi tiết hơn.",
+    },
   };
 }
 
@@ -683,4 +707,50 @@ export function buildCsvContent(vm = {}) {
   });
 
   return lines.join("\n");
+}
+
+export function buildScopeBudgetPanel({
+  expenseScopes = [],
+  scopeBudgets = [],
+  monthTransactions = [],
+  monthKey = getCurrentYm(),
+} = {}) {
+  const budgetByScope = new Map(
+    (Array.isArray(scopeBudgets) ? scopeBudgets : []).map((item) => [
+      String(item?.scopeId || "").trim(),
+      item,
+    ])
+  );
+  const spentByScope = new Map();
+  (Array.isArray(monthTransactions) ? monthTransactions : []).forEach((transaction) => {
+    if (String(transaction?.type || "").trim() !== "expense") return;
+    const scopeId = String(transaction?.scopeId || "").trim();
+    if (!scopeId) return;
+    spentByScope.set(scopeId, Number(spentByScope.get(scopeId) || 0) + Math.abs(Number(transaction?.amount || 0)));
+  });
+
+  const items = (Array.isArray(expenseScopes) ? expenseScopes : []).map((scope) => {
+    const scopeId = String(scope?.id || "").trim();
+    const budget = budgetByScope.get(scopeId) || null;
+    const spent = Number(spentByScope.get(scopeId) || 0);
+    const limitAmount = Number(budget?.limitAmount || 0);
+    return {
+      scopeId,
+      name: String(scope?.name || "").trim(),
+      budgetId: String(budget?.id || "").trim(),
+      limitAmount,
+      limitText: limitAmount > 0 ? formatCurrency(limitAmount) : "",
+      spent,
+      spentText: formatCurrency(spent),
+      overBudget: limitAmount > 0 && spent > limitAmount,
+    };
+  });
+
+  return {
+    monthKey: String(monthKey || getCurrentYm()).trim(),
+    monthLabel: formatMonthLabel(monthKey),
+    items,
+    emptyTitle: "Chưa có nhóm chi",
+    emptyBody: "Thêm nhóm chi trước khi đặt ngân sách tháng.",
+  };
 }

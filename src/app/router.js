@@ -92,7 +92,7 @@ function renderRoute(rawHash = "") {
   updateTopbar(id);
 
   window.dispatchEvent(
-    new CustomEvent("nexus:route-changed", {
+    new CustomEvent("htf:route-changed", {
       detail: { routeId: id, expensesView: parsed.expensesView },
     })
   );

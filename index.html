@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hung Tran Finance</title>
     <meta name="theme-color" content="#4f46e5" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Hung Tran Finance" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/img/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/img/brand-mark.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -55,9 +59,10 @@
             <i class="bi bi-journal-text"></i>
             <span>Chi tiêu</span>
           </a>
-          <a class="workspace-tab" data-route-link href="#loans">
+          <a class="workspace-tab" data-route-link href="#loans" id="loansNavDesktop">
             <i class="bi bi-people"></i>
             <span>Cho mượn</span>
+            <span class="nav-route-badge d-none" data-loans-badge aria-hidden="true">0</span>
           </a>
           <a class="workspace-tab" data-route-link href="#reports">
             <i class="bi bi-bar-chart-line"></i>
@@ -126,7 +131,7 @@
           </section>
 
           <section id="home" class="route active">
-            <div class="home-shell" id="homeShell">
+            <div class="home-shell home-shell-exec" id="homeShell">
               <header class="home-top" id="homeTop">
                 <div class="home-top-copy">
                   <h1 class="home-title" id="homeTitle">Tổng quan</h1>
@@ -148,67 +153,79 @@
                 </div>
               </header>
 
-              <section class="card home-accounts-section">
-                <div class="home-section-head">
-                  <h2 class="home-section-title" id="homeAccountsTitle">Tài khoản</h2>
-                  <p class="home-section-subtitle" id="homeAccountsSubtitle">Số dư từng ví</p>
+              <section class="home-month-bar" id="homeMonthBar" aria-label="Chỉ số tháng"></section>
+
+              <div class="home-filter-rail-wrap" id="homeFilterSection">
+                <span class="visually-hidden" id="homeFilterTitle">Xem theo ví</span>
+                <span class="visually-hidden" id="homeFilterSubtitle"></span>
+                <div class="home-account-filter-rail" id="homeAccountFilter" role="tablist" aria-label="Lọc theo tài khoản"></div>
+              </div>
+
+              <section class="home-insight-grid" id="homeInsightGrid" aria-label="Biểu đồ tháng">
+                <article class="card home-insight-card" id="homeCategoryChartCard">
+                  <div class="home-insight-head">
+                    <h2 class="home-insight-title" id="homeCategoryChartTitle">Chi theo danh mục</h2>
+                    <a class="home-insight-link" data-route-link href="#reports">Chi tiết</a>
+                  </div>
+                  <div class="home-insight-body" id="homeCategoryChart"></div>
+                </article>
+                <article class="card home-insight-card" id="homeSpendChartCard">
+                  <div class="home-insight-head">
+                    <h2 class="home-insight-title" id="homeSpendChartTitle">Chi theo ngày</h2>
+                    <span class="home-insight-meta" id="homeSpendChartMeta"></span>
+                  </div>
+                  <div class="home-insight-body" id="homeSpendChart"></div>
+                </article>
+              </section>
+
+              <section class="card home-accounts-section home-accounts-compact">
+                <div class="home-section-head home-section-head-tight">
+                  <h2 class="home-section-title" id="homeAccountsTitle">Ví</h2>
+                  <p class="home-section-subtitle visually-hidden" id="homeAccountsSubtitle">Số dư từng ví</p>
                 </div>
                 <div class="home-accounts-grid" id="homeAccountsGrid"></div>
               </section>
 
-              <section class="card home-filter-section">
-                <div class="home-section-head">
-                  <h2 class="home-section-title" id="homeFilterTitle">Xem theo ví</h2>
-                  <p class="home-section-subtitle" id="homeFilterSubtitle">Lọc thu chi hôm nay, tháng này và dòng tiền theo ngày.</p>
-                </div>
-                <div class="home-account-filter-rail" id="homeAccountFilter" role="tablist" aria-label="Lọc theo tài khoản"></div>
-              </section>
-
-              <section class="card home-today-section">
-                <div class="home-section-head">
-                  <h2 class="home-section-title" id="homeTodayTitle">Hôm nay</h2>
-                  <p class="home-section-subtitle" id="homeTodaySubtitle"></p>
+              <section class="card home-today-section home-today-compact">
+                <div class="home-section-head home-section-head-tight home-section-head-split">
+                  <div>
+                    <h2 class="home-section-title" id="homeTodayTitle">Hôm nay</h2>
+                    <p class="home-section-subtitle visually-hidden" id="homeTodaySubtitle"></p>
+                  </div>
+                  <a class="home-insight-link" data-route-link href="#expenses">Sổ giao dịch</a>
                 </div>
                 <div class="home-today-summary" id="homeTodaySummary"></div>
                 <div class="home-today-list" id="homeTodayList"></div>
               </section>
 
-              <section class="home-month-bar" id="homeMonthBar" aria-label="Tóm tắt tháng"></section>
-
-              <section class="card home-insights-section" id="homeTopCategoriesSection" aria-label="Top danh mục chi"></section>
-
-              <section class="card home-insights-section" id="homeRecentSection" aria-label="Giao dịch gần đây"></section>
-
-              <details class="card home-mom-section">
-                <summary class="home-daily-summary">
-                  <div class="home-daily-summary-copy">
-                    <h2 class="home-section-title mb-1" id="homeMomTitle">So với tháng trước</h2>
-                    <p class="home-section-subtitle" id="homeMomMeta">Chi, thu và còn lại so với tháng liền trước.</p>
+              <section class="card home-recent-section home-recent-compact" id="homeRecentSection">
+                <div class="home-section-head home-section-head-tight home-section-head-split">
+                  <div>
+                    <h2 class="home-section-title" id="homeRecentTitle">Giao dịch gần đây</h2>
+                    <p class="home-section-subtitle visually-hidden" id="homeRecentMeta"></p>
                   </div>
-                  <span class="home-daily-chevron" aria-hidden="true"><i class="bi bi-chevron-down"></i></span>
-                </summary>
-                <div class="home-daily-body">
-                  <div id="homeMomComparison"></div>
+                  <a class="home-insight-link" data-route-link href="#expenses">Sổ giao dịch</a>
                 </div>
-              </details>
+                <div id="homeRecentList"></div>
+              </section>
 
-              <details class="card home-daily-section">
-                <summary class="home-daily-summary">
-                  <div class="home-daily-summary-copy">
-                    <h2 class="home-section-title mb-1" id="homeDailyFlowTitle">Dòng tiền theo ngày</h2>
-                    <p class="home-section-subtitle" id="homeDailyFlowMeta">Tháng này — ngày có giao dịch, mới nhất lên trên.</p>
+              <section class="card home-savings-section home-savings-compact" id="homeSavingsSection" aria-label="Mục tiêu tiết kiệm">
+                <div class="home-section-head home-section-head-tight home-section-head-split">
+                  <div>
+                    <h2 class="home-section-title" id="savingsGoalsTitle">Tiết kiệm</h2>
+                    <p class="home-section-subtitle visually-hidden" id="savingsGoalsSubtitle">Theo dõi tiến độ thủ công.</p>
                   </div>
-                  <span class="home-daily-count d-none" id="homeDailyFlowCount" aria-hidden="true"></span>
-                  <span class="home-daily-chevron" aria-hidden="true"><i class="bi bi-chevron-down"></i></span>
-                </summary>
-                <div class="home-daily-body">
-                  <div id="homeDailyFlow"></div>
+                  <button type="button" class="btn btn-outline-primary btn-sm" id="btnOpenSavingsGoalPanel">
+                    Thêm
+                  </button>
                 </div>
-              </details>
+                <div id="savingsGoalsList" class="savings-goals-list"></div>
+              </section>
             </div>
           </section>
 
             <section id="expenses" class="route">
+              <div class="expenses-shell">
               <nav id="expensesSubnav" class="expenses-subnav" aria-label="Chi tiêu">
                 <a class="expenses-subnav-btn" data-route-link data-expenses-tab="ledger" href="#expenses">Giao dịch</a>
                 <a class="expenses-subnav-btn" data-route-link data-expenses-tab="manage" href="#expenses/manage">Quản lý</a>
@@ -425,7 +442,67 @@
                       Thêm nhóm
                     </button>
                   </div>
+                  <div class="scope-budgets-block" id="scopeBudgetsBlock">
+                    <div class="finance-section-head scope-budgets-head">
+                      <div>
+                        <h3 class="finance-section-title scope-budgets-title">Ngân sách tháng</h3>
+                        <div class="small text-muted" id="scopeBudgetsHint">Giới hạn chi theo nhóm cho tháng đang xem.</div>
+                      </div>
+                      <span class="finance-section-meta" id="scopeBudgetsMonthLabel"></span>
+                    </div>
+                    <div id="scopeBudgetsList"></div>
+                  </div>
                 </section>
+
+                <section class="card finance-manage-card" id="expenseCategoriesSection">
+                  <div class="finance-section-head">
+                    <div>
+                      <h2 class="finance-section-title">Danh mục chi</h2>
+                      <div class="small text-muted" id="expenseCategoriesHint">
+                        Phân loại khoản chi (Ăn uống, Di chuyển…). Sau này có thể thêm danh mục con.
+                      </div>
+                    </div>
+                    <span class="finance-section-meta" id="expenseCategoriesSummary">0 danh mục</span>
+                  </div>
+                  <div id="expenseCategoriesList"></div>
+                  <div class="scope-create-row">
+                    <input
+                      class="form-control form-control-sm"
+                      id="expenseCategoryName"
+                      placeholder="Ví dụ: Siêu thị, Pet, Du lịch"
+                    />
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btnCreateExpenseCategory">
+                      Thêm danh mục
+                    </button>
+                  </div>
+                </section>
+
+                <section class="card finance-manage-card" id="recurringRulesSection">
+                  <div class="finance-section-head">
+                    <div>
+                      <h2 class="finance-section-title" id="recurringRulesTitle">Định kỳ</h2>
+                      <div class="small text-muted" id="recurringRulesHint">
+                        Mẫu chi/thu theo ngày trong tháng — bấm Tạo hôm nay để ghi sổ.
+                      </div>
+                    </div>
+                    <span class="finance-section-meta" id="recurringRulesSummary">0 mẫu</span>
+                  </div>
+                  <div id="recurringRulesList"></div>
+                  <div class="recurring-create-grid">
+                    <select class="form-select form-select-sm" id="rrType" aria-label="Loại">
+                      <option value="expense">Chi</option>
+                      <option value="income">Thu</option>
+                    </select>
+                    <input class="form-control form-control-sm" id="rrAmount" type="number" min="1" step="1000" placeholder="Số tiền" />
+                    <input class="form-control form-control-sm" id="rrDayOfMonth" type="number" min="1" max="28" placeholder="Ngày" value="1" />
+                    <select class="form-select form-select-sm" id="rrCategory" aria-label="Danh mục"></select>
+                    <select class="form-select form-select-sm" id="rrScopeId" aria-label="Nhóm chi"></select>
+                    <select class="form-select form-select-sm" id="rrAccountId" aria-label="Tài khoản"></select>
+                    <input class="form-control form-control-sm" id="rrNote" placeholder="Ghi chú" />
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btnCreateRecurringRule">Thêm mẫu</button>
+                  </div>
+                </section>
+              </div>
               </div>
           </section>
 
@@ -486,27 +563,15 @@
           </section>
 
           <section id="reports" class="route">
-            <div class="reports-shell">
+            <div class="reports-shell reports-shell-exec">
               <header class="reports-top">
                 <div class="reports-top-copy">
                   <h1 class="reports-title" id="reportsPageTitle">Báo cáo</h1>
-                  <p class="reports-subtitle u-ellipsis" id="reportsWorkspaceInfo">Phân tích chi tiêu theo kỳ bạn chọn.</p>
-                </div>
-                <div class="reports-preset-rail" id="reportsPresetRail" aria-label="Chọn kỳ nhanh">
-                  <button type="button" class="reports-preset-btn" data-report-preset="current-month" id="reportPresetCurrentMonth">
-                    Tháng này
-                  </button>
-                  <button type="button" class="reports-preset-btn" data-report-preset="previous-month" id="reportPresetPreviousMonth">
-                    Tháng trước
-                  </button>
+                  <p class="reports-subtitle u-ellipsis" id="reportsWorkspaceInfo"></p>
                 </div>
               </header>
 
-              <section class="reports-spotlight finance-overview-strip" id="reportsSummary" aria-label="Tóm tắt kỳ"></section>
-              <div class="reports-spotlight-meta small text-muted" id="reportsSummaryMeta"></div>
-              <div id="reportsMomSection" class="reports-mom-section"></div>
-
-              <section class="card reports-filter-section">
+              <section class="card reports-filter-section reports-filter-compact">
                 <div class="reports-filter-grid">
                   <div
                     class="filter-control filter-control-date filter-control-pill"
@@ -574,6 +639,12 @@
                   </div>
 
                   <div class="reports-filter-actions">
+                    <button class="btn btn-outline-secondary btn-sm" id="btnExportReportCsv" type="button" disabled>
+                      CSV
+                    </button>
+                    <button class="btn btn-outline-primary btn-sm d-none" id="btnAiReportInsights" type="button" hidden disabled aria-hidden="true">
+                      Tóm tắt AI
+                    </button>
                     <button class="btn btn-primary btn-sm" id="btnApplyReportFilters">Áp dụng</button>
                     <button class="btn btn-outline-secondary btn-sm" id="btnResetReportFilters">Đặt lại</button>
                   </div>
@@ -584,74 +655,163 @@
                 <div id="reportsLoadPrompt" class="reports-load-prompt"></div>
               </section>
 
-              <section class="reports-insights-section">
-                <section class="card reports-panel reports-panel-compact">
-                  <div class="reports-section-head">
-                    <div>
-                      <h2 class="finance-section-title" id="reportCashSnapshotTitle">Số dư hiện tại</h2>
-                      <div class="small text-muted" id="reportCashSnapshotMeta"></div>
-                    </div>
-                  </div>
-                  <div class="report-cash-strip" id="reportCashSnapshot"></div>
-                </section>
+              <section class="reports-spotlight finance-overview-strip" id="reportsSummary" aria-label="Tóm tắt kỳ"></section>
+              <div class="reports-spotlight-meta small text-muted" id="reportsSummaryMeta"></div>
+              <div id="reportsMomSection" class="reports-mom-section"></div>
 
-                <section class="card reports-panel reports-panel-compact">
-                  <div class="reports-section-head">
-                    <div>
-                      <h2 class="finance-section-title" id="reportQuickSignalsTitle">Tóm tắt kỳ</h2>
-                      <div class="small text-muted" id="reportQuickSignalsMeta"></div>
-                    </div>
-                  </div>
-                  <div id="reportQuickSignals"></div>
-                </section>
-              </section>
-
-              <section class="card reports-panel reports-panel-wide reports-attention-section">
+              <section class="card reports-panel reports-ai-panel d-none" id="reportsAiInsightsPanel" hidden aria-hidden="true">
                 <div class="reports-section-head">
                   <div>
-                    <h2 class="finance-section-title" id="reportAttentionTitle">Điểm đáng lưu ý</h2>
-                    <div class="small text-muted" id="reportAttentionMeta"></div>
+                    <h2 class="finance-section-title" id="reportsAiInsightsTitle">Tóm tắt AI</h2>
+                    <div class="small text-muted" id="reportsAiInsightsMeta"></div>
                   </div>
                 </div>
-                <div id="reportAttentionItems"></div>
+                <div class="reports-ai-insights-body" id="reportsAiInsightsBody"></div>
               </section>
 
               <div class="reports-drivers-section">
                 <section class="card reports-panel reports-panel-compact">
-                  <div class="reports-section-head">
+                  <div class="reports-section-head reports-section-head-tight">
                     <div>
-                      <h2 class="finance-section-title" id="reportCategoryBreakdownTitle">Danh mục chi lớn</h2>
-                      <div class="small text-muted" id="reportCategoryBreakdownMeta">Nhìn theo tỷ trọng chi.</div>
+                      <h2 class="finance-section-title" id="reportCategoryBreakdownTitle">Danh mục chi</h2>
+                      <div class="small text-muted visually-hidden" id="reportCategoryBreakdownMeta"></div>
                     </div>
                   </div>
                   <div id="reportCategoryBreakdown"></div>
                 </section>
 
                 <section class="card reports-panel reports-panel-compact">
-                  <div class="reports-section-head">
+                  <div class="reports-section-head reports-section-head-tight">
                     <div>
-                      <h2 class="finance-section-title" id="reportScopeBreakdownTitle">Nhóm chi lớn</h2>
-                      <div class="small text-muted" id="reportScopeBreakdownMeta"></div>
+                      <h2 class="finance-section-title" id="reportScopeBreakdownTitle">Nhóm chi</h2>
+                      <div class="small text-muted visually-hidden" id="reportScopeBreakdownMeta"></div>
                     </div>
                   </div>
                   <div id="reportScopeBreakdown"></div>
                 </section>
               </div>
 
-              <section class="card reports-panel reports-panel-wide reports-accounts-section">
-                <div class="reports-section-head">
+              <section class="card reports-panel reports-panel-wide" id="reportDailyFlowSection">
+                <div class="reports-section-head reports-section-head-tight home-section-head-split">
                   <div>
-                    <h2 class="finance-section-title" id="reportAccountBreakdownTitle">Tài khoản</h2>
-                    <div class="small text-muted" id="reportAccountBreakdownMeta">Dòng vào, ra và số dư.</div>
+                    <h2 class="finance-section-title" id="reportDailyFlowTitle">Chi theo ngày</h2>
+                    <div class="small text-muted visually-hidden" id="reportDailyFlowMeta"></div>
+                  </div>
+                  <span class="home-insight-meta" id="reportDailyFlowPeak"></span>
+                </div>
+                <div id="reportDailyFlow"></div>
+              </section>
+
+              <section class="reports-insights-section">
+                <section class="card reports-panel reports-panel-compact">
+                  <div class="reports-section-head reports-section-head-tight">
+                    <div>
+                      <h2 class="finance-section-title" id="reportCashSnapshotTitle">Số dư ví</h2>
+                      <div class="small text-muted visually-hidden" id="reportCashSnapshotMeta"></div>
+                    </div>
+                  </div>
+                  <div class="report-cash-strip" id="reportCashSnapshot"></div>
+                </section>
+
+                <section class="card reports-panel reports-panel-compact">
+                  <div class="reports-section-head reports-section-head-tight">
+                    <div>
+                      <h2 class="finance-section-title" id="reportQuickSignalsTitle">Điểm nổi bật</h2>
+                      <div class="small text-muted visually-hidden" id="reportQuickSignalsMeta"></div>
+                    </div>
+                  </div>
+                  <div id="reportQuickSignals"></div>
+                </section>
+              </section>
+
+              <section class="card reports-panel reports-panel-wide reports-accounts-section">
+                <div class="reports-section-head reports-section-head-tight">
+                  <div>
+                    <h2 class="finance-section-title" id="reportAccountBreakdownTitle">Biến động tài khoản</h2>
+                    <div class="small text-muted visually-hidden" id="reportAccountBreakdownMeta"></div>
                   </div>
                 </div>
                 <div id="reportAccountBreakdown"></div>
+              </section>
+
+              <section class="card reports-panel reports-panel-wide reports-attention-section reports-attention-compact">
+                <div class="reports-section-head reports-section-head-tight">
+                  <div>
+                    <h2 class="finance-section-title" id="reportAttentionTitle">Khoản lớn nhất</h2>
+                    <div class="small text-muted visually-hidden" id="reportAttentionMeta"></div>
+                  </div>
+                </div>
+                <div id="reportAttentionItems"></div>
               </section>
 
             </div>
           </section>
         </div>
       </main>
+    </div>
+
+    <div class="modal fade finance-modal" id="globalSearchPanel" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title" id="globalSearchTitle">Tìm kiếm</h5>
+              <div class="small text-muted" id="globalSearchHint">Ghi chú, người mượn hoặc số tiền</div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+          </div>
+          <div class="modal-body">
+            <label class="form-label visually-hidden" for="globalSearch">Từ khóa</label>
+            <input
+              class="form-control"
+              id="globalSearch"
+              type="search"
+              autocomplete="off"
+              placeholder="Tìm ghi chú, tên, số tiền…"
+            />
+            <div id="globalSearchResults" class="global-search-results mt-3"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade finance-modal" id="savingsGoalPanel" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-md modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title" id="savingsGoalTitle">Thêm mục tiêu</h5>
+              <div class="small text-muted" id="savingsGoalHint">Đặt mục tiêu tiết kiệm và cập nhật tiến độ thủ công.</div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="sgId" />
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label" for="sgName">Tên mục tiêu</label>
+                <input class="form-control" id="sgName" placeholder="Ví dụ: Quỹ du lịch, Mua máy mới..." />
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="sgTargetAmount">Số mục tiêu</label>
+                <input class="form-control" id="sgTargetAmount" type="number" min="1" step="1000" placeholder="0" />
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="sgCurrentAmount">Đã tiết kiệm</label>
+                <input class="form-control" id="sgCurrentAmount" type="number" min="0" step="1000" value="0" />
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="sgNote">Ghi chú</label>
+                <textarea class="form-control" id="sgNote" rows="2" placeholder="Ghi chú thêm nếu cần."></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+            <button class="btn btn-primary" id="btnSaveSavingsGoal">Lưu mục tiêu</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="modal fade finance-modal" id="financeComposerPanel" tabindex="-1" aria-hidden="true">
@@ -690,7 +850,7 @@
 
               <div class="col-12 col-md-6">
                 <label class="form-label" for="ftAmount">Số tiền</label>
-                <input class="form-control" id="ftAmount" type="number" step="0.01" />
+                <input class="form-control" id="ftAmount" type="number" step="1" />
               </div>
 
               <div class="col-12 col-md-6">
@@ -793,7 +953,7 @@
 
               <div class="col-12 col-md-6">
                 <label class="form-label" for="leAmount">Số tiền</label>
-                <input class="form-control" id="leAmount" type="number" step="0.01" />
+                <input class="form-control" id="leAmount" type="number" step="1" />
               </div>
 
               <div class="col-12 col-md-6" id="leInterestRateWrap">
@@ -854,7 +1014,7 @@
 
               <div class="col-12" id="faOpeningBalanceWrap">
                 <label class="form-label" for="faOpeningBalance">Số dư đầu kỳ</label>
-                <input class="form-control" id="faOpeningBalance" type="number" step="0.01" value="0" />
+                <input class="form-control" id="faOpeningBalance" type="number" step="1" value="0" />
               </div>
 
               <div class="col-12">
@@ -928,6 +1088,61 @@
       </div>
     </div>
 
+    <div class="modal fade finance-modal" id="financeCategoryPanel" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-md modal-fullscreen-sm-down">
+        <div class="modal-content">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title" id="financeCategoryTitle">Danh mục chi</h5>
+              <div class="small text-muted" id="financeCategoryHint">
+                Cập nhật tên hoặc chuyển dữ liệu sang danh mục khác trước khi xóa.
+              </div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="fcMode" />
+            <input type="hidden" id="fcId" />
+
+            <div class="row g-3">
+              <div class="col-12 d-none" id="fcCurrentWrap">
+                <label class="form-label" for="fcCurrentName">Danh mục hiện tại</label>
+                <input class="form-control" id="fcCurrentName" type="text" readonly />
+              </div>
+
+              <div class="col-12 d-none" id="fcNameWrap">
+                <label class="form-label" for="fcName">Tên danh mục</label>
+                <input class="form-control" id="fcName" type="text" placeholder="Ví dụ: Siêu thị, Pet, Du lịch" />
+              </div>
+
+              <div class="col-12 d-none" id="fcReplacementWrap">
+                <label class="form-label" for="fcReplacementCategoryId">Chuyển dữ liệu sang</label>
+                <select class="form-select" id="fcReplacementCategoryId"></select>
+                <div class="form-text" id="fcReplacementHint">
+                  Nếu danh mục này đã có giao dịch, dữ liệu sẽ được chuyển sang danh mục bạn chọn.
+                </div>
+              </div>
+
+              <div class="col-12 d-none" id="fcDeleteNoticeWrap">
+                <div class="composer-notice-card">
+                  <div class="composer-notice-head">
+                    <strong>Xóa danh mục</strong>
+                  </div>
+                  <div class="composer-notice-note" id="fcDeleteNotice">
+                    Hành động này sẽ xóa danh mục đang chọn sau khi chuyển dữ liệu liên quan.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Đóng</button>
+            <button class="btn btn-primary" id="btnSaveExpenseCategory">Lưu</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="appLoading" aria-live="polite" aria-hidden="true">
       <div class="loading-card d-flex align-items-center gap-2">
         <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
@@ -957,9 +1172,10 @@
         <span class="mobile-nav-label-long">Chi tiêu</span>
         <span class="mobile-nav-label-short">Chi</span>
       </a>
-      <a class="mobile-nav-item" data-route-link href="#loans">
+      <a class="mobile-nav-item" data-route-link href="#loans" id="loansNavMobile">
         <i class="bi bi-people"></i>
         <span>Cho mượn</span>
+        <span class="nav-route-badge d-none" data-loans-badge aria-hidden="true">0</span>
       </a>
       <a class="mobile-nav-item" data-route-link href="#reports">
         <i class="bi bi-bar-chart-line"></i>

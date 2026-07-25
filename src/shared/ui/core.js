@@ -9,29 +9,8 @@ export function mustGet(id) {
 }
 
 export function getMonthValue() {
-  const sel = document.getElementById("monthFilter");
-  if (sel && sel.value) return sel.value;
-
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
-export function initMonthFilter() {
-  const sel = document.getElementById("monthFilter");
-  if (!sel || sel.options.length) return;
-
-  const now = new Date();
-  const options = [];
-
-  for (let i = 0; i < 12; i += 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const label = `Tháng ${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-    options.push(new Option(label, ym));
-  }
-
-  options.forEach((opt) => sel.add(opt));
-  sel.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export function showToast(msg, type = "success") {

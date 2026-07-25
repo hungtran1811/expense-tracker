@@ -193,7 +193,7 @@ export function sanitizeLoanEntryDraft(payload = {}) {
   const loanPartyId = String(payload?.loanPartyId || "").trim();
   const accountId = String(payload?.accountId || "").trim();
   const occurredAt = String(payload?.occurredAt || "").trim();
-  const amount = Number(payload?.amount || 0);
+  const amount = Math.round(Number(payload?.amount || 0));
   const interestRate = Number(payload?.interestRate || 0);
   const note = String(payload?.note || "").trim();
 
@@ -290,6 +290,8 @@ export function buildLoansVm({
         outstanding: 0,
         txCount: 0,
         lastActivityAt: null,
+        lastLendAt: null,
+        lastRepayAt: null,
       },
     ])
   );
@@ -300,6 +302,7 @@ export function buildLoansVm({
 
     const stats = partyStats.get(partyId);
     const amount = Math.abs(Number(transaction?.amount || 0));
+    const currentTime = toDate(transaction?.occurredAt)?.getTime() || 0;
     if (String(transaction?.type || "").trim() === "loan_lend") {
       const interestAmount = getLoanInterestAmount(transaction);
       const receivableAmount = amount + interestAmount;
@@ -307,22 +310,40 @@ export function buildLoansVm({
       stats.interestTotal += interestAmount;
       stats.receivableTotal += receivableAmount;
       stats.outstanding += receivableAmount;
+      const previousLend = toDate(stats.lastLendAt)?.getTime() || 0;
+      if (currentTime >= previousLend) {
+        stats.lastLendAt = transaction?.occurredAt || null;
+      }
     } else {
       stats.repayTotal += amount;
       stats.outstanding -= amount;
+      const previousRepay = toDate(stats.lastRepayAt)?.getTime() || 0;
+      if (currentTime >= previousRepay) {
+        stats.lastRepayAt = transaction?.occurredAt || null;
+      }
     }
 
     stats.txCount += 1;
-    const currentTime = toDate(transaction?.occurredAt)?.getTime() || 0;
     const previousTime = toDate(stats.lastActivityAt)?.getTime() || 0;
     if (currentTime >= previousTime) {
       stats.lastActivityAt = transaction?.occurredAt || null;
     }
   });
 
+  const reminderMs = 30 * 24 * 60 * 60 * 1000;
+  const nowMs = Date.now();
+
   const partyItems = orderedParties
     .map((party) => {
       const stats = partyStats.get(String(party?.id || "").trim()) || {};
+      const outstanding = Math.max(0, Number(stats.outstanding || 0));
+      const lastLendMs = toDate(stats.lastLendAt)?.getTime() || 0;
+      const lastRepayMs = toDate(stats.lastRepayAt)?.getTime() || 0;
+      const needsReminder =
+        outstanding > 0 &&
+        lastLendMs > 0 &&
+        nowMs - lastLendMs >= reminderMs &&
+        lastRepayMs < lastLendMs;
       return {
         id: String(party?.id || "").trim(),
         name: String(party?.name || "").trim(),
@@ -331,14 +352,16 @@ export function buildLoansVm({
         interestTotal: Number(stats.interestTotal || 0),
         receivableTotal: Number(stats.receivableTotal || 0),
         repayTotal: Number(stats.repayTotal || 0),
-        outstanding: Math.max(0, Number(stats.outstanding || 0)),
+        outstanding,
         txCount: Number(stats.txCount || 0),
         lastActivityAt: stats.lastActivityAt || null,
+        lastLendAt: stats.lastLendAt || null,
+        needsReminder,
         lendTotalText: formatCurrency(stats.lendTotal || 0),
         interestTotalText: formatCurrency(stats.interestTotal || 0),
         receivableTotalText: formatCurrency(stats.receivableTotal || 0),
         repayTotalText: formatCurrency(stats.repayTotal || 0),
-        outstandingText: formatCurrency(Math.max(0, Number(stats.outstanding || 0))),
+        outstandingText: formatCurrency(outstanding),
         lastActivityLabel: stats.lastActivityAt ? formatDateLabel(stats.lastActivityAt) : "Chưa có giao dịch",
         canDelete: Number(stats.txCount || 0) === 0,
         metaItems: [
@@ -346,6 +369,7 @@ export function buildLoansVm({
           ...(Number(stats.interestTotal || 0) > 0 ? [`Lãi ${formatCurrency(stats.interestTotal || 0)}`] : []),
           `Đã trả ${formatCurrency(stats.repayTotal || 0)}`,
           stats.lastActivityAt ? formatDateLabel(stats.lastActivityAt) : "Chưa có giao dịch",
+          ...(needsReminder ? ["Cần nhắc"] : []),
         ],
       };
     })

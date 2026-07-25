@@ -11,10 +11,13 @@ import {
   syncBrandUI,
 } from "../shared/ui/core.js";
 import { bindFilterControls, syncFilterControls } from "../shared/ui/filterControls.js";
-import { t } from "../shared/constants/copy.vi.js";
+import { formatTemplate, t } from "../shared/constants/copy.vi.js";
+import { migrateLegacyStorageKeys } from "../shared/constants/keys.js";
+import { filterTransactionsByDateRange } from "../shared/utils/finance.shared.js";
 import {
   buildCsvContent,
   buildFinanceVm,
+  buildScopeBudgetPanel,
   buildTransactionDraft,
   formatCurrency,
   formatDateLabel,
@@ -23,13 +26,13 @@ import {
   getCurrentYm,
   getTodayInputValue,
   getYmFromDateInput,
-  toDateInputValue,
   sanitizeAccountDraft,
   sanitizeAccountEditDraft,
   sanitizeTransactionDraft,
 } from "../features/finance/finance.controller.js";
 import { bindFinanceEvents } from "../features/finance/finance.events.js";
 import {
+  renderExpenseCategoryForm,
   renderExpenseScopeForm,
   renderFinanceComposer,
   renderFinanceAccountForm,
@@ -54,6 +57,7 @@ import {
   buildDefaultReportFilters,
   buildFinanceReportVm,
   buildPreviousReportFilters,
+  buildReportCsvContent,
   buildReportFiltersForPreset,
   buildReportMomComparison,
   normalizeReportFilters,
@@ -68,23 +72,56 @@ import { renderHomeRoute } from "../features/home/home.ui.js";
 import {
   archiveAccount,
   createAccount,
+  createExpenseCategory,
   createExpenseScope,
   createLoanParty,
+  createRecurringRule,
+  createSavingsGoal,
   createTransaction,
+  deleteExpenseCategory,
   deleteExpenseScope,
   deleteLoanParty,
+  deleteRecurringRule,
+  deleteSavingsGoal,
+  deleteScopeBudget,
   deleteTransaction,
   listAccountsWithBalances,
+  listExpenseCategories,
   listExpenseScopes,
   listLoanParties,
   listLoanTransactions,
+  listRecurringRules,
+  listSavingsGoals,
+  listScopeBudgets,
   listTransactions,
   resetFinanceData,
+  saveScopeBudget,
+  updateExpenseCategory,
   updateExpenseScope,
   updateLedgerAccount,
   updateLoanParty,
+  updateSavingsGoal,
   updateTransaction,
 } from "../services/firebase/firestore.js";
+import { setExpenseCategoryCache } from "../shared/constants/finance.constants.js";
+import {
+  buildGlobalSearchResults,
+  renderGlobalSearchResults,
+} from "../features/growth/globalSearch.js";
+import {
+  buildTransactionFromRecurringRule,
+  clearRecurringForm,
+  readRecurringForm,
+  renderRecurringSection,
+  sanitizeRecurringRuleDraft,
+} from "../features/growth/recurring.js";
+import {
+  clearSavingsForm,
+  readSavingsForm,
+  renderSavingsGoalForm,
+  renderSavingsGoalsSection,
+  sanitizeSavingsGoalDraft,
+} from "../features/growth/savings.js";
 
 function createDefaultFilters() {
   return {
@@ -126,10 +163,15 @@ const state = {
   monthTransactions: [],
   transactionsByMonth: {},
   expenseScopes: [],
+  expenseCategories: [],
+  scopeBudgets: [],
+  scopeBudgetsMonth: "",
   loanParties: [],
   loanTransactions: [],
   loansLoaded: false,
   reportsDataLoaded: false,
+  reportAiInsightText: "",
+  reportAiLoading: false,
   homeDailyFlowLoaded: false,
   homeMomLoaded: false,
   financeMonthLoaded: false,
@@ -147,6 +189,12 @@ const state = {
     name: "",
     replacementScopeId: "",
   },
+  expenseCategoryDraft: {
+    mode: "rename",
+    id: "",
+    name: "",
+    replacementCategoryId: "",
+  },
   financeVm: null,
   loansVm: null,
   reportFilters: reportDefaults.draft,
@@ -159,6 +207,8 @@ const state = {
   homeLoadedKey: "",
   homeAccountFilter: "all",
   homePreviousMonthTransactions: [],
+  recurringRules: [],
+  savingsGoals: [],
 };
 
 function byId(id) {
@@ -221,6 +271,56 @@ function findExpenseScopeByRef(rawValue = "") {
   return (
     state.expenseScopes.find((item) => String(item?.id || "").trim() === text) ||
     state.expenseScopes.find((item) => String(item?.name || "").trim().toLowerCase() === lower) ||
+    null
+  );
+}
+
+function getReplacementCategoryId(currentCategoryId = "", requestedId = "") {
+  const requested = String(requestedId || "").trim();
+  const currentId = String(currentCategoryId || "").trim();
+  const options = state.expenseCategories.filter(
+    (item) =>
+      String(item?.id || "").trim() !== currentId && !String(item?.parentId || "").trim()
+  );
+  if (requested && options.some((item) => String(item?.id || "").trim() === requested)) {
+    return requested;
+  }
+  return String(options[0]?.id || "").trim();
+}
+
+function buildExpenseCategoryDraft(payload = {}) {
+  const mode = String(payload?.mode || "rename").trim() === "delete" ? "delete" : "rename";
+  const id = String(payload?.id || "").trim();
+  return {
+    mode,
+    id,
+    name: String(payload?.name || "").trim(),
+    replacementCategoryId: getReplacementCategoryId(id, payload?.replacementCategoryId),
+  };
+}
+
+function openExpenseCategoryPanel(draft = {}) {
+  state.expenseCategoryDraft = buildExpenseCategoryDraft(draft);
+  renderExpenseCategoryForm({
+    draft: state.expenseCategoryDraft,
+    expenseCategories: state.expenseCategories,
+  });
+  openModal("financeCategoryPanel");
+}
+
+function clearExpenseCategoryInput() {
+  const input = byId("expenseCategoryName");
+  if (input) input.value = "";
+}
+
+function findExpenseCategoryByRef(rawValue = "") {
+  const text = String(rawValue || "").trim();
+  if (!text) return null;
+  const lower = text.toLowerCase();
+  return (
+    state.expenseCategories.find((item) => String(item?.id || "").trim() === text) ||
+    state.expenseCategories.find((item) => String(item?.key || "").trim() === text) ||
+    state.expenseCategories.find((item) => String(item?.name || "").trim().toLowerCase() === lower) ||
     null
   );
 }
@@ -359,6 +459,7 @@ function buildRenderedFinanceVm() {
     accounts: state.accounts,
     transactions: getFinanceTransactionsForVm(),
     expenseScopes: state.expenseScopes,
+    expenseCategories: state.expenseCategories,
     filters: state.filters,
   });
   vm.summary.totalBalanceText = formatCurrency(vm.summary.totalBalance);
@@ -381,14 +482,22 @@ function buildRenderedLoansVm() {
 function renderFinanceView() {
   syncExpensesViewFromHash();
   state.financeVm = buildRenderedFinanceVm();
+  const scopeBudgetPanel = buildScopeBudgetPanel({
+    expenseScopes: state.expenseScopes,
+    scopeBudgets: state.scopeBudgets,
+    monthTransactions: state.monthTransactions,
+    monthKey: state.month,
+  });
   renderFinanceRoute(state.financeVm, state.expensesView, {
     financeMonthLoaded: state.financeMonthLoaded,
+    scopeBudgetPanel,
   });
   syncFilterControls();
   renderFinanceComposer({
     draft: state.composerDraft,
     accounts: state.accounts,
     expenseScopes: state.expenseScopes,
+    expenseCategories: state.expenseCategories,
   });
 
   const infoEl = byId("financeWorkspaceInfo");
@@ -400,7 +509,7 @@ function renderFinanceView() {
       range?.preset === "month" && !state.financeMonthLoaded
         ? t(
             "finance.monthLoadWorkspaceInfo",
-            "Chọn Tháng này rồi bấm Tải giao dịch tháng để xem toàn bộ giao dịch trong tháng."
+            "Đang tải giao dịch tháng này… Nếu chưa hiện, bấm Tải giao dịch tháng."
           )
         : range?.preset === "month"
           ? `Theo dõi giao dịch trong ${rangeLabel.toLowerCase()}.`
@@ -409,6 +518,10 @@ function renderFinanceView() {
   renderExpenseScopeForm({
     draft: state.expenseScopeDraft,
     expenseScopes: state.expenseScopes,
+  });
+  renderExpenseCategoryForm({
+    draft: state.expenseCategoryDraft,
+    expenseCategories: state.expenseCategories,
   });
 }
 
@@ -435,6 +548,42 @@ function renderLoansView() {
     draft: state.loanPartyDraft,
   });
   renderLoanEntryView();
+  syncLoansNavBadge();
+}
+
+function syncLoansNavBadge() {
+  let count = Number(state.loansVm?.summary?.activePartyCount || 0);
+  if (!count && state.loanParties.length && state.loanTransactions.length) {
+    const vm = buildLoansVm({
+      accounts: state.accounts,
+      parties: state.loanParties,
+      transactions: state.loanTransactions,
+      selectedPartyId: state.loanSelectedPartyId,
+    });
+    count = Number(vm?.summary?.activePartyCount || 0);
+  }
+  document.querySelectorAll("[data-loans-badge]").forEach((el) => {
+    const show = count > 0;
+    el.textContent = String(count);
+    el.classList.toggle("d-none", !show);
+    el.setAttribute("aria-hidden", show ? "false" : "true");
+  });
+}
+
+function renderGrowthPanels() {
+  renderRecurringSection({
+    rules: state.recurringRules,
+    accounts: state.accounts,
+    expenseScopes: state.expenseScopes,
+    expenseCategories: state.expenseCategories,
+  });
+  renderSavingsGoalsSection(state.savingsGoals);
+}
+
+function renderHomeView() {
+  if (!state.homeVm) return;
+  renderHomeRoute(state.homeVm);
+  renderSavingsGoalsSection(state.savingsGoals);
 }
 
 function getHomeMonthTransactions() {
@@ -471,11 +620,6 @@ function syncTopbarStatsForActiveRoute() {
   }
 }
 
-function renderHomeView() {
-  if (!state.homeVm) return;
-  renderHomeRoute(state.homeVm);
-}
-
 function buildReportsMomBlock() {
   if (!state.reportsDataLoaded) {
     return { loadPending: true };
@@ -507,7 +651,7 @@ function rebuildHomeVm() {
     loanParties: state.loanParties,
     loanTransactions: state.loansLoaded ? state.loanTransactions : [],
     loansDataLoaded: state.loansLoaded,
-    includeDailyFlow: state.homeDailyFlowLoaded,
+    includeDailyFlow: true,
     includeMomComparison: state.homeMomLoaded,
     accountId: state.homeAccountFilter,
   });
@@ -532,6 +676,9 @@ function renderReportsView() {
     error: state.reportError,
     activePreset: resolveReportPreset(state.reportAppliedFilters),
     reportsDataLoaded: state.reportsDataLoaded,
+    aiEnabled: false,
+    aiInsightText: state.reportAiInsightText,
+    aiLoading: state.reportAiLoading,
   });
   syncFilterControls();
 }
@@ -541,6 +688,7 @@ function renderApp() {
   renderFinanceView();
   renderLoansView();
   renderReportsView();
+  renderGrowthPanels();
   syncTopbarStatsForActiveRoute();
 }
 
@@ -549,6 +697,7 @@ function renderComposerView() {
     draft: state.composerDraft,
     accounts: state.accounts,
     expenseScopes: state.expenseScopes,
+    expenseCategories: state.expenseCategories,
   });
 }
 
@@ -602,10 +751,16 @@ function resetRuntimeState() {
   state.monthTransactions = [];
   state.transactionsByMonth = {};
   state.expenseScopes = [];
+  state.expenseCategories = [];
+  setExpenseCategoryCache([]);
+  state.scopeBudgets = [];
+  state.scopeBudgetsMonth = "";
   state.loanParties = [];
   state.loanTransactions = [];
   state.loansLoaded = false;
   state.reportsDataLoaded = false;
+  state.reportAiInsightText = "";
+  state.reportAiLoading = false;
   state.homeDailyFlowLoaded = false;
   state.homeMomLoaded = false;
   state.financeMonthLoaded = false;
@@ -619,6 +774,7 @@ function resetRuntimeState() {
   state.loanEntryDraft = createDefaultLoanEntryDraft();
   state.loanEntryContext = { visible: false };
   state.expenseScopeDraft = buildExpenseScopeDraft();
+  state.expenseCategoryDraft = buildExpenseCategoryDraft();
   state.financeVm = null;
   state.loansVm = null;
   state.reportFilters = defaultReportState.draft;
@@ -631,6 +787,8 @@ function resetRuntimeState() {
   state.homeLoadedKey = "";
   state.homeAccountFilter = "all";
   state.homePreviousMonthTransactions = [];
+  state.recurringRules = [];
+  state.savingsGoals = [];
   ensureMonthValue(getYmFromDateInput(state.filters.date) || getCurrentYm());
   clearExpenseScopeInput();
   renderApp();
@@ -649,6 +807,17 @@ function normalizeWorkspaceAfterFetch() {
     !state.expenseScopes.some((item) => String(item?.id || "").trim() === state.filters.scopeId)
   ) {
     state.filters.scopeId = "all";
+  }
+
+  if (
+    state.filters.categoryKey !== "all" &&
+    !state.expenseCategories.some((item) => {
+      const key = String(item?.key || item?.id || "").trim();
+      const legacy = String(item?.legacyKey || "").trim();
+      return key === state.filters.categoryKey || legacy === state.filters.categoryKey;
+    })
+  ) {
+    state.filters.categoryKey = "all";
   }
 
   if (
@@ -673,6 +842,25 @@ function normalizeWorkspaceAfterFetch() {
     state.composerDraft = {
       ...state.composerDraft,
       scopeId: "",
+    };
+  }
+
+  if (
+    state.composerDraft?.type === "expense" &&
+    state.composerDraft?.categoryKey &&
+    !state.expenseCategories.some((item) => {
+      const key = String(item?.key || item?.id || "").trim();
+      const legacy = String(item?.legacyKey || "").trim();
+      const draftKey = String(state.composerDraft?.categoryKey || "").trim();
+      return key === draftKey || legacy === draftKey || String(item?.id || "").trim() === draftKey;
+    })
+  ) {
+    const fallback =
+      state.expenseCategories.find((item) => String(item?.key || "").trim() === "other") ||
+      state.expenseCategories[0];
+    state.composerDraft = {
+      ...state.composerDraft,
+      categoryKey: String(fallback?.key || fallback?.id || "other").trim(),
     };
   }
 
@@ -710,7 +898,7 @@ function rebuildCoreViewModels() {
     loanParties: state.loanParties,
     loanTransactions: state.loansLoaded ? state.loanTransactions : [],
     loansDataLoaded: state.loansLoaded,
-    includeDailyFlow: state.homeDailyFlowLoaded,
+    includeDailyFlow: true,
     includeMomComparison: state.homeMomLoaded,
     accountId: state.homeAccountFilter,
   });
@@ -729,19 +917,6 @@ function rebuildCoreViewModels() {
     state.reportVm = null;
     state.reportLoadedKey = "";
   }
-}
-
-function filterTransactionsByDateRange(transactions = [], fromDate = "", toDate = "") {
-  const from = String(fromDate || "").trim();
-  const to = String(toDate || "").trim();
-
-  return (Array.isArray(transactions) ? transactions : []).filter((transaction) => {
-    const dateKey = toDateInputValue(transaction?.occurredAt);
-    if (!dateKey) return false;
-    if (from && dateKey < from) return false;
-    if (to && dateKey > to) return false;
-    return true;
-  });
 }
 
 function financeRangeCanUseMonthCache(financeRange = {}, monthKey = "") {
@@ -808,9 +983,39 @@ async function loadFinanceMonthData(uid) {
   state.financeMonthLoaded = true;
   applyFinanceLedgerFromCache();
   state.financeVm = buildRenderedFinanceVm();
+  if (state.expensesView === "manage") {
+    try {
+      await loadScopeBudgetsForMonth(uid, normalizedMonth);
+    } catch (err) {
+      console.error("load scope budgets error", err);
+    }
+  }
   rebuildHomeVm();
   renderFinanceView();
   syncTopbarStatsForActiveRoute();
+}
+
+async function loadScopeBudgetsForMonth(uid, monthKey = state.month) {
+  const normalizedMonth = String(monthKey || getCurrentYm()).trim() || getCurrentYm();
+  if (state.scopeBudgetsMonth === normalizedMonth && Array.isArray(state.scopeBudgets)) {
+    return state.scopeBudgets;
+  }
+
+  const items = await listScopeBudgets(uid, normalizedMonth);
+  state.scopeBudgets = items;
+  state.scopeBudgetsMonth = normalizedMonth;
+  return items;
+}
+
+async function ensureManageScopeBudgets(uid) {
+  if (!uid || state.expensesView !== "manage") return;
+  const monthKey = String(state.month || getCurrentYm()).trim() || getCurrentYm();
+  if (!state.financeMonthLoaded) {
+    await loadFinanceMonthData(uid);
+    return;
+  }
+  await loadScopeBudgetsForMonth(uid, monthKey);
+  renderFinanceView();
 }
 
 async function loadHomeMomData(uid) {
@@ -939,20 +1144,28 @@ async function refreshWorkspaceCore(uid) {
   ensureMonthValue(normalizedMonth);
   normalizeDateFilterForMonth(normalizedMonth);
 
-  const [accounts, expenseScopes, loanParties, coreTransactions] = await Promise.all([
-    listAccountsWithBalances(uid),
-    listExpenseScopes(uid),
-    listLoanParties(uid),
-    loadCoreWorkspaceTransactions(uid, { normalizedMonth }),
-  ]);
+  const [accounts, expenseScopes, expenseCategories, loanParties, coreTransactions, recurringRules, savingsGoals] =
+    await Promise.all([
+      listAccountsWithBalances(uid),
+      listExpenseScopes(uid),
+      listExpenseCategories(uid).catch(() => []),
+      listLoanParties(uid),
+      loadCoreWorkspaceTransactions(uid, { normalizedMonth }),
+      listRecurringRules(uid).catch(() => []),
+      listSavingsGoals(uid).catch(() => []),
+    ]);
 
   const { monthTransactions } = coreTransactions;
 
   state.accounts = accounts;
   state.expenseScopes = expenseScopes;
+  state.expenseCategories = Array.isArray(expenseCategories) ? expenseCategories : [];
+  setExpenseCategoryCache(state.expenseCategories);
   state.monthTransactions = monthTransactions;
   state.transactionsByMonth[normalizedMonth] = monthTransactions;
   state.loanParties = loanParties;
+  state.recurringRules = Array.isArray(recurringRules) ? recurringRules : [];
+  state.savingsGoals = Array.isArray(savingsGoals) ? savingsGoals : [];
 
   normalizeWorkspaceAfterFetch();
   applyFinanceLedgerFromCache();
@@ -976,6 +1189,7 @@ async function refreshWorkspaceCore(uid) {
 
   rebuildCoreViewModels();
   renderApp();
+  maybeToastRecurringDue();
 }
 
 async function refreshWorkspaceData(uid) {
@@ -989,8 +1203,17 @@ async function refreshFinance(uid, { month = state.month, resetFinanceMonth = tr
     state.financeMonthLoaded = false;
     state.homeMomLoaded = false;
     state.homePreviousMonthTransactions = [];
+    state.scopeBudgets = [];
+    state.scopeBudgetsMonth = "";
   }
   await refreshWorkspaceData(uid);
+  if (state.expensesView === "manage") {
+    try {
+      await ensureManageScopeBudgets(uid);
+    } catch (err) {
+      console.error("ensure manage scope budgets error", err);
+    }
+  }
 }
 
 async function refreshLoans(uid) {
@@ -1020,11 +1243,45 @@ async function refreshReports(uid, filters = state.reportAppliedFilters) {
   state.reportAppliedFilters = normalizeReportFilters(filters);
   state.reportsMomLoaded = false;
   state.reportPreviousTransactions = [];
+  state.reportAiInsightText = "";
+  state.reportAiLoading = false;
   state.reportTransactions = await fetchReportTransactions(uid, state.reportAppliedFilters);
   state.reportsDataLoaded = true;
   rebuildReportsVm();
   renderReportsView();
   syncTopbarStatsForActiveRoute();
+}
+
+function exportReportCsv() {
+  if (!state.reportsDataLoaded) return;
+
+  try {
+    const content = buildReportCsvContent({
+      transactions: state.reportTransactions,
+      accounts: state.accounts,
+      expenseScopes: state.expenseScopes,
+      filters: state.reportAppliedFilters,
+    });
+    const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const fromDate = String(state.reportAppliedFilters?.fromDate || state.month || "report").trim();
+    const toDate = String(state.reportAppliedFilters?.toDate || "").trim();
+    link.href = url;
+    link.download = `report-${fromDate}${toDate ? `_to_${toDate}` : ""}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast(t("toast.reportCsvExportSuccess", "Đã xuất CSV kỳ báo cáo."), "success");
+  } catch (err) {
+    console.error("export report csv error", err);
+    showToast(t("toast.reportCsvExportFail", "Không thể xuất CSV báo cáo."), "error");
+  }
+}
+
+async function requestAiReportInsights() {
+  return;
 }
 
 function findTransactionById(transactionId = "") {
@@ -1036,7 +1293,104 @@ function findTransactionById(transactionId = "") {
     const match = (Array.isArray(items) ? items : []).find((item) => String(item?.id || "").trim() === id);
     if (match) return match;
   }
+  const loanMatch = state.loanTransactions.find((item) => String(item?.id || "").trim() === id);
+  if (loanMatch) return loanMatch;
   return null;
+}
+
+function maybeToastRecurringDue() {
+  const today = new Date();
+  const day = today.getDate();
+  if (day > 28) return;
+  const due = (state.recurringRules || []).filter(
+    (rule) => rule?.active !== false && Number(rule?.dayOfMonth || 0) === day
+  );
+  if (!due.length) return;
+
+  const key = `htf-recurring-toast:${state.currentUser?.uid || ""}:${getTodayInputValue()}`;
+  try {
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+  } catch {
+    /* ignore */
+  }
+
+  showToast(
+    formatTemplate(t("recurring.dueToast", "Có {{count}} khoản định kỳ hôm nay — mở Quản lý để tạo."), {
+      count: due.length,
+    }),
+    "info"
+  );
+}
+
+function openGlobalSearchPanel() {
+  if (!ensureUser()) return;
+  renderGlobalSearchResults(byId("globalSearchResults"), [], "");
+  openModal("globalSearchPanel");
+  queueMicrotask(() => {
+    const input = byId("globalSearch");
+    if (!input) return;
+    input.value = "";
+    input.focus();
+    input.select?.();
+  });
+}
+
+function runGlobalSearch(query = "") {
+  const results = buildGlobalSearchResults({
+    query,
+    transactions: state.transactions,
+    transactionsByMonth: state.transactionsByMonth,
+    loanTransactions: state.loanTransactions,
+    loanParties: state.loanParties,
+    accounts: state.accounts,
+  });
+  renderGlobalSearchResults(byId("globalSearchResults"), results, query);
+}
+
+async function handleGlobalSearchSelect(button) {
+  const kind = String(button?.getAttribute("data-search-kind") || "").trim();
+  const id = String(button?.getAttribute("data-search-id") || "").trim();
+  const partyId = String(button?.getAttribute("data-search-party-id") || "").trim();
+  if (!kind || !id) return;
+
+  closeModal("globalSearchPanel");
+
+  if (kind === "loan_party" || kind === "loan_tx") {
+    const uid = ensureUser();
+    if (!uid) return;
+    if (!state.loansLoaded) {
+      setGlobalLoading(true);
+      try {
+        await refreshLoans(uid);
+      } catch (err) {
+        console.error("load loans for search error", err);
+        showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
+      } finally {
+        setGlobalLoading(false);
+      }
+    }
+    state.loanSelectedPartyId = kind === "loan_party" ? id : partyId || state.loanSelectedPartyId;
+    state.pendingRoute = "loans";
+    setActiveRoute("loans");
+    if (!String(window.location.hash || "").startsWith("#loans")) {
+      window.location.hash = "#loans";
+    }
+    rebuildLoansVmOnly();
+    renderLoansView();
+    if (kind === "loan_tx") {
+      const tx = findTransactionById(id);
+      openLoanEntryPanel(tx?.type || "loan_lend", { entryId: id, partyId: state.loanSelectedPartyId });
+    }
+    return;
+  }
+
+  const tx = findTransactionById(id);
+  if (!tx) {
+    showToast(t("search.notFound", "Không tìm thấy giao dịch trong bộ nhớ đệm."), "info");
+    return;
+  }
+  openComposer(tx.type, { transactionId: tx.id });
 }
 
 function openComposer(type = "expense", options = {}) {
@@ -1110,13 +1464,8 @@ async function handleResetFinanceData() {
 }
 
 bindKeyboardShortcuts({
-  onFocusSearch: () => {
-    const searchEl = byId("ledgerFilterSearch");
-    if (!searchEl) return;
-    const drawer = byId("ledgerFilterDrawer");
-    if (drawer && !drawer.open) drawer.open = true;
-    searchEl.focus();
-    searchEl.select?.();
+  onOpenGlobalSearch: () => {
+    openGlobalSearchPanel();
   },
   onOpenExpense: () => {
     if (!ensureUser()) return;
@@ -1177,6 +1526,62 @@ bindHomeEvents({
     if (!current) return;
     openComposer(current.type, { transactionId: current.id });
   },
+  onOpenSavingsGoalPanel: () => {
+    if (!ensureUser()) return;
+    clearSavingsForm();
+    openModal("savingsGoalPanel");
+  },
+  onEditSavingsGoal: (goalId) => {
+    if (!ensureUser()) return;
+    const goal = state.savingsGoals.find((item) => String(item?.id || "").trim() === String(goalId || "").trim());
+    if (!goal) return;
+    renderSavingsGoalForm({
+      id: goal.id,
+      name: goal.name,
+      targetAmount: goal.targetAmount,
+      currentAmount: goal.currentAmount,
+      note: goal.note,
+    });
+    openModal("savingsGoalPanel");
+  },
+  onSaveSavingsGoal: async () => {
+    const uid = ensureUser();
+    if (!uid) return;
+    try {
+      const draft = readSavingsForm();
+      const payload = sanitizeSavingsGoalDraft(draft);
+      const goalId = String(draft?.id || "").trim();
+      if (goalId) {
+        await updateSavingsGoal(uid, goalId, payload);
+        showToast(t("savings.updated", "Đã cập nhật mục tiêu."), "success");
+      } else {
+        await createSavingsGoal(uid, payload);
+        showToast(t("savings.created", "Đã thêm mục tiêu tiết kiệm."), "success");
+      }
+      clearSavingsForm();
+      closeModal("savingsGoalPanel");
+      state.savingsGoals = await listSavingsGoals(uid);
+      renderSavingsGoalsSection(state.savingsGoals);
+    } catch (err) {
+      console.error("save savings goal error", err);
+      showToast(err?.message || t("savings.saveFail", "Không thể lưu mục tiêu."), "error");
+    }
+  },
+  onDeleteSavingsGoal: async (goalId) => {
+    const uid = ensureUser();
+    if (!uid) return;
+    const allow = window.confirm(t("savings.confirmDelete", "Xóa mục tiêu tiết kiệm này?"));
+    if (!allow) return;
+    try {
+      await deleteSavingsGoal(uid, goalId);
+      state.savingsGoals = await listSavingsGoals(uid);
+      renderSavingsGoalsSection(state.savingsGoals);
+      showToast(t("savings.deleted", "Đã xóa mục tiêu."), "success");
+    } catch (err) {
+      console.error("delete savings goal error", err);
+      showToast(err?.message || t("savings.deleteFail", "Không thể xóa mục tiêu."), "error");
+    }
+  },
 });
 
 bindFinanceEvents({
@@ -1210,6 +1615,9 @@ bindFinanceEvents({
       setGlobalLoading(true);
       try {
         await refreshFinance(uid, { month: nextMonth });
+        if (state.filters.preset === "month") {
+          await loadFinanceMonthData(uid);
+        }
       } catch (err) {
         console.error("change date filter error", err);
         showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
@@ -1226,8 +1634,19 @@ bindFinanceEvents({
 
     if (shouldReload) {
       if (state.filters.preset === "month" && !state.financeMonthLoaded) {
-        renderFinanceView();
-        syncTopbarStatsForActiveRoute();
+        const uid = ensureUser();
+        if (!uid) return;
+        setGlobalLoading(true);
+        try {
+          await loadFinanceMonthData(uid);
+        } catch (err) {
+          console.error("load finance month error", err);
+          showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
+          renderFinanceView();
+          syncTopbarStatsForActiveRoute();
+        } finally {
+          setGlobalLoading(false);
+        }
         return;
       }
 
@@ -1250,9 +1669,20 @@ bindFinanceEvents({
     };
 
     if (normalizedPreset === "month") {
+      const uid = ensureUser();
+      if (!uid) return;
       state.financeMonthLoaded = false;
-      renderFinanceView();
-      syncTopbarStatsForActiveRoute();
+      setGlobalLoading(true);
+      try {
+        await loadFinanceMonthData(uid);
+      } catch (err) {
+        console.error("load finance month error", err);
+        showToast(t("toast.loadFail", "Không thể tải dữ liệu tài chính. Vui lòng thử lại."), "error");
+        renderFinanceView();
+        syncTopbarStatsForActiveRoute();
+      } finally {
+        setGlobalLoading(false);
+      }
       return;
     }
 
@@ -1424,10 +1854,120 @@ bindFinanceEvents({
       await createExpenseScope(uid, rawScope);
       clearExpenseScopeInput();
       await refreshWorkspaceData(uid);
+      if (state.expensesView === "manage") {
+        state.scopeBudgetsMonth = "";
+        await loadScopeBudgetsForMonth(uid, state.month);
+        renderFinanceView();
+      }
       showToast(t("toast.scopeCreated", "Đã thêm nhóm chi mới."), "success");
     } catch (err) {
       console.error("createExpenseScope error", err);
       showToast(err?.message || t("toast.scopeCreateFail", "Không thể thêm nhóm chi."), "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
+  onCreateExpenseCategory: async (rawCategory) => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    setGlobalLoading(true);
+    try {
+      await createExpenseCategory(uid, rawCategory);
+      clearExpenseCategoryInput();
+      await refreshWorkspaceData(uid);
+      showToast(t("toast.categoryCreated", "Đã thêm danh mục mới."), "success");
+    } catch (err) {
+      console.error("createExpenseCategory error", err);
+      showToast(err?.message || t("toast.categoryCreateFail", "Không thể thêm danh mục."), "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
+  onCreateRecurringRule: async (raw) => {
+    const uid = ensureUser();
+    if (!uid) return;
+    try {
+      const payload = sanitizeRecurringRuleDraft(raw || readRecurringForm());
+      await createRecurringRule(uid, payload);
+      clearRecurringForm();
+      state.recurringRules = await listRecurringRules(uid);
+      renderGrowthPanels();
+      showToast(t("recurring.created", "Đã thêm mẫu định kỳ."), "success");
+    } catch (err) {
+      console.error("create recurring rule error", err);
+      showToast(err?.message || t("recurring.createFail", "Không thể thêm mẫu định kỳ."), "error");
+    }
+  },
+  onCreateRecurringToday: async (ruleId) => {
+    const uid = ensureUser();
+    if (!uid) return;
+    const rule = state.recurringRules.find((item) => String(item?.id || "").trim() === String(ruleId || "").trim());
+    if (!rule) return;
+    setGlobalLoading(true);
+    try {
+      const payload = buildTransactionFromRecurringRule(rule);
+      await createTransaction(uid, payload);
+      await refreshFinance(uid, { resetFinanceMonth: false });
+      showToast(t("recurring.createdTx", "Đã tạo giao dịch từ mẫu định kỳ."), "success");
+    } catch (err) {
+      console.error("create recurring today error", err);
+      showToast(err?.message || t("recurring.createTxFail", "Không thể tạo giao dịch định kỳ."), "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
+  onDeleteRecurringRule: async (ruleId) => {
+    const uid = ensureUser();
+    if (!uid) return;
+    const allow = window.confirm(t("recurring.confirmDelete", "Xóa mẫu định kỳ này?"));
+    if (!allow) return;
+    try {
+      await deleteRecurringRule(uid, ruleId);
+      state.recurringRules = await listRecurringRules(uid);
+      renderGrowthPanels();
+      showToast(t("recurring.deleted", "Đã xóa mẫu định kỳ."), "success");
+    } catch (err) {
+      console.error("delete recurring rule error", err);
+      showToast(err?.message || t("recurring.deleteFail", "Không thể xóa mẫu định kỳ."), "error");
+    }
+  },
+  onSaveScopeBudget: async ({ scopeId, limitAmount } = {}) => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    const normalizedScopeId = String(scopeId || "").trim();
+    const amount = Number(limitAmount || 0);
+    if (!normalizedScopeId) {
+      showToast(t("toast.scopePickRequired", "Vui lòng chọn nhóm chi."), "error");
+      return;
+    }
+
+    const existing =
+      state.scopeBudgets.find((item) => String(item?.scopeId || "").trim() === normalizedScopeId) || null;
+
+    setGlobalLoading(true);
+    try {
+      if (!Number.isFinite(amount) || !(amount > 0)) {
+        if (!existing?.id) {
+          showToast(t("toast.scopeBudgetInvalid", "Nhập ngân sách lớn hơn 0."), "error");
+          return;
+        }
+        await deleteScopeBudget(uid, existing.id);
+      } else {
+        await saveScopeBudget(uid, {
+          scopeId: normalizedScopeId,
+          monthKey: state.month,
+          limitAmount: amount,
+        });
+      }
+      state.scopeBudgetsMonth = "";
+      await loadScopeBudgetsForMonth(uid, state.month);
+      renderFinanceView();
+      showToast(t("toast.scopeBudgetSaved", "Đã lưu ngân sách nhóm chi."), "success");
+    } catch (err) {
+      console.error("saveScopeBudget error", err);
+      showToast(err?.message || t("toast.scopeBudgetSaveFail", "Không thể lưu ngân sách nhóm chi."), "error");
     } finally {
       setGlobalLoading(false);
     }
@@ -1498,6 +2038,79 @@ bindFinanceEvents({
     } catch (err) {
       console.error("submit expense scope form error", err);
       showToast(err?.message || "Kh\u00f4ng th\u1ec3 c\u1eadp nh\u1eadt ph\u1ea1m vi chi.", "error");
+    } finally {
+      setGlobalLoading(false);
+    }
+  },
+  onRenameExpenseCategory: async (category) => {
+    if (!ensureUser()) return;
+    openExpenseCategoryPanel({
+      mode: "rename",
+      id: category?.id,
+      name: category?.name,
+    });
+  },
+  onDeleteExpenseCategory: async (category) => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    const current =
+      findExpenseCategoryByRef(category?.id) ||
+      findExpenseCategoryByRef(category?.key) ||
+      state.expenseCategories.find(
+        (item) => String(item?.name || "").trim() === String(category?.name || "").trim()
+      ) ||
+      null;
+    if (!current) {
+      showToast(t("toast.categoryNotFound", "Không tìm thấy danh mục cần xóa."), "error");
+      return;
+    }
+
+    openExpenseCategoryPanel({
+      mode: "delete",
+      id: current.id,
+      name: current.name,
+      replacementCategoryId: getReplacementCategoryId(current.id),
+    });
+  },
+  onSubmitExpenseCategoryForm: async (form) => {
+    const uid = ensureUser();
+    if (!uid) return;
+
+    const mode = String(form?.mode || "rename").trim();
+    const categoryId = String(form?.id || "").trim();
+    if (!categoryId) {
+      showToast(t("toast.categoryNotFound", "Không tìm thấy danh mục cần cập nhật."), "error");
+      return;
+    }
+
+    setGlobalLoading(true);
+    try {
+      if (mode === "delete") {
+        const replacementCategoryId = String(form?.replacementCategoryId || "").trim();
+        if (!replacementCategoryId || replacementCategoryId === categoryId) {
+          throw new Error("Vui lòng chọn danh mục thay thế hợp lệ.");
+        }
+
+        await deleteExpenseCategory(uid, categoryId, {
+          replacementCategoryId,
+        });
+
+        closeModal("financeCategoryPanel");
+        state.expenseCategoryDraft = buildExpenseCategoryDraft();
+        await refreshWorkspaceData(uid);
+        showToast(t("toast.categoryDeleted", "Đã xóa danh mục."), "success");
+        return;
+      }
+
+      await updateExpenseCategory(uid, categoryId, { name: form?.name });
+      closeModal("financeCategoryPanel");
+      state.expenseCategoryDraft = buildExpenseCategoryDraft();
+      await refreshWorkspaceData(uid);
+      showToast(t("toast.categoryUpdated", "Đã cập nhật danh mục."), "success");
+    } catch (err) {
+      console.error("submit expense category form error", err);
+      showToast(err?.message || t("toast.categoryUpdateFail", "Không thể cập nhật danh mục."), "error");
     } finally {
       setGlobalLoading(false);
     }
@@ -1669,6 +2282,30 @@ bindReportEvents({
   onDrillDown: (kind, key) => {
     void navigateReportDrillDown(kind, key);
   },
+  onEditTransaction: (transactionId) => {
+    if (!ensureUser()) return;
+    const current = findTransactionById(transactionId);
+    if (!current) return;
+    if (String(current.type || "").trim() === "adjustment") {
+      showToast(
+        t(
+          "toast.adjustmentRemoved",
+          "Tính năng sửa số dư đã được gỡ. Bạn có thể xóa giao dịch này nếu không cần."
+        ),
+        "info"
+      );
+      return;
+    }
+    openComposer(current.type, { transactionId: current.id });
+  },
+  onExportCsv: () => {
+    if (!ensureUser()) return;
+    exportReportCsv();
+  },
+  onAiInsights: () => {
+    if (!ensureUser()) return;
+    void requestAiReportInsights();
+  },
   onLoadReportsMom: async () => {
     const uid = ensureUser();
     if (!uid) return;
@@ -1777,6 +2414,8 @@ bindFilterControls();
 bindAuthButtons();
 resetRuntimeState();
 
+migrateLegacyStorageKeys();
+
 watchAuth(async (user) => {
   state.currentUser = user || null;
   updateUserMenuUI(user || null);
@@ -1819,13 +2458,20 @@ watchAuth(async (user) => {
   }
 });
 
-window.addEventListener("nexus:route-changed", async (event) => {
+window.addEventListener("htf:route-changed", async (event) => {
   const routeId = resolveWorkspaceRoute(String(event?.detail?.routeId || "").trim());
   if (routeId === "expenses") {
     state.expensesView = event?.detail?.expensesView === "manage" ? "manage" : "ledger";
     if (state.financeVm) {
       renderFinanceView();
       syncTopbarStatsForActiveRoute();
+    }
+    if (state.currentUser && state.expensesView === "manage") {
+      try {
+        await ensureManageScopeBudgets(state.currentUser.uid);
+      } catch (err) {
+        console.error("route manage budgets error", err);
+      }
     }
   }
 
@@ -1873,9 +2519,42 @@ window.addEventListener("nexus:route-changed", async (event) => {
   }
 
   if (routeId === "reports") {
+    if (!state.reportsDataLoaded) {
+      setGlobalLoading(true);
+      try {
+        await refreshReports(state.currentUser.uid, state.reportAppliedFilters);
+      } catch (err) {
+        console.error("route reports refresh error", err);
+        showToast(t("toast.reportLoadFail", "Không thể tải báo cáo tài chính."), "error");
+        renderReportsView();
+        syncTopbarStatsForActiveRoute();
+      } finally {
+        setGlobalLoading(false);
+      }
+      return;
+    }
+
     renderReportsView();
     syncTopbarStatsForActiveRoute();
   }
 });
 
 document.documentElement.setAttribute("data-i18n-ready", "true");
+
+byId("globalSearch")?.addEventListener("input", (event) => {
+  runGlobalSearch(event?.target?.value || "");
+});
+
+document.addEventListener("click", (event) => {
+  const result = event.target.closest("[data-search-kind][data-search-id]");
+  if (!result) return;
+  void handleGlobalSearchSelect(result);
+});
+
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((err) => {
+      console.warn("service worker register failed", err);
+    });
+  });
+}

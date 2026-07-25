@@ -65,12 +65,12 @@ Chiến lược: một trang một lần, chốt từng block trước khi code.
 | R-F | So sánh kỳ trước (MoM, lazy) | Done |
 | R-G | Drill-down DM/nhóm / ví → `#expenses` | Done |
 
-### Backlog Báo cáo (chưa code)
+### Backlog Báo cáo
 
-| Block | Nội dung |
-|-------|----------|
-| R-H | AI tóm tắt (`ai-report-insights`) |
-| R-I | Xuất báo cáo CSV/PDF |
+| Block | Nội dung | Status |
+|-------|----------|--------|
+| R-H | AI tóm tắt (`ai-report-insights`) | Tạm ẩn (`ai: false`) |
+| R-I | Xuất báo cáo CSV/PDF | CSV Done · PDF In progress |
 
 ---
 
@@ -81,3 +81,15 @@ Chiến lược: một trang một lần, chốt từng block trước khi code.
 - Auth card
 
 Chỉ polish khi 4 tab nội dung ổn.
+
+---
+
+## Growth (Phase 3) — Done
+
+| Block | Nội dung | Trạng thái |
+|-------|----------|------------|
+| G1 | PWA nhẹ (`manifest.webmanifest`, `sw.js`, register production) | Done |
+| G2 | Tìm kiếm toàn cục (`/` → `#globalSearchPanel`) | Done |
+| G3 | Badge nhắc nợ cho mượn + meta “Cần nhắc” (>30 ngày) | Done |
+| G4 | Giao dịch định kỳ (`recurringRules` + CRUD + Tạo hôm nay) | Done |
+| G5 | Mục tiêu tiết kiệm (`savingsGoals` + tiến độ thủ công) | Done |

@@ -1,34 +1,17 @@
-function shouldIgnoreShortcut(event) {
-  const target = event.target;
-  const tag = String(target?.tagName || "").toLowerCase();
-  if (tag === "input" || tag === "textarea" || tag === "select") return true;
-  if (target?.isContentEditable) return true;
-  if (target?.closest?.(".modal.show")) return true;
-  return false;
-}
-
-function isQuickActionRoute() {
-  const route = String(document.body?.dataset?.route || "").trim();
-  return route === "home" || route === "expenses";
-}
-
-function isLoanActionRoute() {
-  return String(document.body?.dataset?.route || "").trim() === "loans";
-}
-
 export function bindKeyboardShortcuts(handlers = {}) {
   document.addEventListener("keydown", (event) => {
-    if (shouldIgnoreShortcut(event)) return;
-
     const key = String(event.key || "").toLowerCase();
-    const route = String(document.body?.dataset?.route || "").trim();
 
     if (key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-      if (route !== "expenses") return;
+      if (shouldIgnoreShortcut(event)) return;
       event.preventDefault();
-      handlers.onFocusSearch?.();
+      handlers.onOpenGlobalSearch?.();
       return;
     }
+
+    if (shouldIgnoreShortcut(event)) return;
+
+    const route = String(document.body?.dataset?.route || "").trim();
 
     if (event.metaKey || event.ctrlKey || event.altKey) return;
 
@@ -65,4 +48,22 @@ export function bindKeyboardShortcuts(handlers = {}) {
       handlers.onOpenTransfer?.();
     }
   });
+}
+
+function shouldIgnoreShortcut(event) {
+  const target = event.target;
+  const tag = String(target?.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || tag === "select") return true;
+  if (target?.isContentEditable) return true;
+  if (target?.closest?.(".modal.show")) return true;
+  return false;
+}
+
+function isQuickActionRoute() {
+  const route = String(document.body?.dataset?.route || "").trim();
+  return route === "home" || route === "expenses";
+}
+
+function isLoanActionRoute() {
+  return String(document.body?.dataset?.route || "").trim() === "loans";
 }

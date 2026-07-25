@@ -1,8 +1,13 @@
 import {
   getAccountTypeLabel,
   getFinanceCategoryLabel,
+  getTransactionTypeLabel,
 } from "../../shared/constants/finance.constants.js";
 import { prevYm } from "../../shared/ui/core.js";
+import {
+  isFinanceTransactionType,
+  summarizeFinanceTotals,
+} from "../../shared/utils/finance.shared.js";
 import {
   formatCurrency,
   formatDateLabel,
@@ -100,10 +105,6 @@ function includesAccount(transaction, accountId = "") {
     String(transaction?.accountId || "").trim() === target ||
     String(transaction?.toAccountId || "").trim() === target
   );
-}
-
-function isReportTransactionType(type = "") {
-  return ["expense", "income", "transfer", "adjustment"].includes(String(type || "").trim());
 }
 
 function buildReportSummary(transactions = [], fromDate = "", toDate = "") {
@@ -284,25 +285,25 @@ function buildQuickSignals({
   return [
     topScope
       ? {
-          label: "Nhóm chi nhiều nhất",
+          label: "Nhóm chi",
           valueText: topScope.label,
-          note: `${topScope.shareText} tổng chi.`,
+          note: topScope.shareText,
           tone: "brand",
         }
       : null,
     topCategory
       ? {
-          label: "Danh mục lớn nhất",
+          label: "Danh mục",
           valueText: topCategory.label,
-          note: `${topCategory.shareText} tổng chi.`,
+          note: topCategory.shareText,
           tone: "success",
         }
       : null,
     topOutflowAccount
       ? {
-          label: "Ví chi nhiều nhất",
+          label: "Ví chi nhiều",
           valueText: topOutflowAccount.name,
-          note: `${formatCurrency(topOutflowAccount.outflow)} chi ra.`,
+          note: formatCurrency(topOutflowAccount.outflow),
           tone: "neutral",
         }
       : null,
@@ -516,28 +517,6 @@ export function buildReportFiltersForPreset(preset = "current-month") {
   return buildDefaultReportFilters(monthKey);
 }
 
-function summarizeReportTransactions(transactions = []) {
-  const items = (Array.isArray(transactions) ? transactions : []).filter((transaction) =>
-    isReportTransactionType(transaction?.type)
-  );
-
-  const incomeTotal = items
-    .filter((item) => String(item?.type || "") === "income")
-    .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-  const expenseTotal = items
-    .filter((item) => String(item?.type || "") === "expense")
-    .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-  const adjustmentTotal = items
-    .filter((item) => String(item?.type || "") === "adjustment")
-    .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-
-  return {
-    incomeTotal,
-    expenseTotal,
-    netTotal: incomeTotal - expenseTotal + adjustmentTotal,
-  };
-}
-
 function buildReportDeltaMetric(current = 0, previous = 0) {
   const cur = Number(current || 0);
   const prev = Number(previous || 0);
@@ -566,8 +545,8 @@ export function buildPreviousReportFilters(filters = {}) {
 }
 
 export function buildReportMomComparison(currentTransactions = [], previousTransactions = []) {
-  const currentSummary = summarizeReportTransactions(currentTransactions);
-  const previousSummary = summarizeReportTransactions(previousTransactions);
+  const currentSummary = summarizeFinanceTotals(currentTransactions);
+  const previousSummary = summarizeFinanceTotals(previousTransactions);
 
   return {
     loadPending: false,
@@ -678,7 +657,7 @@ export function buildFinanceReportVm({
   const normalizedFilters = normalizeReportFilters(filters);
   const filteredTransactions = (Array.isArray(transactions) ? transactions : []).filter(
     (transaction) =>
-      isReportTransactionType(transaction?.type) && includesAccount(transaction, normalizedFilters.accountId)
+      isFinanceTransactionType(transaction?.type) && includesAccount(transaction, normalizedFilters.accountId)
   );
 
   const summary = buildReportSummary(
@@ -708,8 +687,8 @@ export function buildFinanceReportVm({
         categoryItems,
         accountItems,
       }),
-      emptyTitle: "Chưa có tóm tắt kỳ",
-      emptyBody: "Khi có giao dịch trong kỳ, phần này sẽ gợi ý điểm đáng chú ý.",
+      emptyTitle: "Chưa có điểm nổi bật",
+      emptyBody: "",
     },
     attentionItems: {
       items: buildAttentionItems({
@@ -719,23 +698,23 @@ export function buildFinanceReportVm({
         largestExpense,
       }),
       largestExpense,
-      emptyTitle: "Chưa có điểm đáng lưu ý",
-      emptyBody: "Gợi ý sẽ hiện khi kỳ đang xem có đủ giao dịch.",
+      emptyTitle: "Chưa có khoản lớn",
+      emptyBody: "",
     },
     categoryBreakdown: {
       items: categoryItems,
-      emptyTitle: "Chưa có khoản chi trong kỳ này",
-      emptyBody: "Danh mục chi tiêu sẽ xuất hiện khi có giao dịch chi trong khoảng ngày đã chọn.",
+      emptyTitle: "Chưa có chi",
+      emptyBody: "",
     },
     scopeBreakdown: {
       items: scopeItems,
-      emptyTitle: "Chưa có nhóm chi trong kỳ này",
-      emptyBody: "Nhóm chi sẽ xuất hiện khi các khoản chi đã được gắn nhóm cụ thể.",
+      emptyTitle: "Chưa có nhóm chi",
+      emptyBody: "",
     },
     accountBreakdown: {
       items: accountItems,
-      emptyTitle: "Chưa có biến động tài khoản trong kỳ này",
-      emptyBody: "Phát sinh vào, phát sinh ra và biến động ròng sẽ xuất hiện khi có giao dịch phù hợp.",
+      emptyTitle: "Chưa có biến động",
+      emptyBody: "",
     },
     filterOptions: {
       accountOptions: buildAccountFilterOptions(
@@ -746,8 +725,22 @@ export function buildFinanceReportVm({
     },
     emptyState: {
       isEmpty: filteredTransactions.length === 0,
-      title: "Không có giao dịch trong kỳ đang xem",
-      body: "Hãy đổi khoảng ngày hoặc chọn tài khoản khác để xem thêm số liệu.",
+      title: "Không có giao dịch trong kỳ",
+      body: "",
+    },
+    dailyFlow: {
+      ...buildDailyFlow(
+        filteredTransactions,
+        normalizedFilters.fromDate,
+        normalizedFilters.toDate
+      ),
+      emptyTitle: "Chưa có chi",
+      emptyBody: "",
+    },
+    recentTransactions: {
+      items: buildReportRecentTransactions(filteredTransactions, accounts, expenseScopes),
+      emptyTitle: "Chưa có giao dịch gần đây",
+      emptyBody: "Các giao dịch mới nhất trong kỳ sẽ hiện tại đây.",
     },
     meta: {
       rangeLabel: summary.rangeLabel,
@@ -768,4 +761,159 @@ function filterAccountLabel(accounts = [], accountId = "") {
     (account) => String(account?.id || "").trim() === String(accountId || "").trim()
   );
   return match?.name || "Tài khoản đã chọn";
+}
+
+function buildReportRecentTransactions(transactions = [], accounts = [], expenseScopes = [], limit = 10) {
+  const accountMap = new Map(
+    (Array.isArray(accounts) ? accounts : []).map((item) => [String(item?.id || "").trim(), item])
+  );
+  const scopeMap = new Map(
+    (Array.isArray(expenseScopes) ? expenseScopes : []).map((item) => [String(item?.id || "").trim(), item])
+  );
+
+  return [...(Array.isArray(transactions) ? transactions : [])]
+    .filter((item) => isFinanceTransactionType(item?.type))
+    .sort((a, b) => {
+      const dateDiff = String(toDateInputValue(b?.occurredAt) || "").localeCompare(
+        String(toDateInputValue(a?.occurredAt) || "")
+      );
+      if (dateDiff !== 0) return dateDiff;
+      return String(b?.id || "").localeCompare(String(a?.id || ""));
+    })
+    .slice(0, limit)
+    .map((transaction) => {
+      const type = String(transaction?.type || "").trim();
+      const amount = Number(transaction?.amount || 0);
+      const absText = formatCurrency(Math.abs(amount));
+      const account = accountMap.get(String(transaction?.accountId || "").trim());
+      const scope = scopeMap.get(String(transaction?.scopeId || "").trim());
+      const title =
+        String(transaction?.note || "").trim() ||
+        (type === "expense"
+          ? getFinanceCategoryLabel(transaction?.categoryKey)
+          : getTransactionTypeLabel(type));
+      const signed =
+        type === "income" || (type === "adjustment" && amount >= 0)
+          ? `+${absText}`
+          : type === "transfer"
+            ? absText
+            : `-${absText}`;
+      return {
+        id: String(transaction?.id || "").trim(),
+        title,
+        dateLabel: formatDateLabel(transaction?.occurredAt),
+        categoryLabel: type === "expense" ? getFinanceCategoryLabel(transaction?.categoryKey) : getTransactionTypeLabel(type),
+        accountLabel: account?.name || "",
+        scopeLabel: scope?.name || "",
+        amountText: signed,
+        amountClass:
+          type === "income" || (type === "adjustment" && amount >= 0)
+            ? "positive"
+            : type === "transfer"
+              ? "neutral"
+              : "negative",
+      };
+    });
+}
+
+function csvEscape(value) {
+  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+}
+
+function reportAccountLabel(transaction, accountMap) {
+  const fromAccount = accountMap.get(String(transaction?.accountId || "").trim());
+  const toAccount = accountMap.get(String(transaction?.toAccountId || "").trim());
+  if (String(transaction?.type || "").trim() === "transfer") {
+    return `${String(fromAccount?.name || "Không rõ")} → ${String(toAccount?.name || "Không rõ")}`;
+  }
+  return String(fromAccount?.name || "Không rõ");
+}
+
+function reportAmountText(transaction) {
+  const amount = Number(transaction?.amount || 0);
+  const type = String(transaction?.type || "").trim();
+  const abs = formatCurrency(Math.abs(amount));
+  if (type === "expense") return `-${abs}`;
+  if (type === "income") return `+${abs}`;
+  if (type === "adjustment") return `${amount >= 0 ? "+" : "-"}${abs}`;
+  return abs;
+}
+
+export function buildReportCsvContent({
+  transactions = [],
+  accounts = [],
+  expenseScopes = [],
+  filters = {},
+} = {}) {
+  const normalized = normalizeReportFilters(filters);
+  const accountMap = new Map(
+    (Array.isArray(accounts) ? accounts : []).map((item) => [String(item?.id || "").trim(), item])
+  );
+  const scopeMap = buildExpenseScopeMap(expenseScopes);
+  const rows = (Array.isArray(transactions) ? transactions : []).filter(
+    (transaction) =>
+      isFinanceTransactionType(transaction?.type) && includesAccount(transaction, normalized.accountId)
+  );
+
+  const header = ["Ngày", "Loại", "Tài khoản", "Danh mục", "Nhóm chi", "Ghi chú", "Số tiền"];
+  const lines = [header.join(",")];
+
+  rows.forEach((transaction) => {
+    const type = String(transaction?.type || "").trim();
+    const values = [
+      formatDateLabel(transaction?.occurredAt),
+      getTransactionTypeLabel(type),
+      reportAccountLabel(transaction, accountMap),
+      type === "expense" ? getFinanceCategoryLabel(transaction?.categoryKey) : "",
+      type === "expense" ? String(scopeMap.get(String(transaction?.scopeId || "").trim()) || "") : "",
+      String(transaction?.note || "").trim(),
+      reportAmountText(transaction),
+    ].map(csvEscape);
+    lines.push(values.join(","));
+  });
+
+  return lines.join("\n");
+}
+
+export function buildAiReportInsightPayload(vm = {}, options = {}) {
+  const summary = vm?.summary || {};
+  const filters = vm?.filters || {};
+  const categoryItems = Array.isArray(vm?.categoryBreakdown?.items) ? vm.categoryBreakdown.items : [];
+  const topCategoryItem = categoryItems[0] || null;
+  const momItems = Array.isArray(options?.momComparison?.items) ? options.momComparison.items : [];
+  const chiMom = momItems.find((item) => item?.key === "expense");
+  const netMom = momItems.find((item) => item?.key === "net");
+
+  const expenseByDay = new Map();
+  (Array.isArray(options?.transactions) ? options.transactions : []).forEach((transaction) => {
+    if (String(transaction?.type || "").trim() !== "expense") return;
+    if (!includesAccount(transaction, filters.accountId || "all")) return;
+    const dateKey = toDateInputValue(transaction?.occurredAt);
+    if (!dateKey) return;
+    expenseByDay.set(dateKey, Number(expenseByDay.get(dateKey) || 0) + Math.abs(Number(transaction?.amount || 0)));
+  });
+
+  let topDay = null;
+  expenseByDay.forEach((amount, dateKey) => {
+    if (!topDay || amount > topDay.amount) {
+      topDay = { date: formatDateLabel(dateKey), amount };
+    }
+  });
+
+  return {
+    monthLabel: summary.rangeLabel || formatMonthLabel(filters.month || getCurrentYm()),
+    accountLabel: vm?.meta?.accountFilterLabel || "Tất cả tài khoản",
+    totalChi: Number(summary.expenseTotal || 0),
+    totalThu: Number(summary.incomeTotal || 0),
+    net: Number(summary.netTotal || 0),
+    chiCompareText: chiMom?.deltaText || "",
+    netCompareText: netMom?.deltaText || "",
+    topCategory: topCategoryItem
+      ? {
+          name: topCategoryItem.label,
+          amount: Number(topCategoryItem.total || topCategoryItem.amount || 0),
+        }
+      : null,
+    topDay,
+  };
 }

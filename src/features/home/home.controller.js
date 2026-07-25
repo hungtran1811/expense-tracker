@@ -1,6 +1,6 @@
 import { formatTemplate, t } from "../../shared/constants/copy.vi.js";
-import { PROFILE_VI } from "../../shared/constants/profile.vi.js";
 import { prevYm } from "../../shared/ui/core.js";
+import { summarizeFinanceTotals } from "../../shared/utils/finance.shared.js";
 import {
   buildFinanceVm,
   formatCurrency,
@@ -18,12 +18,6 @@ import {
   buildCategoryBreakdown,
 } from "../reports/reports.controller.js";
 
-const WEEKDAY_LABELS = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
-
-function isFinanceTransactionType(type = "") {
-  return ["expense", "income", "transfer", "adjustment"].includes(String(type || "").trim());
-}
-
 function includesAccount(transaction, accountId = "all") {
   const target = String(accountId || "").trim();
   if (!target || target === "all") return true;
@@ -40,28 +34,6 @@ export function normalizeHomeAccountFilter(accountId = "all", accounts = []) {
     (item) => String(item?.id || "").trim() === normalized && String(item?.status || "active") !== "archived"
   );
   return exists ? normalized : "all";
-}
-
-function summarizeTransactions(transactions = []) {
-  const items = (Array.isArray(transactions) ? transactions : []).filter((transaction) =>
-    isFinanceTransactionType(transaction?.type)
-  );
-
-  const incomeTotal = items
-    .filter((item) => String(item?.type || "") === "income")
-    .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-  const expenseTotal = items
-    .filter((item) => String(item?.type || "") === "expense")
-    .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-  const adjustmentTotal = items
-    .filter((item) => String(item?.type || "") === "adjustment")
-    .reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-
-  return {
-    incomeTotal,
-    expenseTotal,
-    netTotal: incomeTotal - expenseTotal + adjustmentTotal,
-  };
 }
 
 function buildDeltaMetric(current = 0, previous = 0) {
@@ -82,27 +54,6 @@ function buildDeltaMetric(current = 0, previous = 0) {
     deltaText: `${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%`,
     deltaTone: pct >= 0 ? "up" : "down",
     deltaAbsText: formatCurrency(Math.abs(deltaAbs)),
-  };
-}
-
-function buildHeroContext(monthKey = getCurrentYm()) {
-  const now = new Date();
-  const hour = now.getHours();
-  let greeting = PROFILE_VI.greetingEvening || "Chào";
-  if (hour < 12) greeting = PROFILE_VI.greetingMorning || greeting;
-  else if (hour < 18) greeting = PROFILE_VI.greetingAfternoon || greeting;
-
-  const weekday = WEEKDAY_LABELS[now.getDay()] || "";
-  const dateLabel = `${weekday}, ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`;
-  const monthLabel = formatMonthLabel(monthKey);
-
-  return {
-    greeting,
-    shortName: PROFILE_VI.shortName || "Hưng",
-    title: `${greeting} ${PROFILE_VI.shortName || "Hưng"}`,
-    dateLabel,
-    monthLabel,
-    tagline: formatTemplate(t("home.heroTagline", "Theo dõi chi tiêu tháng {{month}}"), { month: monthLabel }),
   };
 }
 
@@ -202,8 +153,8 @@ export function buildHomeVm({
     selectedPartyId: "",
   });
 
-  const currentSummary = summarizeTransactions(filteredMonthTransactions);
-  const previousSummary = summarizeTransactions(filteredPreviousMonthTransactions);
+  const currentSummary = summarizeFinanceTotals(filteredMonthTransactions);
+  const previousSummary = summarizeFinanceTotals(filteredPreviousMonthTransactions);
   const incomeKpi = buildKpiValue(financeVm?.summary?.incomeTotal || 0);
   const expenseKpi = buildKpiValue(financeVm?.summary?.expenseTotal || 0);
   const netKpi = buildKpiValue(financeVm?.summary?.netTotal || 0);
@@ -248,9 +199,10 @@ export function buildHomeVm({
     dateLabel: formatDateLabel(todayKey),
     incomeTotalText: formatCurrency(todayIncomeTotal),
     expenseTotalText: formatCurrency(todayExpenseTotal),
-    items: financeVmToday?.ledger?.rows || [],
-    emptyTitle: t("home.todayEmpty", "Chưa có thu chi hôm nay"),
-    emptyBody: t("home.todayEmptyBody", "Ghi khoản thu hoặc chi để theo dõi trong ngày."),
+    items: (financeVmToday?.ledger?.rows || []).slice(0, 4),
+    moreCount: Math.max(0, (financeVmToday?.ledger?.rows || []).length - 4),
+    emptyTitle: t("home.todayEmpty", "Chưa có thu chi"),
+    emptyBody: "",
     filterNote:
       accountFilterId !== "all" && selectedAccount?.name
         ? formatTemplate(t("home.filterActiveNote", "Đang lọc theo {{account}}"), {
@@ -259,21 +211,30 @@ export function buildHomeVm({
         : "",
   };
 
+  const balanceKpi = buildKpiValue(financeVm?.summary?.totalBalance || 0);
   const monthBar = [
     {
+      key: "balance",
+      label: t("home.kpiBalance", "Số dư"),
+      valueText: balanceKpi.valueText,
+      valueTitle: balanceKpi.valueTitle,
+      note: "",
+      tone: "balance",
+    },
+    {
       key: "income",
-      label: t("home.kpiIncome", "Thu tháng này"),
+      label: t("home.kpiIncome", "Thu"),
       valueText: incomeKpi.valueText,
       valueTitle: incomeKpi.valueTitle,
-      note: financeVm?.monthLabel || "",
+      note: "",
       tone: "income",
     },
     {
       key: "expense",
-      label: t("home.kpiExpense", "Chi tháng này"),
+      label: t("home.kpiExpense", "Chi"),
       valueText: expenseKpi.valueText,
       valueTitle: expenseKpi.valueTitle,
-      note: financeVm?.monthLabel || "",
+      note: "",
       tone: "expense",
     },
     {
@@ -281,28 +242,22 @@ export function buildHomeVm({
       label: t("home.kpiNet", "Còn lại"),
       valueText: netKpi.valueText,
       valueTitle: netKpi.valueTitle,
-      note: t("glossary.netBalanceNote", "Thu − Chi"),
+      note: "",
       tone: "net",
     },
     {
       key: "debt",
-      label: t("home.kpiDebt", "Tiền cho mượn"),
+      label: t("home.kpiDebt", "Cho mượn"),
       valueText: loansDataLoaded ? formatCurrency(loansVm?.summary?.totalOutstanding || 0) : "—",
       valueTitle: "",
-      note: loansDataLoaded
-        ? loansVm?.summary?.activePartyCountText || "0 người"
-        : loanParties.length
-          ? formatTemplate(t("home.kpiDebtLoadHint", "{{count}} người · tải tab Cho mượn"), {
-              count: loanParties.length,
-            })
-          : t("home.kpiDebtEmpty", "Chưa có người mượn"),
+      note: "",
       tone: "warning",
       link: "#loans",
     },
   ];
 
   const expenseTotal = Number(currentSummary.expenseTotal || 0);
-  const categoryItems = buildCategoryBreakdown(filteredMonthTransactions, expenseTotal).slice(0, 3);
+  const categoryItems = buildCategoryBreakdown(filteredMonthTransactions, expenseTotal).slice(0, 5);
 
   const recentCutoffDate = (() => {
     const anchor = new Date(`${todayKey}T12:00:00`);
@@ -329,7 +284,6 @@ export function buildHomeVm({
   });
 
   return {
-    hero: buildHeroContext(normalizedMonth),
     monthKey: normalizedMonth,
     prevMonthKey,
     monthLabel: financeVm?.monthLabel || formatMonthLabel(normalizedMonth),
@@ -339,13 +293,13 @@ export function buildHomeVm({
     monthBar,
     categoryBreakdown: {
       items: categoryItems,
-      emptyTitle: t("home.noCategory", "Chưa có danh mục chi"),
-      emptyBody: t("home.noCategoryBody", "Danh mục chi sẽ hiện khi bạn ghi khoản chi trong tháng."),
+      emptyTitle: t("home.noCategory", "Chưa có chi"),
+      emptyBody: "",
     },
     recentTransactions: {
       items: (recentFinanceVm?.ledger?.rows || []).slice(0, 8),
       emptyTitle: t("home.noRecent", "Chưa có giao dịch gần đây"),
-      emptyBody: t("home.noRecentBody", "Thêm khoản chi hoặc thu để bắt đầu theo dõi."),
+      emptyBody: "",
     },
     momComparison: includeMomComparison
       ? {
@@ -356,18 +310,18 @@ export function buildHomeVm({
       : {
           loadPending: true,
           emptyTitle: t("home.momLoadTitle", "So với tháng trước"),
-          emptyBody: t("home.momLoadBody", "Bấm để so sánh chi, thu và còn lại với tháng liền trước."),
+          emptyBody: "",
         },
     dailyFlow: includeDailyFlow
       ? {
           ...dailyFlowRaw,
-          emptyTitle: t("home.dailyFlowEmpty", "Chưa có dòng tiền tháng này"),
-          emptyBody: t("home.dailyFlowEmptyBody", "Ghi thu hoặc chi để theo dõi biến động từng ngày."),
+          emptyTitle: t("home.dailyFlowEmpty", "Chưa có chi"),
+          emptyBody: "",
         }
       : {
           loadPending: true,
           emptyTitle: t("home.dailyFlowLoadTitle", "Dòng tiền theo ngày"),
-          emptyBody: t("home.dailyFlowLoadBody", "Bấm để xem biến động từng ngày trong tháng — không tải tự động."),
+          emptyBody: "",
         },
     accountFilter: {
       accountId: accountFilterId,

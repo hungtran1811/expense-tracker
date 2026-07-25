@@ -1,8 +1,8 @@
 import { t } from "../../shared/constants/copy.vi.js";
 import {
   ACCOUNT_TYPE_OPTIONS,
-  FINANCE_CATEGORIES,
   FINANCE_TRANSACTION_TYPE_OPTIONS,
+  getExpenseCategoryOptions,
 } from "../../shared/constants/finance.constants.js";
 
 function byId(id) {
@@ -55,9 +55,9 @@ function renderLedgerEmpty(container, title = "", body = "", hasAccounts = false
 function renderFinanceMonthLoadPrompt(container) {
   if (!container) return;
   container.innerHTML = `
-    <div class="workspace-load-prompt workspace-load-prompt-inline">
+    <div class="workspace-empty workspace-load-prompt workspace-load-prompt-inline">
       <strong>${escapeHtml(t("finance.monthLoadTitle", "Giao dịch tháng này"))}</strong>
-      <p>${escapeHtml(t("finance.monthLoadBody", "Bấm tải để xem toàn bộ giao dịch trong tháng — mặc định trang Chi tiêu chỉ hiển thị theo ngày."))}</p>
+      <p>${escapeHtml(t("finance.monthLoadBody", "Đang chuẩn bị giao dịch tháng. Nếu chưa hiện, bấm tải để thử lại."))}</p>
       <button type="button" class="btn btn-sm btn-primary" id="btnLoadFinanceMonth">
         ${escapeHtml(t("finance.monthLoadAction", "Tải giao dịch tháng"))}
       </button>
@@ -285,6 +285,129 @@ function renderExpenseScopes(container, scopePanel = {}) {
   `;
 }
 
+function renderExpenseCategories(container, categoryPanel = {}) {
+  if (!container) return;
+  const items = Array.isArray(categoryPanel?.items) ? categoryPanel.items : [];
+  if (!items.length) {
+    container.innerHTML = `
+      <div class="finance-empty">
+        <strong>${escapeHtml(categoryPanel.emptyTitle || "")}</strong>
+        <div>${escapeHtml(categoryPanel.emptyBody || "")}</div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="scope-list">
+      ${items
+        .map((item) => {
+          const usageCount = Number(item.usageCount || 0);
+          const usageLabel =
+            usageCount > 0
+              ? `${usageCount} giao dịch trong kỳ đang xem`
+              : "Chưa có giao dịch nào trong kỳ đang xem";
+
+          return `
+            <article class="scope-card">
+              <div class="scope-card-main">
+                <div class="scope-card-title">${escapeHtml(item.name)}</div>
+                <div class="scope-card-meta">${escapeHtml(usageLabel)}</div>
+              </div>
+              <div class="scope-card-actions">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-primary"
+                  data-category-action="rename"
+                  data-category-id="${escapeHtml(item.id)}"
+                  data-category-key="${escapeHtml(item.key || "")}"
+                  data-category-name="${escapeHtml(item.name)}"
+                  data-category-usage-count="${usageCount}"
+                >
+                  Đổi tên
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-danger"
+                  data-category-action="delete"
+                  data-category-id="${escapeHtml(item.id)}"
+                  data-category-key="${escapeHtml(item.key || "")}"
+                  data-category-name="${escapeHtml(item.name)}"
+                  data-category-usage-count="${usageCount}"
+                  ${item.canDelete ? "" : "disabled"}
+                >
+                  Xóa
+                </button>
+              </div>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderScopeBudgets(container, budgetPanel = {}) {
+  if (!container) return;
+  const items = Array.isArray(budgetPanel?.items) ? budgetPanel.items : [];
+  if (!items.length) {
+    container.innerHTML = `
+      <div class="finance-empty">
+        <strong>${escapeHtml(t("finance.scopeBudgetEmpty", "Chưa có nhóm chi để đặt ngân sách."))}</strong>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="scope-budget-list" role="list">
+      <div class="scope-budget-row scope-budget-row-head" aria-hidden="true">
+        <span>${escapeHtml(t("finance.scopeBudgetColGroup", "Nhóm"))}</span>
+        <span>${escapeHtml(t("finance.scopeBudgetColLimit", "Ngân sách tháng"))}</span>
+        <span>${escapeHtml(t("finance.scopeBudgetColSpent", "Đã chi"))}</span>
+        <span></span>
+      </div>
+      ${items
+        .map((item) => {
+          const limitValue = Number(item.limitAmount || 0) > 0 ? String(Math.round(Number(item.limitAmount))) : "";
+          return `
+            <div class="scope-budget-row" role="listitem" data-scope-budget-row="${escapeHtml(item.scopeId)}">
+              <div class="scope-budget-name">${escapeHtml(item.name)}</div>
+              <div class="scope-budget-limit">
+                <input
+                  type="number"
+                  min="1"
+                  step="1000"
+                  class="form-control form-control-sm"
+                  inputmode="numeric"
+                  data-scope-budget-input
+                  data-scope-id="${escapeHtml(item.scopeId)}"
+                  value="${escapeHtml(limitValue)}"
+                  placeholder="0"
+                  aria-label="${escapeHtml(t("finance.scopeBudgetColLimit", "Ngân sách tháng"))}"
+                />
+              </div>
+              <div class="scope-budget-spent ${item.overBudget ? "is-over" : ""}">
+                <span class="u-money">${escapeHtml(item.spentText || "0đ")}</span>
+              </div>
+              <div class="scope-budget-actions">
+                <button
+                  type="button"
+                  class="btn btn-sm btn-outline-primary"
+                  data-scope-budget-save
+                  data-scope-id="${escapeHtml(item.scopeId)}"
+                >
+                  ${escapeHtml(t("finance.scopeBudgetSave", "Lưu"))}
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
 function syncFilterControlLabels() {
   const labelMap = {
     ledgerFilterAccount: t("finance.filter.account", "Tài khoản"),
@@ -371,6 +494,19 @@ export function renderExpensesLedgerView(vm = {}, options = {}) {
 }
 
 export function renderExpensesManageView(vm = {}, options = {}) {
+  const renderScopeBudgetChrome = () => {
+    const budgetPanel = options?.scopeBudgetPanel || vm?.scopeBudgetPanel || {};
+    const hintEl = byId("scopeBudgetsHint");
+    if (hintEl) {
+      hintEl.textContent = t("finance.scopeBudgetHint", "Giới hạn chi theo nhóm cho tháng đang xem.");
+    }
+    const monthEl = byId("scopeBudgetsMonthLabel");
+    if (monthEl) monthEl.textContent = String(budgetPanel?.monthLabel || "");
+    const titleEl = document.querySelector("#scopeBudgetsBlock .scope-budgets-title");
+    if (titleEl) titleEl.textContent = t("finance.scopeBudgetTitle", "Ngân sách tháng");
+    renderScopeBudgets(byId("scopeBudgetsList"), budgetPanel);
+  };
+
   if (!vm?.accountsPanel?.hasActiveAccounts) {
     const manageAccountsEl = byId("financeAccountsList");
     if (manageAccountsEl) {
@@ -390,6 +526,19 @@ export function renderExpensesManageView(vm = {}, options = {}) {
     if (scopeHintEl) scopeHintEl.textContent = t("finance.scopeHint", "Tách khoản chi theo người hoặc mục đích.");
     const scopeSummaryEl = byId("expenseScopesSummary");
     if (scopeSummaryEl) scopeSummaryEl.textContent = String(vm?.scopePanel?.summaryText || "0 nhóm");
+    renderExpenseCategories(byId("expenseCategoriesList"), vm?.categoryPanel || {});
+    const categoryHintEl = byId("expenseCategoriesHint");
+    if (categoryHintEl) {
+      categoryHintEl.textContent = t(
+        "finance.categoryHint",
+        "Phân loại khoản chi (Ăn uống, Di chuyển…). Sau này có thể thêm danh mục con."
+      );
+    }
+    const categorySummaryEl = byId("expenseCategoriesSummary");
+    if (categorySummaryEl) {
+      categorySummaryEl.textContent = String(vm?.categoryPanel?.summaryText || "0 danh mục");
+    }
+    renderScopeBudgetChrome();
     return;
   }
 
@@ -413,6 +562,27 @@ export function renderExpensesManageView(vm = {}, options = {}) {
 
   const createScopeBtn = byId("btnCreateExpenseScope");
   if (createScopeBtn) createScopeBtn.textContent = t("finance.scope.create", "Thêm nhóm");
+
+  renderExpenseCategories(byId("expenseCategoriesList"), vm?.categoryPanel || {});
+  const categoryHintEl = byId("expenseCategoriesHint");
+  if (categoryHintEl) {
+    categoryHintEl.textContent = t(
+      "finance.categoryHint",
+      "Phân loại khoản chi (Ăn uống, Di chuyển…). Sau này có thể thêm danh mục con."
+    );
+  }
+  const categorySummaryEl = byId("expenseCategoriesSummary");
+  if (categorySummaryEl) {
+    categorySummaryEl.textContent = String(vm?.categoryPanel?.summaryText || "0 danh mục");
+  }
+  const categoryNameInput = byId("expenseCategoryName");
+  if (categoryNameInput) {
+    categoryNameInput.placeholder = t("finance.categoryPlaceholder", "Ví dụ: Siêu thị, Pet, Du lịch");
+  }
+  const createCategoryBtn = byId("btnCreateExpenseCategory");
+  if (createCategoryBtn) createCategoryBtn.textContent = t("finance.category.create", "Thêm danh mục");
+
+  renderScopeBudgetChrome();
 }
 
 export function renderFinanceRoute(vm = {}, expensesView = "ledger", options = {}) {
@@ -437,13 +607,14 @@ export function renderFinanceRoute(vm = {}, expensesView = "ledger", options = {
   });
 
   renderExpensesLedgerView(vm, options);
-  renderExpensesManageView(vm);
+  renderExpensesManageView(vm, options);
 }
 
 export function renderFinanceComposer({
   draft = {},
   accounts = [],
   expenseScopes = [],
+  expenseCategories = [],
 } = {}) {
   const type = String(draft?.type || "expense").trim();
   const isEdit = !!String(draft?.id || "").trim();
@@ -478,11 +649,12 @@ export function renderFinanceComposer({
       label: item.name,
     })),
   ];
+  const categoryOptions = getExpenseCategoryOptions(expenseCategories);
 
   fillSelect(byId("ftType"), FINANCE_TRANSACTION_TYPE_OPTIONS, type);
   fillSelect(byId("ftAccountId"), accountOptions, draft?.accountId || "");
   fillSelect(byId("ftToAccountId"), accountOptions, draft?.toAccountId || "");
-  fillSelect(byId("ftCategory"), FINANCE_CATEGORIES, draft?.categoryKey || "other");
+  fillSelect(byId("ftCategory"), categoryOptions, draft?.categoryKey || "other");
   fillSelect(byId("ftScopeId"), scopeOptions, draft?.scopeId || "");
 
   byId("ftAccountWrap")?.classList.toggle("d-none", false);
@@ -611,5 +783,64 @@ export function renderExpenseScopeForm({ draft = {}, expenseScopes = [] } = {}) 
     }));
 
   fillSelect(byId("fsReplacementScopeId"), replacementOptions, draft?.replacementScopeId || "");
+  if (saveButton) saveButton.disabled = isDelete && replacementOptions.length === 0;
+}
+
+export function renderExpenseCategoryForm({ draft = {}, expenseCategories = [] } = {}) {
+  const mode = String(draft?.mode || "rename").trim();
+  const isDelete = mode === "delete";
+
+  const titleEl = byId("financeCategoryTitle");
+  const hintEl = byId("financeCategoryHint");
+  const saveButton = byId("btnSaveExpenseCategory");
+
+  if (titleEl) {
+    titleEl.textContent = isDelete
+      ? t("finance.category.deleteTitle", "Xóa danh mục")
+      : t("finance.category.renameTitle", "Đổi tên danh mục");
+  }
+  if (hintEl) {
+    hintEl.textContent = isDelete
+      ? t("finance.category.deleteHint", "Chọn danh mục thay thế nếu cần chuyển giao dịch trước khi xóa.")
+      : t("finance.category.renameHint", "Đổi tên danh mục mà không làm mất liên kết với các khoản chi cũ.");
+  }
+  if (saveButton) {
+    saveButton.textContent = isDelete
+      ? t("finance.category.deleteAction", "Xóa danh mục")
+      : t("common.save", "Lưu thay đổi");
+    saveButton.classList.toggle("btn-danger", isDelete);
+    saveButton.classList.toggle("btn-primary", !isDelete);
+  }
+
+  byId("fcNameWrap")?.classList.toggle("d-none", isDelete);
+  byId("fcCurrentWrap")?.classList.toggle("d-none", !isDelete);
+  byId("fcReplacementWrap")?.classList.toggle("d-none", !isDelete);
+  byId("fcDeleteNoticeWrap")?.classList.toggle("d-none", !isDelete);
+
+  const idEl = byId("fcId");
+  const modeEl = byId("fcMode");
+  const currentEl = byId("fcCurrentName");
+  const nameEl = byId("fcName");
+  const deleteNoticeEl = byId("fcDeleteNotice");
+
+  if (idEl) idEl.value = draft?.id || "";
+  if (modeEl) modeEl.value = mode;
+  if (currentEl) currentEl.value = draft?.name || "";
+  if (nameEl) nameEl.value = draft?.name || "";
+  if (deleteNoticeEl) {
+    deleteNoticeEl.textContent = isDelete
+      ? `Danh mục "${draft?.name || ""}" sẽ bị xóa sau khi chuyển dữ liệu sang danh mục thay thế.`
+      : "";
+  }
+
+  const replacementOptions = (Array.isArray(expenseCategories) ? expenseCategories : [])
+    .filter((item) => String(item?.id || "").trim() !== String(draft?.id || "").trim())
+    .filter((item) => !String(item?.parentId || "").trim())
+    .map((item) => ({
+      value: item.id,
+      label: item.name,
+    }));
+
+  fillSelect(byId("fcReplacementCategoryId"), replacementOptions, draft?.replacementCategoryId || "");
   if (saveButton) saveButton.disabled = isDelete && replacementOptions.length === 0;
 }

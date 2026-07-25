@@ -31,15 +31,14 @@ npm run check:baseline
 
 ## 3) Tổng quan (`#home`)
 
-- Sau đăng nhập, mặc định vào tab Tổng quan (không còn mở thẳng Chi tiêu).
-- Tiêu đề «Tổng quan» và nhãn tháng hiện tại hiển thị đúng.
-- Lưới 4 tài khoản: số dư **đầy đủ** từng ví (vd. `1.234.567đ`), **không có phần thập phân** (`,04`) — không xuống hàng, không tràn viền (mobile 375px).
-- Section «Hôm nay»: tổng thu/chi ngày + danh sách chỉ giao dịch thu và chi trong ngày; bấm dòng mở sửa.
-- Thanh tháng: thu, chi, còn lại, tiền cho mượn — ô cho mượn số đầy đủ, bấm chuyển `#loans`; 3 ô kia compact + `title` đầy đủ.
+- Dashboard quản trị ngắn: KPI (Số dư / Thu / Chi / Còn lại / Cho mượn) + chip lọc ví.
+- Biểu đồ **Chi theo danh mục** (donut) và **Chi theo ngày** (cột 14 ngày gần).
+- Lưới ví gọn: số dư đầy đủ VND, không tràn mobile 375px.
+- «Hôm nay»: 2 số thu/chi + tối đa 4 dòng; bấm dòng mở sửa.
+- **Giao dịch gần đây** (7 ngày) trên Tổng quan; bấm dòng mở sửa.
 - Nút Chi / Thu / Chuyển và phím `C` / `I` / `T` hoạt động trên tab này.
-- Panel **Dòng tiền theo ngày**: bấm «Xem dòng tiền» để tải (không auto).
-- **So với tháng trước**: bấm «Xem so với tháng trước» trong panel (lazy, 1 query).
-- **Top danh mục chi** (3 hàng) và **Giao dịch 7 ngày** hiển thị từ cache tháng.
+- Phân tích sâu (MoM, dòng tiền đầy đủ, top danh mục chi tiết) nằm trên tab **Báo cáo**.
+- Mục tiêu tiết kiệm: bấm «Thêm» / «Sửa» mở popup modal.
 
 ## 4) Chi tiêu (`#expenses`)
 
@@ -51,9 +50,9 @@ npm run check:baseline
 
 ### 4.2 Giao dịch (sub-tab Giao dịch)
 
-- Preset **Hôm nay** mặc định; **Tháng này** cần bấm «Tải giao dịch tháng».
-- Thêm / sửa / xóa khoản chi, thu, chuyển, sửa số dư.
-- Form Chi / Thu hiển thị gợi ý phím tắt (`C`, `I`, `/`); form Chuyển / Sửa số dư không hiện dòng gợi ý.
+- Preset **Hôm nay** mặc định; chọn **Tháng này** sẽ tự tải giao dịch tháng.
+- Thêm / sửa / xóa khoản chi, thu, chuyển.
+- Form Chi / Thu hiển thị gợi ý phím tắt (`C`, `I`, `/`); form Chuyển không hiện dòng gợi ý.
 - Số tiền timeline hiển thị đầy đủ VND, không tràn (`u-money`).
 - Bộ lọc drawer: nhãn tiếng Việt từ copy (Tài khoản, Loại, Danh mục, Nhóm chi).
 - Xuất CSV theo bộ lọc hiện tại.
@@ -63,8 +62,9 @@ npm run check:baseline
 
 - Khi chưa có tài khoản: empty state + nút «Thêm tài khoản đầu tiên».
 - Tạo / sửa / lưu trữ tài khoản; số dư `formatCurrency` đầy đủ.
-- Sửa số dư qua bút toán điều chỉnh.
 - Thêm / đổi tên / xóa nhóm chi (có chuyển dữ liệu nếu cần).
+- Thêm / đổi tên / xóa **danh mục chi** (có chuyển dữ liệu nếu cần); form ghi chi và bộ lọc dùng danh mục động.
+- Ngân sách theo nhóm (tháng hiện tại) trên sub-tab Quản lý.
 
 ## 5) Cho mượn (`#loans`)
 
@@ -82,16 +82,12 @@ npm run check:baseline
 
 ## 6) Báo cáo (`#reports`)
 
-- Layout V2: header «Báo cáo» + preset **Tháng này** / **Tháng trước** (chip active đúng kỳ).
-- Preset bấm là áp dụng ngay; khoảng ngày tùy chỉnh vẫn cần **Áp dụng**.
-- Spotlight 4 KPI tách khỏi filter; số tiền `u-money` đầy đủ VND, không tràn mobile 375px.
-- Áp dụng bộ lọc từ ngày / đến ngày / tài khoản.
-- Summary, số dư các ví, tóm tắt kỳ, điểm đáng lưu ý render đúng.
-- Breakdown danh mục, nhóm chi, tài khoản — **bấm một hàng** mở `#expenses` đã lọc.
-- Bấm «So với kỳ trước» để tải MoM (lazy).
-- Báo cáo **không tự tải** khi mở tab — cần «Tải báo cáo» hoặc «Áp dụng».
-- Đặt lại bộ lọc về mặc định (Tháng này).
-- Subtitle «X ví đang dùng» khớp số tài khoản thực tế.
+- Layout quản trị: filter gọn + KPI (Số dư / Thu / Chi / Còn lại).
+- Biểu đồ chính: **Danh mục chi**, **Nhóm chi**, **Chi theo ngày** (cột).
+- MoM: nút «So với kỳ trước» hoặc chip % gọn (không đoạn mô tả dài).
+- Số dư ví + điểm nổi bật ngắn; khoản lớn nhất 1 dòng; biến động tài khoản (Vào/Ra).
+- Giao dịch gần đây nằm trên tab **Tổng quan**.
+- Breakdown danh mục / nhóm / tài khoản — bấm hàng mở `#expenses` đã lọc.
 
 ## 7) Responsive
 
@@ -103,7 +99,7 @@ npm run check:baseline
 - `768–991px`:
   - Layout chi tiêu/loans/reports co giãn ổn định.
 - `>=992px`:
-  - Ledger một cột full width; sub-tab Quản lý hiển thị card tài khoản + nhóm chi.
+  - Ledger một cột full width; sub-tab Quản lý hiển thị card tài khoản + nhóm chi + danh mục chi.
 
 ## 8) i18n / UTF-8
 
@@ -122,5 +118,13 @@ npm run check:baseline
 
 ## 10) Known limitations
 
-- Sửa tài khoản không đổi số dư đầu kỳ — dùng Sửa số dư.
-- AI phân loại chi tiêu tạm tắt (ngoài scope Finance-only hiện tại).
+- AI tóm tắt báo cáo tạm ẩn (`featureFlags.ai = false`).
+- Xuất PDF báo cáo chưa có (CSV kỳ báo cáo đã có).
+
+## 11) Growth
+
+- Phím `/` mở tìm kiếm toàn cục (giao dịch + người mượn).
+- Badge số người còn nợ trên tab Cho mượn; meta «Cần nhắc» nếu quá 30 ngày.
+- Quản lý: mẫu định kỳ + «Tạo hôm nay».
+- Tổng quan: mục tiêu tiết kiệm (tiến độ thủ công).
+- Production: PWA Add to Home Screen (manifest + SW).

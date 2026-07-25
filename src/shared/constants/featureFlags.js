@@ -1,12 +1,6 @@
 export const ENABLED_ROUTES = {
-  dashboard: false,
-  accounts: false,
-  classes: false,
-  "weekly-review": false,
-  settings: false,
-  goals: false,
-  "video-plan": false,
   loans: true,
   reports: true,
+  /** Tạm ẩn toàn bộ AI (tóm tắt báo cáo / categorize). */
   ai: false,
 };

@@ -12,6 +12,12 @@ function readReportFilters() {
 
 export function bindReportEvents(handlers = {}) {
   document.addEventListener("click", (event) => {
+    const recentRow = event.target.closest("[data-report-recent-id]");
+    if (recentRow) {
+      handlers.onEditTransaction?.(recentRow.getAttribute("data-report-recent-id") || "");
+      return;
+    }
+
     const drillEl = event.target.closest("[data-report-drill]");
     if (drillEl) {
       const kind = String(drillEl.getAttribute("data-report-drill") || "").trim();
@@ -57,6 +63,14 @@ export function bindReportEvents(handlers = {}) {
 
   byId("btnResetReportFilters")?.addEventListener("click", () => {
     handlers.onResetFilters?.();
+  });
+
+  byId("btnExportReportCsv")?.addEventListener("click", () => {
+    handlers.onExportCsv?.();
+  });
+
+  byId("btnAiReportInsights")?.addEventListener("click", () => {
+    handlers.onAiInsights?.();
   });
 
   document.querySelectorAll("[data-report-preset]").forEach((button) => {

@@ -16,9 +16,7 @@ export default defineConfig({
           const normalized = String(id || "").replaceAll("\\", "/");
           if (normalized.includes("/node_modules/firebase/")) return "vendor-firebase";
           if (normalized.includes("/node_modules/")) return "vendor";
-          if (normalized.includes("/src/features/weeklyReview/")) return "feature-weekly-review";
-          if (normalized.includes("/src/features/dashboard/")) return "feature-dashboard";
-          if (normalized.includes("/src/services/api/ai")) return "feature-ai-services";
+          if (normalized.includes("/src/features/")) return "features";
           return undefined;
         },
       },

@@ -98,7 +98,11 @@ function renderPartyList(container, block = {}, selectedPartyId = "") {
               <span class="loans-party-chip-copy">
                 <span class="loans-party-chip-name u-ellipsis">${escapeHtml(item.name)}</span>
                 <span class="loans-party-chip-meta u-ellipsis">${escapeHtml(
-                  hasDebt ? `Còn nợ ${item.outstandingText}` : t("loans.party.settled", "Đã trả hết")
+                  item.needsReminder
+                    ? `${t("loans.party.needsReminder", "Cần nhắc")} · Còn nợ ${item.outstandingText}`
+                    : hasDebt
+                      ? `Còn nợ ${item.outstandingText}`
+                      : t("loans.party.settled", "Đã trả hết")
                 )}</span>
               </span>
             </button>
@@ -112,7 +116,7 @@ function renderPartyList(container, block = {}, selectedPartyId = "") {
 function renderLoadPrompt(container, { title = "", body = "", actionId = "", actionLabel = "" } = {}) {
   if (!container) return;
   container.innerHTML = `
-    <div class="workspace-load-prompt workspace-load-prompt-inline">
+    <div class="workspace-empty workspace-load-prompt workspace-load-prompt-inline">
       <strong>${escapeHtml(title)}</strong>
       <p>${escapeHtml(body)}</p>
       <button type="button" class="btn btn-sm btn-outline-primary" id="${escapeHtml(actionId)}">

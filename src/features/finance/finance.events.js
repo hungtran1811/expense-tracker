@@ -32,12 +32,39 @@ function readScopeCreateForm() {
   };
 }
 
+function readCategoryCreateForm() {
+  return {
+    name: byId("expenseCategoryName")?.value || "",
+  };
+}
+
+function readRecurringFormLocal() {
+  return {
+    type: byId("rrType")?.value || "expense",
+    amount: byId("rrAmount")?.value || "",
+    dayOfMonth: byId("rrDayOfMonth")?.value || "",
+    categoryKey: byId("rrCategory")?.value || "other",
+    scopeId: byId("rrScopeId")?.value || "",
+    accountId: byId("rrAccountId")?.value || "",
+    note: byId("rrNote")?.value || "",
+  };
+}
+
 function readExpenseScopeForm() {
   return {
     mode: byId("fsMode")?.value || "rename",
     id: byId("fsId")?.value || "",
     name: byId("fsName")?.value || "",
     replacementScopeId: byId("fsReplacementScopeId")?.value || "",
+  };
+}
+
+function readExpenseCategoryForm() {
+  return {
+    mode: byId("fcMode")?.value || "rename",
+    id: byId("fcId")?.value || "",
+    name: byId("fcName")?.value || "",
+    replacementCategoryId: byId("fcReplacementCategoryId")?.value || "",
   };
 }
 
@@ -111,6 +138,30 @@ export function bindFinanceEvents(handlers = {}) {
       return;
     }
 
+    const categoryAction = event.target.closest("[data-category-action]");
+    if (categoryAction) {
+      const payload = {
+        id: categoryAction.getAttribute("data-category-id") || "",
+        key: categoryAction.getAttribute("data-category-key") || "",
+        name: categoryAction.getAttribute("data-category-name") || "",
+        usageCount: Number(categoryAction.getAttribute("data-category-usage-count") || 0),
+      };
+      const action = categoryAction.getAttribute("data-category-action") || "";
+      if (action === "rename") handlers.onRenameExpenseCategory?.(payload);
+      if (action === "delete") handlers.onDeleteExpenseCategory?.(payload);
+      return;
+    }
+
+    const budgetSave = event.target.closest("[data-scope-budget-save]");
+    if (budgetSave) {
+      const scopeId = String(budgetSave.getAttribute("data-scope-id") || "").trim();
+      const row = budgetSave.closest("[data-scope-budget-row]");
+      const input = row?.querySelector("[data-scope-budget-input]");
+      const limitAmount = Number(input?.value || 0);
+      handlers.onSaveScopeBudget?.({ scopeId, limitAmount });
+      return;
+    }
+
   });
 
   byId("ledgerFilterAccount")?.addEventListener("change", (event) => {
@@ -141,6 +192,29 @@ export function bindFinanceEvents(handlers = {}) {
 
   byId("btnCreateExpenseScope")?.addEventListener("click", () => {
     handlers.onCreateExpenseScope?.(readScopeCreateForm());
+  });
+
+  byId("expenseCategoryName")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    handlers.onCreateExpenseCategory?.(readCategoryCreateForm());
+  });
+
+  byId("btnCreateExpenseCategory")?.addEventListener("click", () => {
+    handlers.onCreateExpenseCategory?.(readCategoryCreateForm());
+  });
+
+  byId("btnCreateRecurringRule")?.addEventListener("click", () => {
+    handlers.onCreateRecurringRule?.(readRecurringFormLocal());
+  });
+
+  document.addEventListener("click", (event) => {
+    const recurringAction = event.target.closest("[data-recurring-action]");
+    if (!recurringAction) return;
+    const action = recurringAction.getAttribute("data-recurring-action") || "";
+    const id = recurringAction.getAttribute("data-recurring-id") || "";
+    if (action === "create-today") handlers.onCreateRecurringToday?.(id);
+    if (action === "delete") handlers.onDeleteRecurringRule?.(id);
   });
 
   byId("ftType")?.addEventListener("change", () => {
@@ -174,6 +248,16 @@ export function bindFinanceEvents(handlers = {}) {
     if (event.key !== "Enter") return;
     event.preventDefault();
     handlers.onSubmitExpenseScopeForm?.(readExpenseScopeForm());
+  });
+
+  byId("btnSaveExpenseCategory")?.addEventListener("click", () => {
+    handlers.onSubmitExpenseCategoryForm?.(readExpenseCategoryForm());
+  });
+
+  byId("fcName")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    handlers.onSubmitExpenseCategoryForm?.(readExpenseCategoryForm());
   });
 
   byId("btnExportCsv")?.addEventListener("click", () => {

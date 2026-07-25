@@ -8,12 +8,12 @@
 
 | Tab | Mô tả |
 |-----|--------|
-| **Tổng quan** (`#home`) | Lưới số dư ví, thu/chi hôm nay, tóm tắt tháng, lọc theo tài khoản, dòng tiền theo ngày |
-| **Chi tiêu** (`#expenses`) | Sổ giao dịch (chi / thu / chuyển / sửa số dư), bộ lọc, xuất CSV; sub-tab Quản lý: tài khoản & nhóm chi |
-| **Cho mượn** (`#loans`) | Theo dõi công nợ, ghi nhận cho mượn & nhận trả |
+| **Tổng quan** (`#home`) | Lưới số dư ví, mục tiêu tiết kiệm, thu/chi hôm nay, tóm tắt tháng, lọc theo tài khoản, dòng tiền theo ngày |
+| **Chi tiêu** (`#expenses`) | Sổ giao dịch (chi / thu / chuyển), bộ lọc, xuất CSV; sub-tab Quản lý: tài khoản, nhóm chi & mẫu định kỳ |
+| **Cho mượn** (`#loans`) | Theo dõi công nợ, badge nhắc nợ, ghi nhận cho mượn & nhận trả |
 | **Báo cáo** (`#reports`) | KPI kỳ, breakdown danh mục / nhóm chi / tài khoản; preset Tháng này / Tháng trước |
 
-Phím tắt nhanh trên Tổng quan & Chi tiêu: `C` (chi), `I` (thu), `T` (chuyển).
+Phím tắt nhanh trên Tổng quan & Chi tiêu: `C` (chi), `I` (thu), `T` (chuyển). Phím `/` mở tìm kiếm toàn cục. PWA nhẹ (manifest + service worker) khi chạy bản production.
 
 ## Công nghệ
 
@@ -101,7 +101,7 @@ Chi tiết mẫu: [`.env.example`](.env.example)
 
 ## Firestore
 
-- Dữ liệu theo user: `users/{uid}/...` (accounts, transactions, expenseScopes, loanParties, …)
+- Dữ liệu theo user: `users/{uid}/...` (accounts, transactions, expenseScopes, loanParties, recurringRules, savingsGoals, …)
 - Rules: [`firestore.rules`](firestore.rules) — mỗi user chỉ đọc/ghi dữ liệu của mình
 
 Triển khai rules (Firebase CLI):
