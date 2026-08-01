@@ -10,11 +10,29 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    // Primary finance workspace (Google account) + email/password shell accounts.
+    function isPrimaryWorkspace(uid) {
+      return uid == 'a7wUnSYvVKdTxlQV7jjVzK8ZxNN2';
+    }
+
+    function isAllowedEmail() {
+      return isSignedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email in [
+          'hungtran00.nt@gmail.com',
+          'hungtran@gmail.com'
+        ];
+    }
+
+    function canAccessUserData(uid) {
+      return isOwner(uid) || (isPrimaryWorkspace(uid) && isAllowedEmail());
+    }
+
     match /users/{uid} {
-      allow read, write: if isOwner(uid);
+      allow read, write: if canAccessUserData(uid);
 
       match /{document=**} {
-        allow read, write: if isOwner(uid);
+        allow read, write: if canAccessUserData(uid);
       }
     }
   }

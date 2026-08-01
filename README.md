@@ -1,140 +1,97 @@
-﻿# Hung Tran Finance
+﻿# Hung Tran Finance (React + TypeScript)
 
-Ứng dụng web quản lý tài chính cá nhân — theo dõi thu/chi, số dư ví, cho mượn và báo cáo theo kỳ. Giao diện tiếng Việt, đăng nhập Google qua Firebase.
+Ứng dụng quản lý chi tiêu cá nhân: **Vite + React + TypeScript + Firebase Auth/Firestore**.
 
-**Repo:** [github.com/hungtran1811/expense-tracker](https://github.com/hungtran1811/expense-tracker)
+## Khái niệm chính
 
-## Tính năng chính
+- **Ví (`accountId`)**: nơi giữ tiền (tiền mặt, ngân hàng, ví điện tử…).
+- **Nguồn tiền (`moneyOwner`)**: `personal` | `mother` | `unassigned` — phân tích hai dòng tiền.
+- Hai khái niệm độc lập; không suy nguồn tiền từ tên ví.
 
-| Tab | Mô tả |
-|-----|--------|
-| **Tổng quan** (`#home`) | Lưới số dư ví, mục tiêu tiết kiệm, thu/chi hôm nay, tóm tắt tháng, lọc theo tài khoản, dòng tiền theo ngày |
-| **Chi tiêu** (`#expenses`) | Sổ giao dịch (chi / thu / chuyển), bộ lọc, xuất CSV; sub-tab Quản lý: tài khoản, nhóm chi & mẫu định kỳ |
-| **Cho mượn** (`#loans`) | Theo dõi công nợ, badge nhắc nợ, ghi nhận cho mượn & nhận trả |
-| **Báo cáo** (`#reports`) | KPI kỳ, breakdown danh mục / nhóm chi / tài khoản; preset Tháng này / Tháng trước |
+## Đã có
 
-Phím tắt nhanh trên Tổng quan & Chi tiêu: `C` (chi), `I` (thu), `T` (chuyển). Phím `/` mở tìm kiếm toàn cục. PWA nhẹ (manifest + service worker) khi chạy bản production.
+- Tổng quan hai board (tôi / mẹ), sổ chi tiêu, báo cáo so sánh, cho mượn (gốc + lãi), quản lý ví/nhóm/danh mục/ngân sách/định kỳ/tiết kiệm
+- Modal xác nhận trong app, PWA shell (`public/sw.js`, manifest)
+- Đóng gói: **Android (Capacitor)** + **Windows Desktop (Electron)**
+- Nhập nhanh (mẫu chi, nhân bản, `50tr`/`500k`), nhắc nợ 30 ngày, recurring tự tạo, góp tiết kiệm, gợi ý danh mục, in/PDF báo cáo
 
-## Công nghệ
+## Chưa làm / cố ý cắt
 
-- **Frontend:** Vite 7, vanilla JS (ES modules), Bootstrap 5
-- **Backend / dữ liệu:** Firebase Auth (Google), Cloud Firestore
-- **Deploy:** Netlify (static `dist/` + serverless functions cho AI tuỳ chọn)
-- **Font:** Plus Jakarta Sans
+- Multi-user / chia sẻ gia đình
+- Đăng Play Store / Microsoft Store (v1: APK / `.exe` cài tay)
+- iOS (cần Mac)
 
-## Yêu cầu
-
-- Node.js 20+
-- npm 10+
-- Dự án Firebase (Auth + Firestore)
-- (Tuỳ chọn) [Netlify CLI](https://docs.netlify.com/cli/get-started/) khi test functions local
-
-## Cài đặt
+## Chạy local (web)
 
 ```bash
-git clone https://github.com/hungtran1811/expense-tracker.git
-cd expense-tracker
 npm install
-```
-
-Sao chép biến môi trường:
-
-```bash
-cp .env.example .env
-```
-
-Điền giá trị Firebase vào `.env` (file này **không** được commit — đã nằm trong `.gitignore`).
-
-## Chạy local
-
-```bash
-# Chỉ frontend (Vite, port 5173)
 npm run dev
-
-# Frontend + Netlify Functions (khuyến nghị khi test AI)
-npm run dev:netlify
 ```
 
-Build production:
+Cần `.env.local` với các biến `VITE_FB_*` (xem `.env.example`).
+
+## Tải bản đóng gói (v2.0.1)
+
+Trong app: [https://hungtran.netlify.app/downloads](https://hungtran.netlify.app/downloads) (nút **Tải app** trên thanh trên, hoặc link ở màn đăng nhập).
+
+File binary nằm ở `public/downloads/` khi deploy (không commit vào git). Bản build local cũng copy sang `release/downloads/`.
+
+Lưu ý desktop: Vite phải dùng `base: "./"` (chỉ giữ `vite.config.ts`, không để `vite.config.js` ghi đè) — nếu không Electron/`file://` sẽ màn hình trắng.
+
+Android APK debug: build bằng `npm run build:android` rồi `cd android && .\\gradlew.bat assembleDebug` (cần **JDK 21** + Android SDK API 35).
+
+## Đóng gói Desktop (Windows)
+
+```bash
+npm run build:desktop
+```
+
+File cài đặt mặc định ở `release/desktop/` (bản copy tải về nằm ở `release/downloads/`). Nếu gặp lỗi `EPERM` khi đóng gói, tắt tạm Windows Defender/antivirus đang quét thư mục `release/`, rồi chạy lại — hoặc chạy thử không installer:
 
 ```bash
 npm run build
-npm run preview   # xem thử bản build
+npx electron .
 ```
 
-## Kiểm tra chất lượng
+Dev desktop:
 
 ```bash
-npm run check:i18n      # UTF-8 / copy tiếng Việt
-npm run check:smoke     # shell HTML & file bắt buộc
-npm run check:baseline  # i18n + build + smoke (gate trước release)
+npm run dev:desktop
 ```
 
-Checklist thủ công: [`docs/qa/smoke-checklist.vi.md`](docs/qa/smoke-checklist.vi.md)
+Trong Electron/Capacitor, đăng nhập Google dùng **redirect** (không dùng popup).
 
-## Biến môi trường
+## Đóng gói Android (Capacitor)
 
-### Frontend (Vite — prefix `VITE_`)
-
-| Biến | Mô tả |
-|------|--------|
-| `VITE_FB_API_KEY` | Firebase Web API key |
-| `VITE_FB_AUTH_DOMAIN` | Auth domain |
-| `VITE_FB_PROJECT_ID` | Project ID |
-| `VITE_FB_STORAGE_BUCKET` | Storage bucket |
-| `VITE_FB_MESSAGING_SENDER_ID` | Messaging sender ID |
-| `VITE_FB_APP_ID` | App ID |
-| `VITE_NETLIFY_BASE_URL` | Base URL Netlify (tuỳ chọn) |
-
-### Netlify Functions (AI — không commit)
-
-| Biến | Mô tả |
-|------|--------|
-| `GEMINI_API_KEY` | Google Gemini (gợi ý danh mục / insight báo cáo) |
-| `FIREBASE_WEB_API_KEY` | Verify Firebase ID token phía server |
-| `AI_RATE_LIMIT_MAX` | Giới hạn request (mặc định `12`) |
-| `AI_RATE_LIMIT_WINDOW_MS` | Cửa sổ rate limit (mặc định `60000`) |
-| `AI_TOKEN_CACHE_TTL_MS` | Cache token (mặc định `300000`) |
-| `AI_GUARD_DISABLED` | Chỉ debug local — **không** bật production |
-
-Chi tiết mẫu: [`.env.example`](.env.example)
-
-## Firestore
-
-- Dữ liệu theo user: `users/{uid}/...` (accounts, transactions, expenseScopes, loanParties, recurringRules, savingsGoals, …)
-- Rules: [`firestore.rules`](firestore.rules) — mỗi user chỉ đọc/ghi dữ liệu của mình
-
-Triển khai rules (Firebase CLI):
+Cần [Android Studio](https://developer.android.com/studio) + JDK.
 
 ```bash
-firebase deploy --only firestore:rules
+npm run build:android
+npm run android:open
 ```
 
-## Cấu trúc thư mục (rút gọn)
+Trong Android Studio: Run / Build APK. Project native: thư mục `android/`.
 
-```
-src/
-  app/           # bootstrap, router, shortcuts
-  features/      # home, finance, loans, reports
-  services/      # firebase (auth, firestore)
-  shared/        # copy, constants, UI helpers
-  styles/        # app.css
-netlify/
-  functions/     # ai-categorize, ai-report-insights
-docs/
-  qa/            # smoke checklist
-  plans/         # UI roadmap theo trang
-public/img/      # logo, favicon
-```
+Firebase Console: thêm authorized domain / cấu hình OAuth phù hợp `appId` `com.hungtran.finance` khi test đăng nhập trên thiết bị.
 
-## Deploy (Netlify)
+## Scripts
 
-1. Kết nối repo GitHub với Netlify.
-2. Build command: `npm run build` — Publish directory: `dist` (đã cấu hình trong [`netlify.toml`](netlify.toml)).
-3. Thêm biến môi trường trên Netlify (Vite + Functions).
-4. Sau deploy, chạy lại smoke checklist trên production.
+- `npm run build` — typecheck + production build
+- `npm run check:smoke` — smoke shell React
+- `npm run check:unit` — unit nhẹ (parse amount / helpers)
+- `npm run check:baseline` — build + smoke + unit
+- `npm run build:desktop` — Electron Windows installer
+- `npm run build:android` — sync Capacitor Android
 
-## Ghi chú
+## Cấu trúc
 
-- Route cũ (`#overview`, `#dashboard`, …) tự redirect về tab hiện tại.
-- Không commit `.env`, `node_modules/`, `dist/`, `.netlify/` — xem [`.gitignore`](.gitignore).
+- `src/app` — router, auth, layout, workspace
+- `src/features` — home, expenses, reports, loans, manage
+- `src/services/firebase` — Auth + Firestore ledger (`ledgerApi.ts` typed wrappers)
+- `electron/` — Electron main/preload
+- `android/` — Capacitor Android project
+- `legacy/` — bản Vanilla JS (tham khảo)
+
+## Deploy web
+
+Netlify: `npm run build`, publish `dist`, SPA fallback `public/_redirects`. PWA đăng ký SW ở production (không đăng ký trong native shell).
