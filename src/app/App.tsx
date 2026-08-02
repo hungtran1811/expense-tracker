@@ -1,9 +1,8 @@
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import { AppLayout } from "./AppLayout";
 import { WorkspaceProvider } from "./WorkspaceProvider";
 import { AuthPage } from "../features/auth/AuthPage";
-import { DownloadsPage } from "../features/downloads/DownloadsPage";
 import { HomePage } from "../features/home/HomePage";
 import { ExpensesPage } from "../features/expenses/ExpensesPage";
 import { ReportsPage } from "../features/reports/ReportsPage";
@@ -20,7 +19,6 @@ function ProtectedApp() {
           <Route path="reports" element={<ReportsPage />} />
           <Route path="loans" element={<LoansPage />} />
           <Route path="manage" element={<ManagePage />} />
-          <Route path="downloads" element={<DownloadsPage signedIn />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
@@ -28,16 +26,10 @@ function ProtectedApp() {
   );
 }
 
-function isDownloadsPath(pathname: string) {
-  return pathname === "/downloads" || pathname.endsWith("/downloads");
-}
-
 export function App() {
   const { user, loading } = useAuth();
-  const location = useLocation();
-  const onDownloads = isDownloadsPath(location.pathname);
 
-  if (loading && !onDownloads) {
+  if (loading) {
     return (
       <div className="auth-page">
         <div className="page-state-card">
@@ -49,7 +41,6 @@ export function App() {
   }
 
   if (!user) {
-    if (onDownloads) return <DownloadsPage />;
     return <AuthPage />;
   }
 

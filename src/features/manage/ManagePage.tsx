@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLedgerUid } from "../../shared/hooks/useLedgerUid";
 import { useWorkspaceContext } from "../../app/WorkspaceProvider";
 import {
@@ -29,6 +29,7 @@ import {
   normalizeAccountMoneyOwner,
   resolveTransactionMoneyOwner,
 } from "../../shared/lib/moneyOwner";
+import { useOwnerLabels } from "../../shared/hooks/useOwnerLabels";
 import { Modal } from "../../shared/ui/Modal";
 import { PageHeader } from "../../shared/ui/PageHeader";
 import { EmptyState } from "../../shared/ui/EmptyState";
@@ -42,6 +43,7 @@ export function ManagePage() {
   const ledgerUid = useLedgerUid();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+  const { labels, saveLabels, saving: savingLabels } = useOwnerLabels();
   const {
     loading,
     error,
@@ -57,7 +59,15 @@ export function ManagePage() {
     refresh,
   } = useWorkspaceContext();
 
+  const [ownerLabelForm, setOwnerLabelForm] = useState({
+    personal: labels.personal,
+    mother: labels.mother,
+  });
   const [accountOpen, setAccountOpen] = useState(false);
+
+  useEffect(() => {
+    setOwnerLabelForm({ personal: labels.personal, mother: labels.mother });
+  }, [labels.personal, labels.mother]);
   const [accountForm, setAccountForm] = useState({
     id: "",
     name: "",
@@ -262,6 +272,54 @@ export function ManagePage() {
     <div className="page">
       <PageHeader title="Quản lý" />
 
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h2 className="card-title">Tên hai dòng tiền</h2>
+            <p className="card-subtitle">Đổi cách gọi cho dễ nhìn (ví dụ: Cá nhân / Gia đình).</p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={savingLabels}
+            onClick={() => {
+              void saveLabels({
+                personal: ownerLabelForm.personal.trim() || labels.personal,
+                mother: ownerLabelForm.mother.trim() || labels.mother,
+              })
+                .then(() => showToast("Đã lưu tên dòng tiền.", "success"))
+                .catch((err) => {
+                  showToast(err instanceof Error ? err.message : "Không thể lưu tên dòng tiền.", "error");
+                });
+            }}
+          >
+            {savingLabels ? "Đang lưu..." : "Lưu"}
+          </button>
+        </div>
+        <div className="filters">
+          <label className="field">
+            <span className="field-label">Dòng tiền của bạn</span>
+            <input
+              value={ownerLabelForm.personal}
+              onChange={(event) =>
+                setOwnerLabelForm((current) => ({ ...current, personal: event.target.value }))
+              }
+              maxLength={40}
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Dòng tiền còn lại (VD: ví mẹ / VP Bank)</span>
+            <input
+              value={ownerLabelForm.mother}
+              onChange={(event) =>
+                setOwnerLabelForm((current) => ({ ...current, mother: event.target.value }))
+              }
+              maxLength={40}
+            />
+          </label>
+        </div>
+      </section>
+
       <div className="grid grid-2 manage-layout">
         <section className="card">
           <div className="card-head">
@@ -293,7 +351,7 @@ export function ManagePage() {
                     {account.status === "archived" ? " · lưu trữ" : ""}
                   </div>
                   <div className="list-meta">
-                    {getMoneyOwnerLabel(normalizeAccountMoneyOwner(account.moneyOwner))} ·{" "}
+                    {getMoneyOwnerLabel(normalizeAccountMoneyOwner(account.moneyOwner), labels)} ·{" "}
                     {formatCurrency(account.currentBalance || 0)}
                   </div>
                 </div>

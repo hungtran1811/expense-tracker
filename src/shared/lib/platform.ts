@@ -1,31 +1,13 @@
-/** Detect Capacitor / Electron shells so auth & SW behave correctly. */
+/** Web-only shell helpers (PWA). */
 
-export function isCapacitorShell(): boolean {
-  if (typeof window === "undefined") return false;
-  const cap = (window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
-  try {
-    return !!cap?.isNativePlatform?.();
-  } catch {
-    return false;
-  }
-}
-
-export function isElectronShell(): boolean {
-  if (typeof window === "undefined") return false;
-  const w = window as Window & { electronAPI?: unknown; process?: { versions?: { electron?: string } } };
-  if (w.electronAPI) return true;
-  return Boolean(w.process?.versions?.electron);
-}
-
+/** Kept for call-sites; always false after removing native packaging. */
 export function isNativeShell(): boolean {
-  return isCapacitorShell() || isElectronShell();
+  return false;
 }
 
-/** Skip web service worker inside native shells (local assets / file protocol). */
+/** Register service worker in production web builds. */
 export function shouldRegisterServiceWorker(): boolean {
   if (!import.meta.env.PROD) return false;
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return false;
-  if (isNativeShell()) return false;
-  if (typeof location !== "undefined" && location.protocol === "file:") return false;
   return true;
 }

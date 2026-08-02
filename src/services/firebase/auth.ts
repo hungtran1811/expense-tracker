@@ -13,7 +13,6 @@ import {
 } from "firebase/auth";
 import { app } from "./app";
 import { AUTH_LOCK, AUTH_WARM_HINT_KEY } from "../../shared/constants/keys";
-import { isNativeShell } from "../../shared/lib/platform";
 import { appAlert } from "../../shared/ui/ConfirmDialog";
 
 export const auth = getAuth(app);
@@ -33,7 +32,7 @@ function setAuthWarmHint(enabled = true) {
   }
 }
 
-/** Complete redirect flow after returning from Google (native shells / popup fallback). */
+/** Complete redirect flow after returning from Google (popup fallback). */
 export async function completeRedirectSignIn() {
   try {
     const result = await getRedirectResult(auth);
@@ -46,10 +45,6 @@ export async function completeRedirectSignIn() {
 }
 
 export async function signIn() {
-  if (isNativeShell()) {
-    setAuthWarmHint(true);
-    return signInWithRedirect(auth, provider);
-  }
   try {
     const result = await signInWithPopup(auth, provider);
     setAuthWarmHint(true);
@@ -63,7 +58,6 @@ export async function signIn() {
   }
 }
 
-/** Email/password — dùng được trên Electron khi Google bị unauthorized-domain. */
 export async function signInWithEmail(email: string, password: string) {
   const result = await signInWithEmailAndPassword(auth, email.trim(), password);
   setAuthWarmHint(true);

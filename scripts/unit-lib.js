@@ -67,7 +67,11 @@ assert(reportSrc.includes("spendRatio: income > 0 ? (expense / income) * 100 : n
 const platformSrc = readFileSync(resolve(root, "src/shared/lib/platform.ts"), "utf8");
 assert(platformSrc.includes("isNativeShell"), "platform native helper present");
 
+const bankBrandSrc = readFileSync(resolve(root, "src/shared/lib/bankBrand.ts"), "utf8");
+assert(bankBrandSrc.includes("resolveBankBrand"), "bank brand resolver present");
+assert(bankBrandSrc.includes("vpbank"), "vpbank brand mapped");
+
 void loadTsModule; // keep import helper for future expansion
 void require;
 
-console.log("Unit-lib passed: parseAmount, moneyOwner, loans, reports, platform.");
+console.log("Unit-lib passed: parseAmount, moneyOwner, loans, reports, platform, bankBrand.");

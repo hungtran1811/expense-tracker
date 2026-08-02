@@ -1,7 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../../app/AuthProvider";
-import { isNativeShell } from "../../shared/lib/platform";
 
 export function AuthPage() {
   const { signIn, signInWithEmail } = useAuth();
@@ -9,7 +7,6 @@ export function AuthPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const native = isNativeShell();
 
   async function handleEmailSignIn(e: FormEvent) {
     e.preventDefault();
@@ -39,7 +36,7 @@ export function AuthPage() {
     } catch (err) {
       const code = (err as { code?: string })?.code;
       if (code === "auth/unauthorized-domain") {
-        setError("Google chưa được phép trên môi trường này. Hãy đăng nhập bằng email/mật khẩu.");
+        setError("Google chưa được phép trên domain này. Hãy đăng nhập bằng email/mật khẩu.");
       } else {
         setError(err instanceof Error ? err.message : "Không thể đăng nhập Google.");
       }
@@ -53,7 +50,7 @@ export function AuthPage() {
       <div className="auth-card">
         <img
           className="brand-logo brand-logo-lg"
-          src="./img/brand-mark.svg"
+          src="/img/brand-mark.svg"
           alt="Hung Tran Finance"
           width={64}
           height={64}
@@ -92,29 +89,17 @@ export function AuthPage() {
           </button>
         </form>
 
-        {!native ? (
-          <>
-            <div className="auth-divider">
-              <span>hoặc</span>
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary btn-block"
-              onClick={() => void handleGoogleSignIn()}
-              disabled={loading}
-            >
-              Đăng nhập với Google
-            </button>
-          </>
-        ) : (
-          <p className="section-note">
-            Trên Windows/Android dùng email/mật khẩu. Google OAuth cần domain được Firebase ủy quyền.
-          </p>
-        )}
-
-        <Link to="/downloads" className="inline-link">
-          Tải Windows / Android
-        </Link>
+        <div className="auth-divider">
+          <span>hoặc</span>
+        </div>
+        <button
+          type="button"
+          className="btn btn-secondary btn-block"
+          onClick={() => void handleGoogleSignIn()}
+          disabled={loading}
+        >
+          Đăng nhập với Google
+        </button>
       </div>
     </div>
   );

@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Hung Tran Finance</string>
-    <string name="title_activity_main">Hung Tran Finance</string>
-    <string name="package_name">com.hungtran.finance</string>
-    <string name="custom_url_scheme">com.hungtran.finance</string>
-</resources>

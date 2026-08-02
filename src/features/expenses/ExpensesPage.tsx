@@ -12,10 +12,11 @@ import { formatDateLabel, formatMonthLabel, toDateInputValue } from "../../share
 import { formatCurrency } from "../../shared/lib/money";
 import { downloadCsv } from "../../shared/lib/csv";
 import {
-  MONEY_OWNER_FILTER_OPTIONS,
+  buildMoneyOwnerFilterOptions,
   matchesMoneyOwnerFilter,
   resolveTransactionMoneyOwner,
 } from "../../shared/lib/moneyOwner";
+import { useOwnerLabels } from "../../shared/hooks/useOwnerLabels";
 import type { Transaction } from "../../shared/types/finance";
 import { Modal } from "../../shared/ui/Modal";
 import { MoneyOwnerBadge } from "../../shared/ui/MoneyOwnerBadge";
@@ -28,8 +29,10 @@ import { TransactionForm, type TransactionDraft } from "./TransactionForm";
 
 export function ExpensesPage() {
   const ledgerUid = useLedgerUid();
+  const { labels } = useOwnerLabels();
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+  const ownerFilterOptions = buildMoneyOwnerFilterOptions(labels);
   const location = useLocation();
   const navigate = useNavigate();
   const { loading, error, accounts, transactions, scopes, categories, month, setMonth, refresh } =
@@ -177,7 +180,7 @@ export function ExpensesPage() {
               value={filters.moneyOwner}
               onChange={(event) => setFilters((current) => ({ ...current, moneyOwner: event.target.value }))}
             >
-              {MONEY_OWNER_FILTER_OPTIONS.map((option) => (
+              {ownerFilterOptions.map((option) => (
                 <option key={option.key} value={option.key}>
                   {option.label}
                 </option>

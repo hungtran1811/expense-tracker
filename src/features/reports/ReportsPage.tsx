@@ -15,10 +15,11 @@ import { formatCurrency } from "../../shared/lib/money";
 import { downloadCsv } from "../../shared/lib/csv";
 import { moneyCell, openReportPrintWindow } from "../../shared/lib/reportPdf";
 import {
-  MONEY_OWNER_FILTER_OPTIONS,
+  buildMoneyOwnerFilterOptions,
   normalizeAccountMoneyOwner,
   resolveTransactionMoneyOwner,
 } from "../../shared/lib/moneyOwner";
+import { useOwnerLabels } from "../../shared/hooks/useOwnerLabels";
 import type { Transaction } from "../../shared/types/finance";
 import { DonutChart } from "../../shared/ui/charts";
 import { MoneyOwnerBadge } from "../../shared/ui/MoneyOwnerBadge";
@@ -68,6 +69,8 @@ function presetRange(preset: string) {
 
 export function ReportsPage() {
   const ledgerUid = useLedgerUid();
+  const { labels } = useOwnerLabels();
+  const ownerFilterOptions = buildMoneyOwnerFilterOptions(labels);
   const { showToast } = useToast();
   const { accounts, categories, scopes, loading, error, refresh } = useWorkspaceContext();
   const initial = presetRange("this_month");
@@ -214,7 +217,7 @@ export function ReportsPage() {
       const right = rightComparison[owner];
       return {
         owner,
-        title: owner === "personal" ? "Tiền của tôi" : "Tiền của mẹ",
+        title: owner === "personal" ? labels.personal : labels.mother,
         expenseLeft: left.expense,
         expenseRight: right.expense,
         incomeLeft: left.income,
@@ -228,7 +231,7 @@ export function ReportsPage() {
       sameMonth: compareLeftYm === compareRightYm,
       boards: [ownerBlock("personal"), ownerBlock("mother")],
     };
-  }, [compareLeftYm, compareRightYm, compareLeftTx, compareRightTx, filters, accounts, categories]);
+  }, [compareLeftYm, compareRightYm, compareLeftTx, compareRightTx, filters, accounts, categories, labels]);
 
   const unassigned = useMemo(
     () => filtered.filter((tx) => resolveTransactionMoneyOwner(tx, accounts) === "unassigned"),
@@ -336,7 +339,7 @@ export function ReportsPage() {
               className="btn btn-secondary"
               onClick={() => {
                 downloadCsv(`bao-cao-${filters.fromDate}_${filters.toDate}.csv`, [
-                  ["Chỉ số", "Tiền của tôi", "Tiền của mẹ", "Tổng"],
+                  ["Chỉ số", labels.personal, labels.mother, "Tổng"],
                   ["Thu", personal.income, mother.income, total.income],
                   ["Chi", personal.expense, mother.expense, total.expense],
                   ["Còn lại", personal.net, mother.net, total.net],
@@ -375,7 +378,7 @@ export function ReportsPage() {
         <article className="owner-board personal">
           <div className="owner-board-head">
             <div>
-              <h2 className="owner-board-title">Báo cáo của tôi</h2>
+              <h2 className="owner-board-title">Báo cáo · {labels.personal}</h2>
               <p className="owner-board-meta">
                 {personalBoard.accounts.map((item) => item.name).join(", ") || "Chưa gắn ví"}
               </p>
@@ -404,15 +407,15 @@ export function ReportsPage() {
         <article className="owner-board mother">
           <div className="owner-board-head">
             <div>
-              <h2 className="owner-board-title">Báo cáo của mẹ</h2>
+              <h2 className="owner-board-title">Báo cáo · {labels.mother}</h2>
               <p className="owner-board-meta">
-                {motherBoard.accounts.map((item) => item.name).join(", ") || "Gắn ví VP Bank trong Quản lý"}
+                {motherBoard.accounts.map((item) => item.name).join(", ") || "Chưa gắn ví cho dòng này"}
               </p>
             </div>
           </div>
           {!motherBoard.accounts.length ? (
             <p className="owner-hint">
-              Chưa có ví của mẹ. Vào Quản lý → sửa ví VP Bank → chọn <strong>Tiền của mẹ</strong>.
+              Chưa có ví. Vào Quản lý → sửa ví → chọn <strong>{labels.mother}</strong>.
             </p>
           ) : null}
           <div className="stat-grid stat-grid-compact">
@@ -489,7 +492,7 @@ export function ReportsPage() {
               value={filters.moneyOwner}
               onChange={(event) => setFilters((current) => ({ ...current, moneyOwner: event.target.value }))}
             >
-              {MONEY_OWNER_FILTER_OPTIONS.map((option) => (
+              {ownerFilterOptions.map((option) => (
                 <option key={option.key} value={option.key}>
                   {option.label}
                 </option>
@@ -661,7 +664,7 @@ export function ReportsPage() {
           </div>
           <div className="owner-compare-grid">
             <article className="owner-compare-panel personal">
-              <h3 className="owner-compare-title">Tiền của tôi</h3>
+              <h3 className="owner-compare-title">{labels.personal}</h3>
               <dl className="owner-compare-metrics">
                 <div>
                   <dt>Số dư ví</dt>
@@ -686,7 +689,7 @@ export function ReportsPage() {
               </dl>
             </article>
             <article className="owner-compare-panel mother">
-              <h3 className="owner-compare-title">Tiền của mẹ</h3>
+              <h3 className="owner-compare-title">{labels.mother}</h3>
               <dl className="owner-compare-metrics">
                 <div>
                   <dt>Số dư ví</dt>
@@ -750,14 +753,14 @@ export function ReportsPage() {
             segments={[
               {
                 key: "personal",
-                label: "Tiền của tôi",
+                label: labels.personal,
                 value: comparison.personal.expense,
                 color: "var(--brand)",
                 valueText: formatCurrency(comparison.personal.expense),
               },
               {
                 key: "mother",
-                label: "Tiền của mẹ",
+                label: labels.mother,
                 value: comparison.mother.expense,
                 color: "var(--mother)",
                 valueText: formatCurrency(comparison.mother.expense),
@@ -878,7 +881,7 @@ export function ReportsPage() {
               disabled={!selectedUnassigned.length}
               onClick={() => void classifySelected("personal")}
             >
-              Gán Tiền của tôi
+              Gán {labels.personal}
             </button>
             <button
               type="button"
@@ -886,7 +889,7 @@ export function ReportsPage() {
               disabled={!selectedUnassigned.length}
               onClick={() => void classifySelected("mother")}
             >
-              Gán Tiền của mẹ
+              Gán {labels.mother}
             </button>
           </div>
         </div>

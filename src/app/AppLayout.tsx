@@ -59,9 +59,6 @@ export function AppLayout() {
         </nav>
 
         <div className="topbar-actions">
-          <NavLink to="/downloads" className="btn btn-secondary btn-sm" title="Tải ứng dụng">
-            Tải app
-          </NavLink>
           <button
             type="button"
             className="btn btn-secondary btn-sm"

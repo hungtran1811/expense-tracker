@@ -475,6 +475,84 @@ p {
   line-height: 1.45;
 }
 
+.account-bank-list {
+  display: grid;
+  gap: 10px;
+}
+
+.account-bank-card {
+  --bank-accent: #5b6b82;
+  --bank-soft: #eef1f5;
+  --bank-ink: #142033;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--bank-accent) 28%, #e4eaf2);
+  border-left: 4px solid var(--bank-accent);
+  background:
+    linear-gradient(135deg, var(--bank-soft) 0%, #fff 58%),
+    #fff;
+  box-shadow: 0 1px 2px rgba(20, 32, 51, 0.03);
+}
+
+.account-bank-card-main {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.account-bank-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.account-bank-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--bank-accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.account-bank-default {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.account-bank-name {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--bank-ink);
+  letter-spacing: -0.01em;
+}
+
+.account-bank-meta {
+  color: color-mix(in srgb, var(--bank-accent) 55%, var(--muted));
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.account-bank-balance {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--bank-accent);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- Controls ---------- */
 
 .btn {
@@ -723,6 +801,15 @@ p {
 .list-row.clickable {
   cursor: pointer;
   transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+
+button.list-row {
+  width: 100%;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  appearance: none;
 }
 
 .list-row.clickable:hover {
@@ -2089,56 +2176,6 @@ p {
   content: "";
   height: 1px;
   background: var(--line);
-}
-
-.downloads-page {
-  align-items: start;
-}
-
-.downloads-shell {
-  width: min(720px, 100%);
-  padding: 28px 24px;
-  border-radius: 28px;
-  background: #fff;
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-md);
-}
-
-.download-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 12px;
-}
-
-.download-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 16px;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--surface-2, #f7f8fa);
-}
-
-.download-meta {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-
-.download-meta strong {
-  font-size: 0.98rem;
-}
-
-.download-meta span {
-  color: var(--muted);
-  font-size: 0.88rem;
-  line-height: 1.4;
 }
 
 /* ---------- Misc ---------- */

@@ -1,6 +1,8 @@
-import { getMoneyOwnerLabel, normalizeMoneyOwner } from "../lib/moneyOwner";
+import { normalizeMoneyOwner } from "../lib/moneyOwner";
+import { useMoneyOwnerLabel } from "../hooks/useOwnerLabels";
 
-export function MoneyOwnerBadge({ owner }: { owner?: unknown }) {
+export function MoneyOwnerBadge({ owner }: { owner: unknown }) {
   const normalized = normalizeMoneyOwner(owner);
-  return <span className={`badge badge-${normalized}`}>{getMoneyOwnerLabel(normalized)}</span>;
+  const label = useMoneyOwnerLabel(normalized);
+  return <span className={`badge badge-${normalized}`}>{label}</span>;
 }

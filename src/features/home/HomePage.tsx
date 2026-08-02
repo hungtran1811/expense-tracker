@@ -8,13 +8,15 @@ import {
   normalizeAccountMoneyOwner,
   resolveTransactionMoneyOwner,
 } from "../../shared/lib/moneyOwner";
+import { useOwnerLabels } from "../../shared/hooks/useOwnerLabels";
+import { AccountBalanceCard } from "../../shared/ui/AccountBalanceCard";
 import { MoneyOwnerBadge } from "../../shared/ui/MoneyOwnerBadge";
 import { Modal } from "../../shared/ui/Modal";
 import { PageHeader } from "../../shared/ui/PageHeader";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { PageState } from "../../shared/ui/PageState";
 import { TransactionForm, type TransactionDraft } from "../expenses/TransactionForm";
-import { createTransaction } from "../../services/firebase/firestore";
+import { createTransaction, updateTransaction } from "../../services/firebase/firestore";
 import { useLedgerUid } from "../../shared/hooks/useLedgerUid";
 import { useToast } from "../../shared/ui/Toast";
 import { getFinanceCategoryLabel, isFinanceTransactionType } from "../../shared/constants/finance";
@@ -22,8 +24,11 @@ import { summarizeOwnerBoard } from "../reports/reportCalculations";
 import { EXPENSE_TEMPLATES } from "../../shared/constants/expenseTemplates";
 import { materializeDueRecurringRules } from "../manage/autoRecurring";
 import { isLoanPartyNeedsReminder } from "../loans/loanCalculations";
+import type { Transaction } from "../../shared/types/finance";
+
 export function HomePage() {
   const ledgerUid = useLedgerUid();
+  const { labels } = useOwnerLabels();
   const { showToast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
@@ -87,10 +92,10 @@ export function HomePage() {
   );
 
   const today = getTodayInputValue();
-  const todayItems = monthTx.filter((tx) => toDateInputValue(tx.occurredAt) === today).slice(0, 6);
+  const todayItems = monthTx.filter((tx) => toDateInputValue(tx.occurredAt) === today).slice(0, 4);
   const recent = [...monthTx]
     .filter((tx) => tx.type === "expense" || tx.type === "income")
-    .slice(0, 8);
+    .slice(0, 5);
 
   const unassignedCount = useMemo(
     () =>
@@ -164,31 +169,37 @@ export function HomePage() {
     });
   }
 
-  function duplicateTx(tx: (typeof recent)[number]) {
-    openComposer(tx.type === "income" ? "income" : "expense", {
-      type: tx.type === "income" ? "income" : "expense",
+  function openEditTx(tx: Transaction) {
+    const type = tx.type === "income" ? "income" : tx.type === "transfer" ? "transfer" : "expense";
+    openComposer(type, {
+      id: tx.id,
+      type,
       amount: String(Math.abs(Number(tx.amount || 0))),
       accountId: String(tx.accountId || ""),
+      toAccountId: String(tx.toAccountId || ""),
       categoryKey: String(tx.categoryKey || "other"),
       scopeId: String(tx.scopeId || ""),
       moneyOwner:
         resolveTransactionMoneyOwner(tx, accounts) === "mother" ? "mother" : "personal",
       note: String(tx.note || ""),
-      occurredAt: getTodayInputValue(),
+      occurredAt: toDateInputValue(tx.occurredAt) || getTodayInputValue(),
     });
   }
 
-  async function handleCreate(draft: TransactionDraft) {
+  async function handleSave(draft: TransactionDraft) {
     if (!ledgerUid) return;
     setSubmitting(true);
     try {
-      await createTransaction(ledgerUid, {
+      const payload = {
         ...draft,
         amount: Number(draft.amount),
         moneyOwner: draft.type === "transfer" ? "unassigned" : draft.moneyOwner,
-      });
+      };
+      if (draft.id) await updateTransaction(ledgerUid, draft.id, payload);
+      else await createTransaction(ledgerUid, payload);
       showToast("Đã lưu giao dịch.", "success");
       setComposerOpen(false);
+      setComposerInitial(null);
       await refresh();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Không thể lưu giao dịch.", "error");
@@ -312,7 +323,7 @@ export function HomePage() {
         <article className="owner-board personal">
           <div className="owner-board-head">
             <div>
-              <h2 className="owner-board-title">Tiền của tôi</h2>
+              <h2 className="owner-board-title">{labels.personal}</h2>
               <p className="owner-board-meta">
                 {personalBoard.accounts.length
                   ? `${personalBoard.accounts.length} ví · các ví còn lại`
@@ -341,18 +352,21 @@ export function HomePage() {
               <div className="value u-money">{personalBoard.netText}</div>
             </div>
           </div>
-          <div className="list">
+          <div className="account-bank-list">
             {personalBoard.accounts.map((account) => (
-              <div key={account.id} className="list-row">
-                <div className="list-main">
-                  <div className="list-title u-ellipsis">{account.name}</div>
-                  <div className="list-meta">{account.isDefault ? "Mặc định" : account.type}</div>
-                </div>
-                <strong className="amount u-money">{formatCurrency(account.currentBalance || 0)}</strong>
-              </div>
+              <AccountBalanceCard
+                key={account.id}
+                name={account.name}
+                type={String(account.type || "")}
+                balance={account.currentBalance || 0}
+                isDefault={!!account.isDefault}
+              />
             ))}
             {!personalBoard.accounts.length ? (
-              <EmptyState title="Chưa có ví của bạn" body="Tạo ví trong Quản lý và để nguồn là Tiền của tôi." />
+              <EmptyState
+                title="Chưa có ví"
+                body={`Tạo ví trong Quản lý và chọn nguồn ${labels.personal}.`}
+              />
             ) : null}
           </div>
         </article>
@@ -360,11 +374,11 @@ export function HomePage() {
         <article className="owner-board mother">
           <div className="owner-board-head">
             <div>
-              <h2 className="owner-board-title">Tiền của mẹ</h2>
+              <h2 className="owner-board-title">{labels.mother}</h2>
               <p className="owner-board-meta">
                 {motherBoard.accounts.length
-                  ? `${motherBoard.accounts.length} ví · ví dụ VP Bank`
-                  : "Gắn ví VP Bank vào dòng này"}
+                  ? `${motherBoard.accounts.length} ví`
+                  : "Chưa gắn ví cho dòng này"}
               </p>
             </div>
             <Link className="inline-link" to="/manage">
@@ -373,7 +387,7 @@ export function HomePage() {
           </div>
           {!motherBoard.accounts.length ? (
             <p className="owner-hint">
-              Vào <strong>Quản lý → Sửa ví VP Bank</strong> và chọn nguồn <strong>Tiền của mẹ</strong>. Sau đó bảng này sẽ hiện số dư và báo cáo riêng.
+              Vào <strong>Quản lý → Sửa ví</strong> và chọn nguồn <strong>{labels.mother}</strong>. Có thể đổi tên dòng tiền ngay đầu trang Quản lý.
             </p>
           ) : null}
           <div className="stat-grid stat-grid-compact">
@@ -394,15 +408,16 @@ export function HomePage() {
               <div className="value u-money">{motherBoard.netText}</div>
             </div>
           </div>
-          <div className="list">
+          <div className="account-bank-list">
             {motherBoard.accounts.map((account) => (
-              <div key={account.id} className="list-row">
-                <div className="list-main">
-                  <div className="list-title u-ellipsis">{account.name}</div>
-                  <div className="list-meta">{getMoneyOwnerLabel(normalizeAccountMoneyOwner(account.moneyOwner))}</div>
-                </div>
-                <strong className="amount u-money">{formatCurrency(account.currentBalance || 0)}</strong>
-              </div>
+              <AccountBalanceCard
+                key={account.id}
+                name={account.name}
+                type={String(account.type || "")}
+                balance={account.currentBalance || 0}
+                meta={getMoneyOwnerLabel(normalizeAccountMoneyOwner(account.moneyOwner), labels)}
+                isDefault={!!account.isDefault}
+              />
             ))}
           </div>
         </article>
@@ -421,7 +436,12 @@ export function HomePage() {
           </div>
           <div className="list">
             {todayItems.map((tx) => (
-              <div key={tx.id} className="list-row">
+              <button
+                key={tx.id}
+                type="button"
+                className="list-row clickable"
+                onClick={() => openEditTx(tx)}
+              >
                 <div className="list-main">
                   <div className="list-title">
                     {tx.type === "expense"
@@ -439,7 +459,7 @@ export function HomePage() {
                   {tx.type === "expense" ? "-" : tx.type === "income" ? "+" : ""}
                   {formatCurrency(tx.amount || 0)}
                 </strong>
-              </div>
+              </button>
             ))}
             {!todayItems.length ? <EmptyState title="Chưa có thu chi hôm nay" /> : null}
           </div>
@@ -449,12 +469,20 @@ export function HomePage() {
           <div className="card-head">
             <div>
               <h2 className="card-title">Gần đây</h2>
-              <p className="card-subtitle">Thu chi mới nhất trong tháng</p>
+              <p className="card-subtitle">Bấm vào dòng để sửa nhanh</p>
             </div>
+            <Link className="inline-link" to="/expenses">
+              Xem tất cả
+            </Link>
           </div>
           <div className="list">
             {recent.map((tx) => (
-              <div key={tx.id} className="list-row">
+              <button
+                key={tx.id}
+                type="button"
+                className="list-row clickable"
+                onClick={() => openEditTx(tx)}
+              >
                 <div className="list-main">
                   <div className="list-title">
                     {tx.type === "expense" ? getFinanceCategoryLabel(tx.categoryKey, categories) : "Khoản thu"}
@@ -464,16 +492,11 @@ export function HomePage() {
                     <span>{toDateInputValue(tx.occurredAt)}</span>
                   </div>
                 </div>
-                <div className="list-side">
-                  <strong className={`amount u-money ${tx.type}`}>
-                    {tx.type === "expense" ? "-" : "+"}
-                    {formatCurrency(tx.amount || 0)}
-                  </strong>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => duplicateTx(tx)}>
-                    Nhân bản
-                  </button>
-                </div>
-              </div>
+                <strong className={`amount u-money ${tx.type}`}>
+                  {tx.type === "expense" ? "-" : "+"}
+                  {formatCurrency(tx.amount || 0)}
+                </strong>
+              </button>
             ))}
             {!recent.length ? <EmptyState title="Chưa có giao dịch" /> : null}
           </div>
@@ -510,14 +533,22 @@ export function HomePage() {
 
       <Modal
         open={composerOpen}
-        title={composerType === "income" ? "Thêm khoản thu" : composerType === "transfer" ? "Chuyển khoản" : "Thêm khoản chi"}
+        title={
+          composerInitial?.id
+            ? "Sửa giao dịch"
+            : composerType === "income"
+              ? "Thêm khoản thu"
+              : composerType === "transfer"
+                ? "Chuyển khoản"
+                : "Thêm khoản chi"
+        }
         onClose={() => {
           setComposerOpen(false);
           setComposerInitial(null);
         }}
       >
         <TransactionForm
-          key={`home-${composerType}-${composerInitial?.note || ""}-${composerInitial?.amount || ""}`}
+          key={`home-${composerType}-${composerInitial?.id || "new"}-${composerInitial?.note || ""}-${composerInitial?.amount || ""}`}
           accounts={accounts}
           scopes={scopes}
           categories={categories}
@@ -527,7 +558,7 @@ export function HomePage() {
             setComposerOpen(false);
             setComposerInitial(null);
           }}
-          onSubmit={handleCreate}
+          onSubmit={handleSave}
         />
       </Modal>
     </div>

@@ -3,8 +3,6 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 
 export default defineConfig({
-  // Relative base so Electron file:// and Capacitor WebView resolve assets.
-  base: "./",
   plugins: [react()],
   resolve: {
     alias: {

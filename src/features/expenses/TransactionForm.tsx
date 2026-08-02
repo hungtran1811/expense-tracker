@@ -3,7 +3,8 @@ import { MoneyOwnerSelector } from "../../shared/ui/MoneyOwnerSelector";
 import { getTodayInputValue } from "../../shared/lib/date";
 import { parseAmountInput } from "../../shared/lib/parseAmount";
 import type { Account, ExpenseCategory, ExpenseScope, Transaction } from "../../shared/types/finance";
-import { normalizeAccountMoneyOwner, type MoneyOwner } from "../../shared/lib/moneyOwner";
+import { getMoneyOwnerLabel, normalizeAccountMoneyOwner, type MoneyOwner } from "../../shared/lib/moneyOwner";
+import { useOwnerLabels } from "../../shared/hooks/useOwnerLabels";
 import { suggestCategoryFromNote } from "../../services/ai/categorize";
 
 export type TransactionDraft = {
@@ -90,6 +91,7 @@ export function TransactionForm({
   onSubmit,
   onCancel,
 }: Props) {
+  const { labels } = useOwnerLabels();
   const activeAccounts = useMemo(
     () => accounts.filter((item) => String(item.status || "active") !== "archived"),
     [accounts]
@@ -208,7 +210,7 @@ export function TransactionForm({
           {activeAccounts.map((account) => (
             <option key={account.id} value={account.id}>
               {account.name}
-              {normalizeAccountMoneyOwner(account.moneyOwner) === "mother" ? " · của mẹ" : ""}
+              {` · ${getMoneyOwnerLabel(normalizeAccountMoneyOwner(account.moneyOwner), labels)}`}
             </option>
           ))}
         </select>

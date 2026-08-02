@@ -1,4 +1,5 @@
-import { MONEY_OWNER_OPTIONS, type MoneyOwner } from "../lib/moneyOwner";
+import { buildMoneyOwnerOptions, type MoneyOwner } from "../lib/moneyOwner";
+import { useOwnerLabels } from "../hooks/useOwnerLabels";
 
 type Props = {
   value: MoneyOwner | "personal" | "mother";
@@ -15,11 +16,14 @@ export function MoneyOwnerSelector({
   label = "Nguồn tiền",
   hint,
 }: Props) {
+  const { labels } = useOwnerLabels();
+  const options = buildMoneyOwnerOptions(labels);
+
   return (
     <div className="field">
       <span className="field-label">{label}</span>
       <div className="segmented" role="group" aria-label={label}>
-        {MONEY_OWNER_OPTIONS.map((option) => {
+        {options.map((option) => {
           const active = value === option.key;
           return (
             <button

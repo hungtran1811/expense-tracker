@@ -11,6 +11,7 @@ import {
   getDocs,
   doc,
   getDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   increment,
@@ -56,6 +57,29 @@ export const colLoanParties = (uid) => collection(db, `users/${uid}/loanParties`
 export const colRecurringRules = (uid) => collection(db, `users/${uid}/recurringRules`);
 export const colSavingsGoals = (uid) => collection(db, `users/${uid}/savingsGoals`);
 export const docUser = (uid) => doc(db, `users/${uid}`);
+
+export async function getUserMoneyOwnerLabels(uid) {
+  if (!uid) return null;
+  const snap = await getDoc(docUser(uid));
+  if (!snap.exists()) return null;
+  return snap.data()?.moneyOwnerLabels || null;
+}
+
+export async function saveUserMoneyOwnerLabels(uid, labels = {}) {
+  if (!uid) throw new Error("Thiếu tài khoản.");
+  await setDoc(
+    docUser(uid),
+    {
+      moneyOwnerLabels: {
+        personal: String(labels.personal || "").trim(),
+        mother: String(labels.mother || "").trim(),
+      },
+      updatedAt: Timestamp.now(),
+    },
+    { merge: true }
+  );
+  return true;
+}
 
 function ymToRange(ym) {
   if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return null;

@@ -1,51 +1,18 @@
 {
   "name": "expense-tracker",
-  "productName": "Hung Tran Finance",
   "description": "Hung Tran Finance — quản lý thu chi hai dòng tiền",
   "author": "Hung Tran",
   "version": "2.0.1",
   "private": true,
   "type": "module",
-  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "dev:netlify": "netlify dev",
-    "dev:desktop": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "check:smoke": "node scripts/smoke-react.js",
     "check:unit": "node scripts/unit-lib.js",
-    "check:baseline": "npm run build && npm run check:smoke && npm run check:unit",
-    "cap:sync": "npm run build && node scripts/strip-downloads-for-native.js && npx cap sync android",
-    "build:android": "npm run cap:sync",
-    "build:desktop": "npm run build && node scripts/strip-downloads-for-native.js && electron-builder --win",
-    "android:open": "npx cap open android"
-  },
-  "build": {
-    "appId": "com.hungtran.finance",
-    "productName": "Hung Tran Finance",
-    "directories": {
-      "output": "release/desktop"
-    },
-    "files": [
-      "dist/**/*",
-      "!dist/downloads/**",
-      "electron/**/*",
-      "package.json",
-      "!node_modules/@capacitor/**/*",
-      "!node_modules/@capacitor/android/**/*",
-      "!node_modules/@capacitor/cli/**/*"
-    ],
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "artifactName": "${productName}-Setup-${version}.${ext}"
-    },
-    "nsis": {
-      "oneClick": true,
-      "allowToChangeInstallationDirectory": false
-    }
+    "check:baseline": "npm run build && npm run check:smoke && npm run check:unit"
   },
   "repository": {
     "type": "git",
@@ -53,24 +20,16 @@
   },
   "license": "ISC",
   "dependencies": {
-    "@capacitor/android": "^7.4.2",
-    "@capacitor/core": "^7.4.2",
     "firebase": "^12.9.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.4.2",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.7.0",
-    "concurrently": "^9.2.0",
-    "cross-env": "^7.0.3",
-    "electron": "^37.2.0",
-    "electron-builder": "^26.0.12",
     "typescript": "^5.8.3",
-    "vite": "^7.2.2",
-    "wait-on": "^8.0.4"
+    "vite": "^7.2.2"
   }
 }
