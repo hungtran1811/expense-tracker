@@ -37,6 +37,13 @@ import { PageState } from "../../shared/ui/PageState";
 import { MoneyOwnerSelector } from "../../shared/ui/MoneyOwnerSelector";
 import { useConfirm } from "../../shared/ui/ConfirmDialog";
 import { useToast } from "../../shared/ui/Toast";
+import { SavingsGoalCard } from "../../shared/ui/SavingsGoalCard";
+import {
+  normalizeSavingsGoalIconKey,
+  SAVINGS_GOAL_ICON_KEYS,
+  SAVINGS_GOAL_ICON_LABELS,
+  type SavingsGoalIconKey,
+} from "../../shared/constants/savingsGoals";
 import { createTransactionFromRecurringRule } from "./recurring";
 
 export function ManagePage() {
@@ -83,12 +90,18 @@ export function ManagePage() {
     id: string;
     name: string;
   } | null>(null);
-  const [goalForm, setGoalForm] = useState({ name: "", targetAmount: "", currentAmount: "0" });
+  const [goalForm, setGoalForm] = useState<{
+    name: string;
+    targetAmount: string;
+    currentAmount: string;
+    iconKey: SavingsGoalIconKey;
+  }>({ name: "", targetAmount: "", currentAmount: "0", iconKey: "custom" });
   const [goalEdit, setGoalEdit] = useState<{
     id: string;
     name: string;
     targetAmount: string;
     currentAmount: string;
+    iconKey: SavingsGoalIconKey;
   } | null>(null);
   const [contribute, setContribute] = useState<{
     goalId: string;
@@ -242,6 +255,7 @@ export function ManagePage() {
         name: goalEdit.name.trim(),
         targetAmount: Number(goalEdit.targetAmount),
         currentAmount: Number(goalEdit.currentAmount || 0),
+        iconKey: goalEdit.iconKey,
       });
       showToast("Đã cập nhật mục tiêu.", "success");
       setGoalEdit(null);
@@ -754,10 +768,25 @@ export function ManagePage() {
             <div className="form-panel stack">
               <h3 className="section-label">Mục tiêu tiết kiệm</h3>
               <div className="field">
+                <label className="field-label">Loại mục tiêu</label>
+                <div className="goal-icon-grid">
+                  {SAVINGS_GOAL_ICON_KEYS.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`goal-icon-option${goalForm.iconKey === key ? " is-active" : ""}`}
+                      onClick={() => setGoalForm((c) => ({ ...c, iconKey: key }))}
+                    >
+                      {SAVINGS_GOAL_ICON_LABELS[key]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="field">
                 <label className="field-label">Tên mục tiêu</label>
                 <input
                   className="field-control"
-                  placeholder="Ví dụ: Quỹ dự phòng"
+                  placeholder="Ví dụ: Nhà Q7, xe Vision…"
                   value={goalForm.name}
                   onChange={(event) => setGoalForm((c) => ({ ...c, name: event.target.value }))}
                 />
@@ -793,9 +822,10 @@ export function ManagePage() {
                     name: goalForm.name,
                     targetAmount: Number(goalForm.targetAmount),
                     currentAmount: Number(goalForm.currentAmount || 0),
+                    iconKey: goalForm.iconKey,
                   })
                     .then(() => {
-                      setGoalForm({ name: "", targetAmount: "", currentAmount: "0" });
+                      setGoalForm({ name: "", targetAmount: "", currentAmount: "0", iconKey: "custom" });
                       showToast("Đã tạo mục tiêu.", "success");
                       return refresh();
                     })
@@ -804,33 +834,25 @@ export function ManagePage() {
               >
                 Thêm mục tiêu
               </button>
-              <div className="list">
+              <div className="savings-goals-grid manage-goals-grid">
                 {savingsGoals.map((goal) => (
-                  <div key={goal.id} className="list-row">
-                    <div className="list-main">
-                      <div className="list-title">{goal.name}</div>
-                      <div className="list-meta">
-                        {formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}
-                      </div>
-                    </div>
-                    <div className="list-actions">
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() =>
-                          setContribute({
-                            goalId: goal.id,
-                            goalName: goal.name,
-                            accountId:
-                              accounts.find((item) => item.isDefault && item.status !== "archived")?.id ||
-                              accounts.find((item) => item.status !== "archived")?.id ||
-                              "",
-                            amount: "",
-                          })
-                        }
-                      >
-                        Góp
-                      </button>
+                  <div key={goal.id} className="manage-goal-wrap">
+                    <SavingsGoalCard
+                      goal={goal}
+                      compact
+                      onContribute={() =>
+                        setContribute({
+                          goalId: goal.id,
+                          goalName: goal.name,
+                          accountId:
+                            accounts.find((item) => item.isDefault && item.status !== "archived")?.id ||
+                            accounts.find((item) => item.status !== "archived")?.id ||
+                            "",
+                          amount: "",
+                        })
+                      }
+                    />
+                    <div className="list-actions manage-goal-actions">
                       <button
                         type="button"
                         className="btn btn-secondary btn-sm"
@@ -840,6 +862,7 @@ export function ManagePage() {
                             name: goal.name,
                             targetAmount: String(goal.targetAmount || 0),
                             currentAmount: String(goal.currentAmount || 0),
+                            iconKey: normalizeSavingsGoalIconKey(goal.iconKey),
                           })
                         }
                       >
@@ -871,8 +894,8 @@ export function ManagePage() {
                     </div>
                   </div>
                 ))}
-                {!savingsGoals.length ? <EmptyState title="Chưa có mục tiêu tiết kiệm" /> : null}
               </div>
+              {!savingsGoals.length ? <EmptyState title="Chưa có mục tiêu tiết kiệm" /> : null}
             </div>
           </div>
         </section>
@@ -1057,6 +1080,23 @@ export function ManagePage() {
 
       <Modal open={!!goalEdit} title="Sửa mục tiêu tiết kiệm" onClose={() => setGoalEdit(null)}>
         <div className="stack">
+          <div className="field">
+            <label className="field-label">Loại mục tiêu</label>
+            <div className="goal-icon-grid">
+              {SAVINGS_GOAL_ICON_KEYS.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`goal-icon-option${goalEdit?.iconKey === key ? " is-active" : ""}`}
+                  onClick={() =>
+                    setGoalEdit((current) => (current ? { ...current, iconKey: key } : current))
+                  }
+                >
+                  {SAVINGS_GOAL_ICON_LABELS[key]}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="field">
             <label className="field-label">Tên mục tiêu</label>
             <input

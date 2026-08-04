@@ -1388,6 +1388,22 @@ export async function deleteRecurringRule(uid, ruleId = "") {
   return true;
 }
 
+const SAVINGS_ICON_KEYS = new Set([
+  "house",
+  "car",
+  "phone",
+  "travel",
+  "education",
+  "wedding",
+  "emergency",
+  "custom",
+]);
+
+function normalizeSavingsIconKey(value) {
+  const key = String(value || "").trim().toLowerCase();
+  return SAVINGS_ICON_KEYS.has(key) ? key : "custom";
+}
+
 export async function listSavingsGoals(uid) {
   const snap = await getDocs(colSavingsGoals(uid));
   return mapDocs(snap)
@@ -1397,6 +1413,7 @@ export async function listSavingsGoals(uid) {
       targetAmount: Math.round(Number(item?.targetAmount || 0)),
       currentAmount: Math.round(Number(item?.currentAmount || 0)),
       note: String(item?.note || "").trim(),
+      iconKey: normalizeSavingsIconKey(item?.iconKey),
       createdAt: item?.createdAt || null,
     }))
     .sort((a, b) => {
@@ -1418,6 +1435,7 @@ export async function createSavingsGoal(uid, payload = {}) {
     targetAmount,
     currentAmount,
     note: String(payload?.note || "").trim(),
+    iconKey: normalizeSavingsIconKey(payload?.iconKey),
     createdAt: Timestamp.now(),
   });
   return { id: ref.id };
@@ -1433,6 +1451,7 @@ export async function updateSavingsGoal(uid, goalId = "", payload = {}) {
     patch.currentAmount = Math.max(0, Math.round(Number(payload.currentAmount || 0)));
   }
   if (payload?.note !== undefined) patch.note = String(payload.note || "").trim();
+  if (payload?.iconKey !== undefined) patch.iconKey = normalizeSavingsIconKey(payload.iconKey);
   await updateDoc(doc(db, `users/${uid}/savingsGoals/${id}`), patch);
   return true;
 }

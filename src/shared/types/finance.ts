@@ -83,10 +83,22 @@ export interface RecurringRule {
   lastGeneratedYm?: string;
 }
 
+export type SavingsGoalIconKey =
+  | "house"
+  | "car"
+  | "phone"
+  | "travel"
+  | "education"
+  | "wedding"
+  | "emergency"
+  | "custom";
+
 export interface SavingsGoal {
   id: string;
   name: string;
   targetAmount: number;
   currentAmount: number;
   note?: string;
+  /** Visual category for goal posters (house/car/…). Legacy docs omit this. */
+  iconKey?: SavingsGoalIconKey | string;
 }

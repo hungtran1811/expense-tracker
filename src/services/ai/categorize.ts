@@ -21,13 +21,21 @@ function heuristicCategory(note: string, allowed: string[]): string | null {
   return null;
 }
 
+/** Instant local suggest — dùng cho nhập nhanh (không chờ AI). */
+export function suggestCategoryFromNoteSync(
+  note: string,
+  allowedKeys: string[] = []
+): string | null {
+  const allowed = allowedKeys.map((item) => String(item || "").trim()).filter(Boolean);
+  return heuristicCategory(note, allowed.length ? allowed : KEYWORD_MAP.map((r) => r.categoryKey));
+}
+
 export async function suggestCategoryFromNote(
   note: string,
   allowedKeys: string[] = []
 ): Promise<string | null> {
   const allowed = allowedKeys.map((item) => String(item || "").trim()).filter(Boolean);
   const fallback = heuristicCategory(note, allowed.length ? allowed : KEYWORD_MAP.map((r) => r.categoryKey));
-
   try {
     const response = await fetch("/.netlify/functions/ai-categorize", {
       method: "POST",

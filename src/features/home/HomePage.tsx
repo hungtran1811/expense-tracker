@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useWorkspaceContext } from "../../app/WorkspaceProvider";
 import { formatCurrency } from "../../shared/lib/money";
 import { formatMonthLabel, getTodayInputValue, toDateInputValue } from "../../shared/lib/date";
+import { parseAmountInput } from "../../shared/lib/parseAmount";
 import {
   getMoneyOwnerLabel,
   normalizeAccountMoneyOwner,
@@ -15,8 +16,13 @@ import { Modal } from "../../shared/ui/Modal";
 import { PageHeader } from "../../shared/ui/PageHeader";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { PageState } from "../../shared/ui/PageState";
+import { SavingsGoalCard } from "../../shared/ui/SavingsGoalCard";
 import { TransactionForm, type TransactionDraft } from "../expenses/TransactionForm";
-import { createTransaction, updateTransaction } from "../../services/firebase/firestore";
+import {
+  createTransaction,
+  updateSavingsGoal,
+  updateTransaction,
+} from "../../services/firebase/firestore";
 import { useLedgerUid } from "../../shared/hooks/useLedgerUid";
 import { useToast } from "../../shared/ui/Toast";
 import { getFinanceCategoryLabel, isFinanceTransactionType } from "../../shared/constants/finance";
@@ -25,6 +31,7 @@ import { EXPENSE_TEMPLATES } from "../../shared/constants/expenseTemplates";
 import { materializeDueRecurringRules } from "../manage/autoRecurring";
 import { isLoanPartyNeedsReminder } from "../loans/loanCalculations";
 import type { Transaction } from "../../shared/types/finance";
+import { QuickEntryBar } from "./QuickEntryBar";
 
 export function HomePage() {
   const ledgerUid = useLedgerUid();
@@ -52,6 +59,12 @@ export function HomePage() {
   const [composerType, setComposerType] = useState<"expense" | "income" | "transfer">("expense");
   const [composerInitial, setComposerInitial] = useState<Partial<TransactionDraft> | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [contribute, setContribute] = useState<{
+    goalId: string;
+    goalName: string;
+    accountId: string;
+    amount: string;
+  } | null>(null);
 
   useEffect(() => {
     const compose = (location.state as { compose?: string } | null)?.compose;
@@ -214,7 +227,7 @@ export function HomePage() {
   }
 
   return (
-    <div className="page">
+    <div className="page home-page">
       <PageHeader
         title="Tổng quan"
         subtitle={formatMonthLabel(month)}
@@ -234,7 +247,18 @@ export function HomePage() {
         }
       />
 
-      <div className="chip-row">
+      {ledgerUid ? (
+        <QuickEntryBar
+          ledgerUid={ledgerUid}
+          accounts={accounts}
+          scopes={scopes}
+          categories={categories}
+          onRefresh={refresh}
+          onOpenForm={(type, initial) => openComposer(type, initial)}
+        />
+      ) : null}
+
+      <div className="chip-row home-stagger">
         {EXPENSE_TEMPLATES.map((template) => (
           <button
             key={template.id}
@@ -319,7 +343,7 @@ export function HomePage() {
         </section>
       ) : null}
 
-      <section className="owner-boards">
+      <section className="owner-boards home-stagger">
         <article className="owner-board personal">
           <div className="owner-board-head">
             <div>
@@ -423,7 +447,7 @@ export function HomePage() {
         </article>
       </section>
 
-      <div className="grid grid-2">
+      <div className="grid grid-2 home-stagger">
         <section className="card">
           <div className="card-head">
             <div>
@@ -501,35 +525,41 @@ export function HomePage() {
             {!recent.length ? <EmptyState title="Chưa có giao dịch" /> : null}
           </div>
         </section>
-
-        <section className="card">
-          <div className="card-head">
-            <div>
-              <h2 className="card-title">Tiết kiệm</h2>
-              <p className="card-subtitle">Tiến độ mục tiêu</p>
-            </div>
-          </div>
-          <div className="list">
-            {savingsGoals.map((goal) => {
-              const pct = goal.targetAmount > 0 ? Math.min(100, (goal.currentAmount / goal.targetAmount) * 100) : 0;
-              return (
-                <div key={goal.id} className="list-row">
-                  <div className="list-main">
-                    <div className="list-title">{goal.name}</div>
-                    <div className="list-meta">
-                      {formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}
-                    </div>
-                    <div className="progress-track">
-                      <div className="progress-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            {!savingsGoals.length ? <EmptyState title="Chưa có mục tiêu tiết kiệm" body="Thêm trong trang Quản lý." /> : null}
-          </div>
-        </section>
       </div>
+
+      <section className="card savings-goals-section home-stagger">
+        <div className="card-head">
+          <div>
+            <h2 className="card-title">Mục tiêu tiết kiệm</h2>
+            <p className="card-subtitle">Đã có bao nhiêu · còn bao nhiêu % nữa</p>
+          </div>
+          <Link className="inline-link" to="/manage">
+            Quản lý
+          </Link>
+        </div>
+        <div className="savings-goals-grid">
+          {savingsGoals.map((goal) => (
+            <SavingsGoalCard
+              key={goal.id}
+              goal={goal}
+              onContribute={() =>
+                setContribute({
+                  goalId: goal.id,
+                  goalName: goal.name,
+                  accountId:
+                    accounts.find((item) => item.isDefault && String(item.status) !== "archived")?.id ||
+                    accounts.find((item) => String(item.status) !== "archived")?.id ||
+                    "",
+                  amount: "",
+                })
+              }
+            />
+          ))}
+        </div>
+        {!savingsGoals.length ? (
+          <EmptyState title="Chưa có mục tiêu tiết kiệm" body="Thêm nhà, xe hoặc món đồ trong Quản lý." />
+        ) : null}
+      </section>
 
       <Modal
         open={composerOpen}
@@ -560,6 +590,94 @@ export function HomePage() {
           }}
           onSubmit={handleSave}
         />
+      </Modal>
+
+      <Modal
+        open={!!contribute}
+        title={contribute ? `Góp vào ${contribute.goalName}` : "Góp tiết kiệm"}
+        onClose={() => setContribute(null)}
+      >
+        {contribute ? (
+          <div className="stack">
+            <div className="field">
+              <label className="field-label">Từ ví</label>
+              <select
+                value={contribute.accountId}
+                onChange={(event) =>
+                  setContribute((current) =>
+                    current ? { ...current, accountId: event.target.value } : current
+                  )
+                }
+              >
+                <option value="">Chọn ví</option>
+                {accounts
+                  .filter((item) => String(item.status) !== "archived")
+                  .map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} · {formatCurrency(account.currentBalance || 0)}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="field">
+              <label className="field-label">Số tiền</label>
+              <input
+                value={contribute.amount}
+                placeholder="500k hoặc 1.5tr"
+                onChange={(event) =>
+                  setContribute((current) =>
+                    current ? { ...current, amount: event.target.value } : current
+                  )
+                }
+              />
+            </div>
+            <div className="page-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setContribute(null)}>
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  if (!ledgerUid || !contribute) return;
+                  const amount = parseAmountInput(contribute.amount);
+                  if (!contribute.accountId) {
+                    showToast("Chọn ví.", "error");
+                    return;
+                  }
+                  if (amount == null) {
+                    showToast("Số tiền không hợp lệ.", "error");
+                    return;
+                  }
+                  const account = accounts.find((item) => item.id === contribute.accountId);
+                  const goal = savingsGoals.find((item) => item.id === contribute.goalId);
+                  if (!goal) return;
+                  void createTransaction(ledgerUid, {
+                    type: "adjustment",
+                    amount: -amount,
+                    occurredAt: getTodayInputValue(),
+                    accountId: contribute.accountId,
+                    note: `Góp tiết kiệm: ${goal.name}`,
+                    moneyOwner: normalizeAccountMoneyOwner(account?.moneyOwner),
+                  })
+                    .then(() =>
+                      updateSavingsGoal(ledgerUid, goal.id, {
+                        currentAmount: Number(goal.currentAmount || 0) + amount,
+                      })
+                    )
+                    .then(() => {
+                      showToast("Đã góp tiết kiệm.", "success");
+                      setContribute(null);
+                      return refresh();
+                    })
+                    .catch((err) => showToast(err?.message || "Không thể góp.", "error"));
+                }}
+              >
+                Xác nhận góp
+              </button>
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </div>
   );

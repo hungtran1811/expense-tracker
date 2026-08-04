@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { MoneyOwnerSelector } from "../../shared/ui/MoneyOwnerSelector";
 import { getTodayInputValue } from "../../shared/lib/date";
 import { parseAmountInput } from "../../shared/lib/parseAmount";
+import { resolveDefaultScopeId } from "../../shared/lib/defaultScope";
 import type { Account, ExpenseCategory, ExpenseScope, Transaction } from "../../shared/types/finance";
 import { getMoneyOwnerLabel, normalizeAccountMoneyOwner, type MoneyOwner } from "../../shared/lib/moneyOwner";
 import { useOwnerLabels } from "../../shared/hooks/useOwnerLabels";
@@ -46,7 +47,11 @@ function accountForOwner(
   return matched.find((item) => item.isDefault)?.id || matched[0]?.id || currentAccountId;
 }
 
-function toDraft(initial?: Partial<TransactionDraft> | Transaction | null, accounts: Account[] = []): TransactionDraft {
+function toDraft(
+  initial?: Partial<TransactionDraft> | Transaction | null,
+  accounts: Account[] = [],
+  scopes: ExpenseScope[] = []
+): TransactionDraft {
   const defaultAccount =
     accounts.find((item) => item.isDefault && String(item.status) !== "archived")?.id ||
     accounts.find((item) => String(item.status) !== "archived")?.id ||
@@ -62,10 +67,16 @@ function toDraft(initial?: Partial<TransactionDraft> | Transaction | null, accou
       : draftOwner === "mother" || draftOwner === "personal"
         ? draftOwner
         : ownerFromAccount(accounts, accountId);
+  const type = ((initial as TransactionDraft)?.type ||
+    (initial as Transaction)?.type ||
+    "expense") as TransactionDraft["type"];
+  const explicitScope = String(
+    (initial as Transaction)?.scopeId || (initial as TransactionDraft)?.scopeId || ""
+  ).trim();
 
   return {
     id: (initial as TransactionDraft)?.id || (initial as Transaction)?.id || "",
-    type: ((initial as TransactionDraft)?.type || (initial as Transaction)?.type || "expense") as TransactionDraft["type"],
+    type,
     accountId,
     toAccountId: String((initial as Transaction)?.toAccountId || (initial as TransactionDraft)?.toAccountId || ""),
     amount:
@@ -76,7 +87,7 @@ function toDraft(initial?: Partial<TransactionDraft> | Transaction | null, accou
           : "",
     occurredAt: String((initial as TransactionDraft)?.occurredAt || getTodayInputValue()),
     categoryKey: String((initial as Transaction)?.categoryKey || (initial as TransactionDraft)?.categoryKey || "other"),
-    scopeId: String((initial as Transaction)?.scopeId || (initial as TransactionDraft)?.scopeId || ""),
+    scopeId: type === "expense" ? explicitScope || resolveDefaultScopeId(scopes) : explicitScope,
     moneyOwner: resolvedOwner,
     note: String((initial as Transaction)?.note || (initial as TransactionDraft)?.note || ""),
   };
@@ -96,17 +107,17 @@ export function TransactionForm({
     () => accounts.filter((item) => String(item.status || "active") !== "archived"),
     [accounts]
   );
-  const [draft, setDraft] = useState<TransactionDraft>(() => toDraft(initial, activeAccounts));
-  const [amountText, setAmountText] = useState(() => toDraft(initial, activeAccounts).amount);
+  const [draft, setDraft] = useState<TransactionDraft>(() => toDraft(initial, activeAccounts, scopes));
+  const [amountText, setAmountText] = useState(() => toDraft(initial, activeAccounts, scopes).amount);
   const [error, setError] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
-    const next = toDraft(initial, activeAccounts);
+    const next = toDraft(initial, activeAccounts, scopes);
     setDraft(next);
     setAmountText(next.amount);
     setError("");
-  }, [initial, activeAccounts]);
+  }, [initial, activeAccounts, scopes]);
 
   const categoryOptions = categories.length
     ? categories
@@ -163,12 +174,17 @@ export function TransactionForm({
         <select
           id="tx-type"
           value={draft.type}
-          onChange={(event) =>
+          onChange={(event) => {
+            const type = event.target.value as TransactionDraft["type"];
             setDraft((current) => ({
               ...current,
-              type: event.target.value as TransactionDraft["type"],
-            }))
-          }
+              type,
+              scopeId:
+                type === "expense"
+                  ? current.scopeId || resolveDefaultScopeId(scopes)
+                  : current.scopeId,
+            }));
+          }}
         >
           <option value="expense">Khoản chi</option>
           <option value="income">Khoản thu</option>

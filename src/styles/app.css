@@ -2333,3 +2333,357 @@ button.list-row {
     grid-template-columns: 1fr;
   }
 }
+
+/* —— Home hero quick entry + savings goals + motion —— */
+
+.home-page {
+  position: relative;
+}
+
+.home-page::before {
+  content: "";
+  position: absolute;
+  inset: -8px -12px auto;
+  height: 220px;
+  border-radius: 0 0 28px 28px;
+  background:
+    radial-gradient(ellipse 70% 80% at 12% 20%, rgba(53, 88, 212, 0.14), transparent 60%),
+    radial-gradient(ellipse 55% 70% at 88% 10%, rgba(226, 91, 74, 0.1), transparent 55%),
+    linear-gradient(180deg, rgba(232, 238, 248, 0.9) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.home-page > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes home-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.home-stagger {
+  animation: home-fade-up 0.45s ease both;
+}
+
+.owner-boards.home-stagger {
+  animation-delay: 0.06s;
+}
+
+.grid.home-stagger {
+  animation-delay: 0.12s;
+}
+
+.savings-goals-section.home-stagger {
+  animation-delay: 0.18s;
+}
+
+.quick-entry {
+  margin: 0 0 var(--space-4);
+  padding: 18px 18px 14px;
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(53, 88, 212, 0.16);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96) 0%, rgba(238, 242, 255, 0.9) 100%);
+  box-shadow: var(--shadow-md);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+
+.quick-entry.is-success {
+  border-color: rgba(15, 143, 127, 0.45);
+  box-shadow: 0 0 0 3px rgba(15, 143, 127, 0.18), var(--shadow-md);
+}
+
+.quick-entry-form {
+  display: grid;
+  gap: 10px;
+}
+
+.quick-entry-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.quick-entry-input {
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.quick-entry-input::placeholder {
+  color: #8a97ab;
+  font-weight: 500;
+}
+
+.quick-entry-input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(53, 88, 212, 0.16);
+}
+
+.quick-entry-submit {
+  min-height: 52px;
+  min-width: 88px;
+  border-radius: 14px;
+  font-weight: 700;
+}
+
+.quick-entry-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.account-bank-card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.account-bank-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(20, 32, 51, 0.08);
+}
+
+.owner-board .stat-card .value {
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.savings-goals-section {
+  margin-top: var(--space-4);
+}
+
+.savings-goals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.savings-goal-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(160deg, #fff 0%, rgba(232, 238, 248, 0.55) 100%);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.savings-goal-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+}
+
+.savings-goal-card[data-icon="house"] {
+  background: linear-gradient(160deg, #fff 0%, rgba(53, 88, 212, 0.08) 100%);
+}
+.savings-goal-card[data-icon="car"] {
+  background: linear-gradient(160deg, #fff 0%, rgba(226, 91, 74, 0.08) 100%);
+}
+.savings-goal-card[data-icon="phone"] {
+  background: linear-gradient(160deg, #fff 0%, rgba(15, 143, 127, 0.08) 100%);
+}
+.savings-goal-card[data-icon="travel"] {
+  background: linear-gradient(160deg, #fff 0%, rgba(0, 104, 255, 0.08) 100%);
+}
+.savings-goal-card[data-icon="education"] {
+  background: linear-gradient(160deg, #fff 0%, rgba(196, 125, 14, 0.1) 100%);
+}
+.savings-goal-card[data-icon="wedding"] {
+  background: linear-gradient(160deg, #fff 0%, rgba(214, 36, 77, 0.08) 100%);
+}
+.savings-goal-card[data-icon="emergency"] {
+  background: linear-gradient(160deg, #fff 0%, rgba(196, 125, 14, 0.12) 100%);
+}
+
+.savings-goal-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.savings-goal-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--brand-strong);
+  border: 1px solid rgba(53, 88, 212, 0.12);
+}
+
+.savings-goal-ring {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  flex: 0 0 auto;
+}
+
+.savings-goal-ring svg {
+  transform: rotate(-90deg);
+}
+
+.savings-goal-ring-track,
+.savings-goal-ring-fill {
+  fill: none;
+  stroke-width: 7;
+}
+
+.savings-goal-ring-track {
+  stroke: rgba(20, 32, 51, 0.08);
+}
+
+.savings-goal-ring-fill {
+  stroke: var(--brand);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.savings-goal-card[data-icon="car"] .savings-goal-ring-fill,
+.savings-goal-card[data-icon="wedding"] .savings-goal-ring-fill {
+  stroke: var(--accent);
+}
+
+.savings-goal-card[data-icon="phone"] .savings-goal-ring-fill,
+.savings-goal-card[data-icon="emergency"] .savings-goal-ring-fill {
+  stroke: var(--success);
+}
+
+.savings-goal-ring-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.savings-goal-ring-label strong {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.savings-goal-ring-label span {
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.savings-goal-name {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.savings-goal-amounts {
+  margin: 4px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.savings-goal-sep {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.savings-goal-remain {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.savings-goal-remain strong {
+  color: var(--ink);
+}
+
+.savings-goal-done {
+  color: var(--success) !important;
+}
+
+.savings-goal-contribute {
+  justify-self: start;
+}
+
+.goal-icon-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.goal-icon-option {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--panel-soft);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.goal-icon-option.is-active,
+.goal-icon-option:hover {
+  border-color: rgba(53, 88, 212, 0.4);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+.manage-goal-wrap {
+  display: grid;
+  gap: 8px;
+}
+
+.manage-goal-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .quick-entry {
+    padding: 14px;
+  }
+
+  .quick-entry-field {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-entry-submit {
+    width: 100%;
+  }
+
+  .home-page::before {
+    height: 180px;
+  }
+}
