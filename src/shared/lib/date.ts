@@ -56,6 +56,24 @@ export function monthStartEnd(ym: string = getCurrentYm()): { fromDate: string; 
   };
 }
 
+export function getYmFromDateInput(dateKey = ""): string {
+  const raw = String(dateKey || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw.slice(0, 7) : "";
+}
+
+export function shiftDateInput(dateKey: string, days: number): string {
+  const key = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? dateKey : getTodayInputValue();
+  const [y, m, d] = key.split("-").map(Number);
+  return getTodayInputValue(new Date(y, m - 1, d + days));
+}
+
+export function defaultDateForMonth(ym: string = getCurrentYm()): string {
+  const today = getTodayInputValue();
+  const monthKey = /^\d{4}-\d{2}$/.test(ym) ? ym : getCurrentYm();
+  if (today.startsWith(monthKey)) return today;
+  return monthStartEnd(monthKey).toDate;
+}
+
 /** ISO-ish sortable key for Firestore Timestamp / Date / string. */
 export function toSortableDateKey(value: unknown): string {
   if (!value) return "";

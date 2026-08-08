@@ -8,7 +8,14 @@ import {
   updateTransaction,
 } from "../../services/firebase/firestore";
 import { getFinanceCategoryLabel, getTransactionTypeLabel, isFinanceTransactionType } from "../../shared/constants/finance";
-import { formatDateLabel, formatMonthLabel, toDateInputValue } from "../../shared/lib/date";
+import {
+  defaultDateForMonth,
+  formatDateLabel,
+  getTodayInputValue,
+  getYmFromDateInput,
+  shiftDateInput,
+  toDateInputValue,
+} from "../../shared/lib/date";
 import { formatCurrency } from "../../shared/lib/money";
 import { downloadCsv } from "../../shared/lib/csv";
 import {
@@ -41,6 +48,7 @@ export function ExpensesPage() {
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [filters, setFilters] = useState({
+    date: defaultDateForMonth(month),
     accountId: "all",
     moneyOwner: "all",
     type: "all",
@@ -48,12 +56,30 @@ export function ExpensesPage() {
   });
 
   const accountMap = useMemo(() => new Map(accounts.map((item) => [item.id, item])), [accounts]);
+  const todayKey = getTodayInputValue();
+
+  function changeDate(nextDate: string) {
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(nextDate) ? nextDate : todayKey;
+    setFilters((current) => ({ ...current, date: normalized }));
+    const nextMonth = getYmFromDateInput(normalized);
+    if (nextMonth && nextMonth !== month) setMonth(nextMonth);
+  }
+
+  useEffect(() => {
+    setFilters((current) => {
+      const currentMonth = getYmFromDateInput(current.date);
+      if (currentMonth === month) return current;
+      return { ...current, date: defaultDateForMonth(month) };
+    });
+  }, [month]);
 
   useEffect(() => {
     const editTxId = (location.state as { editTxId?: string } | null)?.editTxId;
     if (!editTxId || loading) return;
     const tx = transactions.find((item) => item.id === editTxId);
     if (tx) {
+      const txDate = toDateInputValue(tx.occurredAt);
+      if (txDate) changeDate(txDate);
       setEditing(tx);
       setOpen(true);
     }
@@ -64,6 +90,7 @@ export function ExpensesPage() {
     return transactions
       .filter((tx) => isFinanceTransactionType(tx.type))
       .filter((tx) => {
+        if (toDateInputValue(tx.occurredAt) !== filters.date) return false;
         if (filters.accountId !== "all" && tx.accountId !== filters.accountId && tx.toAccountId !== filters.accountId) {
           return false;
         }
@@ -77,6 +104,18 @@ export function ExpensesPage() {
         return true;
       });
   }, [transactions, filters, accounts]);
+
+  const dayTotals = useMemo(() => {
+    return rows.reduce(
+      (acc, tx) => {
+        const amount = Math.abs(Number(tx.amount || 0));
+        if (tx.type === "income") acc.income += amount;
+        if (tx.type === "expense") acc.expense += amount;
+        return acc;
+      },
+      { income: 0, expense: 0 }
+    );
+  }, [rows]);
 
   async function saveDraft(draft: TransactionDraft) {
     if (!ledgerUid) return;
@@ -130,16 +169,15 @@ export function ExpensesPage() {
     <div className="page">
       <PageHeader
         title="Chi tiêu"
-        subtitle={formatMonthLabel(month)}
+        subtitle={formatDateLabel(filters.date)}
         actions={
           <>
-            <input className="month-input" type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
             <button
               type="button"
               className="btn btn-secondary"
               onClick={() => {
                 downloadCsv(
-                  `chi-tieu-${month}.csv`,
+                  `chi-tieu-${filters.date}.csv`,
                   [
                     ["Ngày", "Loại", "Nguồn tiền", "Ví", "Danh mục", "Số tiền", "Ghi chú"],
                     ...rows.map((tx) => [
@@ -173,6 +211,43 @@ export function ExpensesPage() {
       />
 
       <section className="card">
+        <div className="day-nav" aria-label="Lọc theo ngày">
+          <button
+            type="button"
+            className="btn btn-secondary day-nav-step"
+            onClick={() => changeDate(shiftDateInput(filters.date, -1))}
+            aria-label="Ngày trước"
+          >
+            ←
+          </button>
+          <div className="field day-nav-field">
+            <label className="field-label" htmlFor="expense-day-filter">
+              Ngày xem
+            </label>
+            <input
+              id="expense-day-filter"
+              className="month-input"
+              type="date"
+              value={filters.date}
+              onChange={(event) => changeDate(event.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary day-nav-step"
+            onClick={() => changeDate(shiftDateInput(filters.date, 1))}
+            aria-label="Ngày sau"
+          >
+            →
+          </button>
+          <button
+            type="button"
+            className={`chip${filters.date === todayKey ? " active" : ""}`}
+            onClick={() => changeDate(todayKey)}
+          >
+            Hôm nay
+          </button>
+        </div>
         <div className="filters">
           <div className="field">
             <label className="field-label">Nguồn tiền</label>
@@ -225,7 +300,12 @@ export function ExpensesPage() {
         <div className="card-head">
           <div>
             <h2 className="card-title">{rows.length} giao dịch</h2>
-            <p className="card-subtitle">Chạm vào dòng để sửa</p>
+            <p className="card-subtitle">
+              {formatDateLabel(filters.date)}
+              {dayTotals.expense || dayTotals.income
+                ? ` · Chi ${formatCurrency(dayTotals.expense)} · Thu ${formatCurrency(dayTotals.income)}`
+                : " · Chạm vào dòng để sửa"}
+            </p>
           </div>
         </div>
         <div className="list">
@@ -273,7 +353,10 @@ export function ExpensesPage() {
             );
           })}
           {!rows.length ? (
-            <EmptyState title="Chưa có giao dịch phù hợp bộ lọc" body="Hãy thêm khoản thu hoặc khoản chi đầu tiên." />
+            <EmptyState
+              title="Chưa có giao dịch ngày này"
+              body="Chọn ngày khác, hoặc thêm khoản thu/chi cho ngày đang xem."
+            />
           ) : null}
         </div>
       </section>
@@ -305,7 +388,7 @@ export function ExpensesPage() {
                     ? editing.type
                     : "expense") as TransactionDraft["type"],
                 }
-              : { type: "expense", moneyOwner: "personal" }
+              : { type: "expense", moneyOwner: "personal", occurredAt: filters.date }
           }
           submitting={submitting}
           onCancel={() => {
